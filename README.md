@@ -1,1 +1,195 @@
 # dsh-ssh-workspace
+
+把一台 **SSH 主机上的目录当作 DSH 工作区**使用。
+
+工作区路径语法：
+
+```
+ssh://<主机别名>/<远端绝对路径>
+例如  ssh://myserver/home/user/project
+```
+
+界面里这类路径**显示**为 `ssh://<主机别名>@/<远端绝对路径>`（别名后插入 `@`，
+读起来像 SSH 地址）——侧栏工作区行的悬停卡片、右侧栏「文件」面板头部、
+文档预览头部等处都是这种显示；复制与一切功能（挂载、文件操作、工具调用）
+使用的仍是实际拼写 `ssh://<主机别名>/<远端绝对路径>`。
+
+当会话的工作区是这种路径时，`read` / `write` / `edit` 会通过 SFTP **直接读写远端文件**，
+不需要手动同步、不需要挂载驱动、不需要装任何第三方文件系统。
+
+## 它解决什么问题
+
+DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服务抽象。
+本插件在这个抽象上增加了一个"远端半边"：
+
+| 目标路径 | 由谁服务 |
+| --- | --- |
+| `ssh://<alias>/<path>` | 本插件的 SFTP 后端 |
+| 其他任何路径（`E:\...`、`/home/...`） | 部署原有的本地（沙箱）后端，行为完全不变 |
+
+因此**本地工作区的一切照旧**，包括沙箱写入围栏、版本守卫、原子写入；
+远端工作区则获得同一套工具和同一套错误语义。
+
+## 安装
+
+把包放进 profile 并加一条 loader patch：
+
+```yaml
+# ~/.dsh/profiles/<profile>/cordis.patch.yml
+- insert:
+    - id: ssh-workspace
+      name: "@dsh-community/dsh-ssh-workspace"
+      config:
+        enabled: true
+        announceToAgent: true
+```
+
+主机记录存放在 `$DSH_HOME/dsh-ssh.json`；没有该文件时，会退回到读取
+`~/.ssh/config` 里具体的 `Host` 块。因此**已经配好的主机无需重复配置**。
+
+「远程工作区」面板里可以直接**添加 / 编辑 / 删除**主机，写回
+`$DSH_HOME/dsh-ssh.json`（原子写入，保留文件里本插件不认识的字段）。
+`~/.ssh/config` 中的主机是**只读回退**，面板不会修改那个文件；
+与存储同名的主机以存储为准。密码 / 私钥口令按该存储格式**明文保存**，
+且不会回传到浏览器，编辑时留空表示保持原值。
+删除主机不会自动卸载已挂载的工作区，但那些工作区会因主机不存在而无法访问。
+
+## 配置
+
+| 字段 | 默认 | 含义 |
+| --- | --- | --- |
+| `enabled` | `true` | 总开关 |
+| `announceToAgent` | `false` | 是否向每个 agent 注入能力说明（系统提示词段落） |
+
+## Agent 工具
+
+| 工具 | 用途 |
+| --- | --- |
+| `ssh_workspace_hosts` | 列出可用主机（store + `~/.ssh/config` 候选） |
+| `ssh_workspace_mount` | 把一个远端目录登记为工作区，返回 `ssh://` 路径 |
+| `ssh_workspace_unmount` | 注销远端工作区 |
+| `ssh_workspace_status` | 当前挂载点与连接状态 |
+| `ssh_workspace_exec` | **在远端**执行 shell 命令 |
+
+## 能力与限制
+
+已经做到的：
+
+- **远端文件读写**：`read` / `write` / `edit` 全程走 SFTP，包含
+  `FS_STALE_VERSION`、`FS_NOT_OBSERVED`、`FS_AMBIGUOUS_EDIT`、
+  `FS_NOT_TEXT`、`FS_TOO_LARGE`、`FS_NOT_FOUND` 等完整错误语义。
+- **原子写入**：写入先落到同目录的暂存文件再替换。
+  优先使用 OpenSSH 的 `posix-rename@openssh.com`；服务器不支持时退化为
+  "先删后改名"（此时替换不再是原子的）。
+- **换行符保真**：编辑 CRLF 文件不会把它改成 LF。
+- **二进制与编码**：文本读取拒绝 NUL / 非法 UTF-8；`readBytes` 原样返回字节。
+- **写入围栏**：远端写入只允许落在已挂载的远端工作区内，
+  越界返回 `FS_SANDBOX_DENIED`。读取不受限制。
+- **新建会话可用**：宿主机自带的 `node:fs/promises` 调用
+  （会话控制器的 `mkdir`、工作区注册表的 `realpath` / `stat`）对 `ssh://`
+  路径同样走 SFTP；会话 header 校验用的 `node:path.isAbsolute` 也会把
+  `ssh://` 拼写判为绝对路径。因此可以直接在远端工作区里新建会话，
+  不会再把 `ssh://...` 当成本机路径去 `mkdir`，也不会被判成相对路径。
+- **重启后自动重新挂载**：已登记的 `ssh://` 工作区在下次启动时从持久化
+  registry 恢复挂载，不会出现"UI 里还在、文件却打不开"的状态。
+- **「工作区文件」侧边栏可用**：侧边栏文件树直接列出远端目录，文本预览经 SFTP
+  读取。`fs.fileUrl` 按 `dsh-fs` 契约返回**远端执行世界**的规范 `file:` URI
+  （POSIX 语义、逐段百分号编码）；宿主只用它换算相对路径，不会当成本机文件。
+- **主机管理**：「远程工作区」面板可添加 / 编辑 / 删除主机（编辑私钥路径、
+  认证方式、备注等），改动立即生效并丢弃该别名的旧连接；
+  `~/.ssh/config` 里的主机只读展示。「测试连接」的结果以顶部 toast 弹出，
+  数秒后自动消失（点击可提前关闭）。
+- **「添加工作区」提供远程入口**：DSH 的「添加工作区」按钮被替换为锚定菜单，
+  可选「新建本地工作区」（DSH 原生目录选择器）或「新建远程工作区」
+  （插件的远端目录对话框：选主机 → 逐级浏览远端目录 → 确认挂载；
+  目录不可写时给出警告并拒绝创建）。
+- **远程工作区带专用标记**：本插件创建的远程工作区在侧栏行、工作区选择器
+  与会话页工作区按钮处显示插件的远端标记图标，而不是普通文件夹图标。
+- **连接复用**：每个别名一条长连接 + 一个 SFTP 通道，空闲 30 分钟回收。
+
+明确**不支持**的：
+
+- **跳板机 / ProxyCommand**：引擎只直连目标主机（`ssh2` 客户端未接 `proxyJump`）。
+  带 `proxyJump` / `ProxyCommand` 的主机会在解析时被**明确拒绝**并说明原因，
+  而不是悄悄按直连去试；需要跳板时请改用别的工具连接。
+- **`glob` / `grep` 不会搜索远端**。这两个内建工具在本机 spawn ripgrep，
+  用的是会话 `cwd`，因此对 `ssh://` 工作区无效。
+  请在远端工作区改用 `ssh_workspace_exec`，例如：
+  `grep -rn "TODO" /home/user/project --include='*.ts'`。
+- **shell 工具仍在本地执行**。`pwsh` / `bash` 不会进入远端，
+  远端命令请用 `ssh_workspace_exec`。
+- **不支持变更监视（watch）**。SFTP 没有可移植的变更通知，
+  按 `dsh-fs` 的约定这里返回不支持，而不是偷偷轮询；
+  侧边栏文件树会静默降级——不报错，只是不会自动刷新。
+
+## 实现要点
+
+- **不注册第二个 `fs` 服务**：Cordis 的 `provide()` 按隔离符号登记实现，
+  同一作用域重复 `provide('fs')` 会抛错，而部署本身已经挂了本地后端。
+  本插件改为直接给**现存的那个 `ctx.fs` 实例**装上远端方法（自有属性），
+  其余方法原样转发给原后端（绑定原始 receiver）。
+  因此安装顺序无关，也不会覆盖部署自带的沙箱行为。
+- **工作区登记绕过 `realpath`**：`WorkspaceRegistry.create()` 用
+  `fs.realpath` 规范化路径，`ssh://` 永远过不了。本插件改用同一份持久化路径的
+  `createCanonical()`，绕过宿主机 `realpath` 断言但保留完整的持久化与顺序写入。
+  会话 header 的 `cwd` 绝对路径校验则由下面的内建桥接保证。
+- **桥接宿主内建模块（`node:fs/promises` / `node:path`）**：`ctx.fs`
+  之外仍有子系统直接用内建模块——会话控制器创建会话前 `mkdir` 项目目录，
+  工作区注册表挂载会话前 `realpath` + `stat` 会话 `cwd`，
+  这些发生在 agent 存在之前；会话服务在写 header 前还会用
+  `path.isAbsolute` 校验 `cwd`，而任何平台解析器都不把裸 `ssh://`
+  拼写当作绝对路径（win32 视作缺冒号的两字母伪盘符，posix 视作普通相对段）。
+  插件把内建的 `mkdir` / `stat` / `lstat` / `realpath`
+  对 `ssh://` 路径改走 SFTP（其余路径原样转发），
+  并把 `node:path.isAbsolute` 对 `ssh://` 拼写返回 true
+  （默认导出、`win32`、`posix` 三个表面都打；Windows 上前两者本是同一对象，
+  POSIX 上首尾是同一对象，重复面在赋值前已去重）——
+  这正是工作区「完全限定路径」检查与会话 header 校验共用的谓词。
+  两者替换后都调用 `module.syncBuiltinESMExports()` 同步到内建模块的 ESM facade，
+  已加载模块的 `import { mkdir } from 'node:fs/promises'` 与
+  `import { isAbsolute } from 'node:path'` 命名绑定也因此生效。
+  `mkdir` 是写操作，同样受挂载围栏约束；`realpath` 返回
+  `ssh://` 的规范拼写（词法规范化，不请求服务器 realpath），
+  这样与会话 header、工作区登记使用的拼写一致。
+- **自己解析 DSH peer 包**：插件加载时 `@deepseek-ai/dsh-fs` /
+  `@deepseek-ai/dsh-tools` 由宿主提供；`ssh2` 从 profile 解析。
+
+## 开发与测试
+
+五套测试，都可独立运行（断言数为当前实测值）：
+
+| 脚本 | 断言 | 验证内容 |
+| --- | --- | --- |
+| `test-live.mjs <host-alias>` | 46 | 真主机 SFTP 全功能：`ssh://` 语法与规范化、`resolve`/`stat`/`lstat`/`listDir`（排序、类型、大小、符号链接）、`readText`/`readBytes`/`readByteRange`（`FS_NOT_TEXT`、`FS_TOO_LARGE`）、`writeText` 建/改与 `FS_STALE_VERSION`/`FS_NOT_OBSERVED`、`editText` 字面替换与 `FS_AMBIGUOUS_EDIT`/`FS_EDIT_NOT_FOUND`、CRLF 保真、原子发布的暂存清理与权限、写入围栏 `FS_SANDBOX_DENIED`、完整错误语义、远端 `exec`（含非零退出码与超时） |
+| `plugin-boot-test.mjs <plugin-dir>` | 31 | 在一个真实的 `@deepseek-ai/cordis` 应用里挂替身本地 `fs` 后真正 `ctx.plugin()`：模块与 peer 解析、`apply()` 不重复注册服务地接管 `ctx.fs`、远端走 SFTP 本地原样转发（receiver 保持原样）、五个工具注册为合法定义且真的能连主机干活、卸载后原型方法恢复 |
+| `verify-plugin.mjs <plugin-dir>` | 16 | 依赖出现顺序的五种场景（无 webServer / webServer 先到 / 后到 / 全部先到 / `announceToAgent` 且无 `systemPrompt`）：`ctx.fs` 接管、五个工具、8 条 HTTP 路由且不重复注册 |
+| `tools/test-tool-schemas.mjs` | 71 | 对真 `@deepseek-ai/dsh-tools` 校验：输出与参数 schema 在受支持子集内、参数均为带描述的原语、9 个 render 冒烟 |
+| `tools/acceptance.mjs <alias>` | 15 | 端到端验收：exec 预备远端目录 → mount → 只经 patched `ctx.fs` 走普通文件契约（resolve/write/read/stat/edit/listDir）→ 围栏 → status → unmount → 清理 |
+
+`test-live.mjs` 与纯静态脚本用普通 Node 即可（前者自行借用 `.test-deps`
+依赖树，可用 `DSH_TEST_DEPS` 覆盖）；装配类脚本建议用 DSH 自带的 Electron
+运行时执行，与生产同构：
+
+```bash
+ELECTRON_RUN_AS_NODE=1 "<DSH>/DeepSeek Harness.exe" plugin-boot-test.mjs "<plugin-dir>"
+```
+
+需要一个能解析 `@deepseek-ai/*` 与 `ssh2` 的依赖环境。两种可行做法：
+
+- 在 profile 内测试（生产条件）：用 DSH 自带的 Electron 运行时
+  ```bash
+  ELECTRON_RUN_AS_NODE=1 "<DSH>/DeepSeek Harness.exe" plugin-boot-test.mjs \
+    "C:/Users/<you>/.dsh/profiles/desktop/node_modules/@dsh-community/dsh-ssh-workspace"
+  ```
+  插件会通过 `lib/peers.js` 的 `app.asar` 回退拿到宿主核心包。
+- 在工作区测试：`node tools/assemble-deps.mjs .test-deps/node_modules` 会从
+  `app.asar` 里抽出一棵可直接加载的依赖树（`ssh2` 从已安装 profile 取），
+  然后设 `DSH_PEER_ROOT=<tree>`（`;` 分隔可列多个；从源码检出加载时必需）。
+
+### 关于依赖解析
+
+插件声明 `@deepseek-ai/dsh-fs` / `@deepseek-ai/dsh-tools` 为宿主提供的 peer。
+`lib/peers.js` 依次尝试：本包自己的 `node_modules` → `DSH_PEER_ROOT` →
+`DSH_PROFILE_DIR` / `DSH_PROFILE` / 常见 profile 名 → 部署的
+`app.asar/dsh/node_modules`（由 `process.resourcesPath` 推出）。
+这样无论是 profile 安装还是源码检出都能加载。

@@ -1,0 +1,12 @@
+# dsh-ssh-workspace bundle patch: inserts the remote-workspace plugin row into
+# the profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
+# manifest field) over dsh-base.
+#
+# The row is a bare plugin by package name: it runs in the host process, takes
+# over the live `ctx.fs` so it also serves `ssh://<alias>/<path>` targets over
+# SFTP, and registers the remote-workspace agent tools.
+- insert:
+    - id: ssh-workspace
+      name: '@dsh-community/dsh-ssh-workspace'
+      config:
+        announceToAgent: true
