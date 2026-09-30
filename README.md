@@ -34,17 +34,9 @@ DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服�
 
 ## 安装
 
-把包放进 profile 并加一条 loader patch：
-
-```yaml
-# ~/.dsh/profiles/<profile>/cordis.patch.yml
-- insert:
-    - id: ssh-workspace
-      name: "@dsh-community/dsh-ssh-workspace"
-      config:
-        enabled: true
-        announceToAgent: true
-```
+1. 打开官方桌面客户端，进入「设置」中的「插件」页面（或左侧导航栏的插件入口）；
+2. 在插件管理界面的安装输入框中输入本仓库地址 `https://github.com/siqyka/dsh-ssh-workspace`，点击安装；
+3. 安装完成后重启客户端，即可开始使用。
 
 主机记录存放在 `$DSH_HOME/dsh-ssh.json`；没有该文件时，会退回到读取
 `~/.ssh/config` 里具体的 `Host` 块。因此**已经配好的主机无需重复配置**。
@@ -139,41 +131,3 @@ DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服�
 
 完整机制（`ctx.fs` 接管细节、内建桥接覆盖的校验链路、引擎与连接模型、peer 解析
 顺序）见 [docs/architecture.md](./docs/architecture.md)。
-
-## 开发与测试
-
-五套测试，都可独立运行（断言数为当前实测值）：
-
-| 脚本 | 断言 | 验证内容 |
-| --- | --- | --- |
-| `test-live.mjs <host-alias>` | 46 | 真主机 SFTP 全功能：`ssh://` 语法与规范化、`resolve`/`stat`/`lstat`/`listDir`（排序、类型、大小、符号链接）、`readText`/`readBytes`/`readByteRange`（`FS_NOT_TEXT`、`FS_TOO_LARGE`）、`writeText` 建/改与 `FS_STALE_VERSION`/`FS_NOT_OBSERVED`、`editText` 字面替换与 `FS_AMBIGUOUS_EDIT`/`FS_EDIT_NOT_FOUND`、CRLF 保真、原子发布的暂存清理与权限、写入围栏 `FS_SANDBOX_DENIED`、完整错误语义、远端 `exec`（含非零退出码与超时） |
-| `plugin-boot-test.mjs <plugin-dir>` | 31 | 在一个真实的 `@deepseek-ai/cordis` 应用里挂替身本地 `fs` 后真正 `ctx.plugin()`：模块与 peer 解析、`apply()` 不重复注册服务地接管 `ctx.fs`、远端走 SFTP 本地原样转发（receiver 保持原样）、五个工具注册为合法定义且真的能连主机干活、卸载后原型方法恢复 |
-| `verify-plugin.mjs <plugin-dir>` | 16 | 依赖出现顺序的五种场景（无 webServer / webServer 先到 / 后到 / 全部先到 / `announceToAgent` 且无 `systemPrompt`）：`ctx.fs` 接管、五个工具、8 条 HTTP 路由且不重复注册 |
-| `tools/test-tool-schemas.mjs` | 71 | 对真 `@deepseek-ai/dsh-tools` 校验：输出与参数 schema 在受支持子集内、参数均为带描述的原语、9 个 render 冒烟 |
-| `tools/acceptance.mjs <alias>` | 15 | 端到端验收：exec 预备远端目录 → mount → 只经 patched `ctx.fs` 走普通文件契约（resolve/write/read/stat/edit/listDir）→ 围栏 → status → unmount → 清理 |
-
-`test-live.mjs` 与纯静态脚本用普通 Node 即可（前者自行借用 `.test-deps`
-依赖树，可用 `DSH_TEST_DEPS` 覆盖）；装配类脚本建议用 DSH 自带的 Electron
-运行时执行，与生产同构：
-
-```bash
-ELECTRON_RUN_AS_NODE=1 "<DSH>/DeepSeek Harness.exe" plugin-boot-test.mjs "<plugin-dir>"
-```
-
-需要一个能解析 `@deepseek-ai/*` 与 `ssh2` 的依赖环境。两种可行做法：
-
-- 在 profile 内测试（生产条件）：用 DSH 自带的 Electron 运行时
-  ```bash
-  ELECTRON_RUN_AS_NODE=1 "<DSH>/DeepSeek Harness.exe" plugin-boot-test.mjs \
-    "C:/Users/<you>/.dsh/profiles/desktop/node_modules/@dsh-community/dsh-ssh-workspace"
-  ```
-  插件会通过 `lib/peers.js` 的 `app.asar` 回退拿到宿主核心包。
-- 在工作区测试：`node tools/assemble-deps.mjs .test-deps/node_modules` 会从
-  `app.asar` 里抽出一棵可直接加载的依赖树（`ssh2` 从已安装 profile 取），
-  然后设 `DSH_PEER_ROOT=<tree>`（`;` 分隔可列多个；从源码检出加载时必需）。
-
-### 关于依赖解析
-
-`lib/peers.js` 的完整解析顺序（本包 `node_modules` → `DSH_PEER_ROOT` →
-`DSH_PROFILE_DIR` / `DSH_PROFILE` → 常见 profile 名 → `app.asar` 回退）见
-[docs/architecture.md](./docs/architecture.md) 的「peer 解析」一节。
