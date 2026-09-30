@@ -51,12 +51,12 @@
     "cordis.patch.yml",
     "README.md"
   ],
-  "license": "Apache-2.0",
+  "license": "MIT",
   "keywords": [
     "dsh-plugin",
     "ssh",
     "workspace",
     "remote"
   ],
-  "author": "DSH Community"
+  "author": "siqyka"
 }
