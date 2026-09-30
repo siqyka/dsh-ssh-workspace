@@ -1,5 +1,7 @@
 # dsh-ssh-workspace
 
+简体中文 | [English](./README.en.md)
+
 把一台 **SSH 主机上的目录当作 DSH 工作区**使用。
 
 工作区路径语法：
