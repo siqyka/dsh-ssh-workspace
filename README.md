@@ -14,6 +14,8 @@ ssh://<主机别名>/<远端绝对路径>
 文档预览头部等处都是这种显示；复制与一切功能（挂载、文件操作、工具调用）
 使用的仍是实际拼写 `ssh://<主机别名>/<远端绝对路径>`。
 
+专题文档（架构与实现、路径协议、主机配置、工具参考、界面指南、开发发布、排查）见 [docs/](./docs/README.md)。
+
 当会话的工作区是这种路径时，`read` / `write` / `edit` 会通过 SFTP **直接读写远端文件**，
 不需要手动同步、不需要挂载驱动、不需要装任何第三方文件系统。
 
@@ -53,6 +55,7 @@ DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服�
 与存储同名的主机以存储为准。密码 / 私钥口令按该存储格式**明文保存**，
 且不会回传到浏览器，编辑时留空表示保持原值。
 删除主机不会自动卸载已挂载的工作区，但那些工作区会因主机不存在而无法访问。
+存储格式、`~/.ssh/config` 解析规则与凭据策略细节见 [docs/hosts.md](./docs/hosts.md)。
 
 ## 配置
 
@@ -70,6 +73,8 @@ DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服�
 | `ssh_workspace_unmount` | 注销远端工作区 |
 | `ssh_workspace_status` | 当前挂载点与连接状态 |
 | `ssh_workspace_exec` | **在远端**执行 shell 命令 |
+
+工具的参数、返回字段与错误语义详见 [docs/tools.md](./docs/tools.md)。
 
 ## 能力与限制
 
@@ -124,35 +129,16 @@ DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服�
 
 ## 实现要点
 
-- **不注册第二个 `fs` 服务**：Cordis 的 `provide()` 按隔离符号登记实现，
-  同一作用域重复 `provide('fs')` 会抛错，而部署本身已经挂了本地后端。
-  本插件改为直接给**现存的那个 `ctx.fs` 实例**装上远端方法（自有属性），
-  其余方法原样转发给原后端（绑定原始 receiver）。
-  因此安装顺序无关，也不会覆盖部署自带的沙箱行为。
-- **工作区登记绕过 `realpath`**：`WorkspaceRegistry.create()` 用
-  `fs.realpath` 规范化路径，`ssh://` 永远过不了。本插件改用同一份持久化路径的
-  `createCanonical()`，绕过宿主机 `realpath` 断言但保留完整的持久化与顺序写入。
-  会话 header 的 `cwd` 绝对路径校验则由下面的内建桥接保证。
-- **桥接宿主内建模块（`node:fs/promises` / `node:path`）**：`ctx.fs`
-  之外仍有子系统直接用内建模块——会话控制器创建会话前 `mkdir` 项目目录，
-  工作区注册表挂载会话前 `realpath` + `stat` 会话 `cwd`，
-  这些发生在 agent 存在之前；会话服务在写 header 前还会用
-  `path.isAbsolute` 校验 `cwd`，而任何平台解析器都不把裸 `ssh://`
-  拼写当作绝对路径（win32 视作缺冒号的两字母伪盘符，posix 视作普通相对段）。
-  插件把内建的 `mkdir` / `stat` / `lstat` / `realpath`
-  对 `ssh://` 路径改走 SFTP（其余路径原样转发），
-  并把 `node:path.isAbsolute` 对 `ssh://` 拼写返回 true
-  （默认导出、`win32`、`posix` 三个表面都打；Windows 上前两者本是同一对象，
-  POSIX 上首尾是同一对象，重复面在赋值前已去重）——
-  这正是工作区「完全限定路径」检查与会话 header 校验共用的谓词。
-  两者替换后都调用 `module.syncBuiltinESMExports()` 同步到内建模块的 ESM facade，
-  已加载模块的 `import { mkdir } from 'node:fs/promises'` 与
-  `import { isAbsolute } from 'node:path'` 命名绑定也因此生效。
-  `mkdir` 是写操作，同样受挂载围栏约束；`realpath` 返回
-  `ssh://` 的规范拼写（词法规范化，不请求服务器 realpath），
-  这样与会话 header、工作区登记使用的拼写一致。
-- **自己解析 DSH peer 包**：插件加载时 `@deepseek-ai/dsh-fs` /
-  `@deepseek-ai/dsh-tools` 由宿主提供；`ssh2` 从 profile 解析。
+- **不注册第二个 `fs` 服务**：直接给部署已挂载的 `ctx.fs` 实例装上远端方法
+  （自有属性），其余方法原样转发给原后端（绑定原始 receiver），安装顺序无关。
+- **桥接宿主内建模块**：`node:fs/promises` 的 `mkdir` / `stat` / `lstat` / `realpath`
+  与 `node:path.isAbsolute` 对 `ssh://` 拼写单独处理（含
+  `syncBuiltinESMExports`），让创建会话、登记工作区等发生在 agent 之前的调用也走 SFTP。
+- **工作区登记绕过 `realpath`**：走 `createCanonical()`，保留完整的持久化与
+  顺序写入，绕过宿主机 `realpath` 断言。
+
+完整机制（`ctx.fs` 接管细节、内建桥接覆盖的校验链路、引擎与连接模型、peer 解析
+顺序）见 [docs/architecture.md](./docs/architecture.md)。
 
 ## 开发与测试
 
@@ -188,8 +174,6 @@ ELECTRON_RUN_AS_NODE=1 "<DSH>/DeepSeek Harness.exe" plugin-boot-test.mjs "<plugi
 
 ### 关于依赖解析
 
-插件声明 `@deepseek-ai/dsh-fs` / `@deepseek-ai/dsh-tools` 为宿主提供的 peer。
-`lib/peers.js` 依次尝试：本包自己的 `node_modules` → `DSH_PEER_ROOT` →
-`DSH_PROFILE_DIR` / `DSH_PROFILE` / 常见 profile 名 → 部署的
-`app.asar/dsh/node_modules`（由 `process.resourcesPath` 推出）。
-这样无论是 profile 安装还是源码检出都能加载。
+`lib/peers.js` 的完整解析顺序（本包 `node_modules` → `DSH_PEER_ROOT` →
+`DSH_PROFILE_DIR` / `DSH_PROFILE` → 常见 profile 名 → `app.asar` 回退）见
+[docs/architecture.md](./docs/architecture.md) 的「peer 解析」一节。
