@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/assets/logo.png" alt="dsh-ssh-workspace logo" width="140" />
+<img src="./docs/assets/header.png" alt="dsh-ssh-workspace header" width="640" />
 
 # dsh-ssh-workspace
 
@@ -267,6 +267,7 @@ Explicitly **not supported**:
 | [development.md](./docs/development.md) | Development, debugging & release: source layout, dependency resolution, packaging |
 | [troubleshooting.md](./docs/troubleshooting.md) | Troubleshooting & FAQ: error semantics, connection issues, known limitations |
 | [roadmap.md](./docs/roadmap.md) | Feature roadmap: candidates, motivations, acceptance criteria |
+| [CHANGELOG.md](./CHANGELOG.md) | Changelog: additions, fixes and changes per version |
 
 ---
 

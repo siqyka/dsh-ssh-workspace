@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/assets/logo.png" alt="dsh-ssh-workspace logo" width="140" />
+<img src="./docs/assets/header.png" alt="dsh-ssh-workspace header" width="640" />
 
 # dsh-ssh-workspace
 
@@ -245,6 +245,7 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 | [development.md](./docs/development.md) | 开发、调试与发布：源码结构、依赖解析、打包流程 |
 | [troubleshooting.md](./docs/troubleshooting.md) | 排查与常见问题：错误语义、连接问题、已知限制 |
 | [roadmap.md](./docs/roadmap.md) | 功能路线图：候选功能、动机与验收 |
+| [CHANGELOG.md](./CHANGELOG.md) | 更新日志：各版本的新增、修复与变更 |
 
 ---
 
