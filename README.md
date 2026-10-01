@@ -1,6 +1,5 @@
 <div align="center">
-
-<img src="./docs/assets/header.png" alt="dsh-ssh-workspace header" width="640" />
+<img src="./docs/assets/header.png" alt="dsh-ssh-workspace header" width="840" />
 
 # dsh-ssh-workspace
 
