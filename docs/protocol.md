@@ -54,7 +54,7 @@ ssh://<主机别名>/<远端绝对路径>
 会话 header 要求 `cwd` 通过 `path.isAbsolute` 校验，而任何平台解析器都不把
 裸 `ssh://` 拼写当绝对路径（win32 视作缺冒号的两字母伪盘符，posix 视作普通
 相对段）。插件把 `node:path.isAbsolute` 对 `ssh://` 拼写改为返回 `true`
-（见 [architecture.md](./architecture.md) 的「node:fs 内建桥接」），
+（见 [architecture.md](./architecture.md) 的「内建桥接（node:fs / node:path）」），
 `realpath` 也返回词法规范拼写——会话 header 与工作区登记两处的拼写因此
 永远一致，并可以在远端工作区里直接新建会话。
 

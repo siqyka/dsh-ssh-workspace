@@ -8,13 +8,15 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
-| [architecture.md](./architecture.md) | 架构与实现要点：`ctx.fs` 接管、内建桥接、引擎与连接模型 | 初稿 |
+| [architecture.md](./architecture.md) | 架构与实现要点：`ctx.fs` / `ctx.shell` / `ctx.subprocess` 接管、变更监视与流式读取、内建桥接、引擎与连接模型 | 初稿 |
 | [protocol.md](./protocol.md) | `ssh://` 路径协议：语法、规范化、显示规则、`file:` URI | 初稿 |
 | [hosts.md](./hosts.md) | 主机配置与认证：存储格式、`~/.ssh/config` 回退、面板管理 | 初稿 |
 | [tools.md](./tools.md) | Agent 工具参考：五个 `ssh_workspace_*` 工具 | 初稿 |
 | [ui.md](./ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记 | 初稿 |
 | [development.md](./development.md) | 开发、调试与发布：源码结构、依赖解析、打包流程 | 初稿 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、连接问题、已知限制 | 初稿 |
+| [roadmap.md](./roadmap.md) | 功能路线图：候选功能、动机与验收（待办清单） | 初稿 |
+| [optimization-plan.md](./optimization-plan.md) | 优化计划：安全扫描后的修复与工程优化分阶段实施清单（Phase 1–3 与 4.1 已实施；4.2 待单独一轮） | 初稿 |
 | [_template.md](./_template.md) | 新建文档用模板 | — |
 
 状态取值：骨架 = 结构与占位就位、内容待填；初稿 = 主要内容已成；完成 = 已校对。

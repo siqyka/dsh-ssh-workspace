@@ -1,8 +1,16 @@
 {
   "name": "@dsh-community/dsh-ssh-workspace",
-  "version": "0.1.17",
+  "version": "0.1.23",
   "description": "Remote SSH workspaces for DSH: mount a directory on an SSH host as a DSH workspace with browser UI sidebar panel",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/siqyka/dsh-ssh-workspace.git"
+  },
+  "homepage": "https://github.com/siqyka/dsh-ssh-workspace#readme",
+  "bugs": {
+    "url": "https://github.com/siqyka/dsh-ssh-workspace/issues"
+  },
   "engines": {
     "node": ">=20"
   },

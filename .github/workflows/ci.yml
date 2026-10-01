@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      # The @deepseek-ai/* runtime peers are supplied by the DSH host, never by
+      # a registry (see lib/peers.js and .npmrc), so only the ssh2 tree is
+      # installed. --ignore-scripts skips ssh2's optional native cpu-features
+      # build; ssh2 runs pure-JS without it.
+      - name: Install
+        run: npm ci --ignore-scripts
+      - name: Syntax-check every module
+        run: |
+          for f in lib/*.js; do node --check "$f"; done
+      - name: Smoke tests (pure subset; live-host suites skip without env)
+        run: node tests/run.mjs
+      - name: Validate the publish tarball
+        run: npm pack --dry-run
