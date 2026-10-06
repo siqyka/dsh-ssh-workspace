@@ -10,3 +10,4 @@ test-live.mjs
 verify-plugin.mjs
 tools/
 .test-shims/
+.trae/

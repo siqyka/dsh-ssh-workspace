@@ -31,6 +31,7 @@ const SUITES = [
   'client-shape',
   'lifecycle',
   'boot',
+  'secrets',
   'tool-schemas',
   'live',
   'acceptance',

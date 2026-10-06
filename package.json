@@ -1,6 +1,6 @@
 {
   "name": "@dsh-community/dsh-ssh-workspace",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "Remote SSH workspaces for DSH: mount a directory on an SSH host as a DSH workspace with browser UI sidebar panel",
   "type": "module",
   "repository": {

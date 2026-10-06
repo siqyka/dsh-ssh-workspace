@@ -132,8 +132,9 @@ The "Remote Workspaces" panel can **add / edit / delete** hosts directly, writin
 to `$DSH_HOME/dsh-ssh.json` (atomic writes; fields the plugin doesn't recognize are
 preserved). Hosts from `~/.ssh/config` are a **read-only fallback** — the panel never
 modifies that file; when the same name exists in both, the store wins. Passwords / key
-passphrases are stored **in plaintext** per that store format and are never sent back
-to the browser; leaving them blank while editing keeps the current value. Deleting a
+passphrases are **encrypted** in that store's `secrets` section (AES-256-GCM, key in
+`$DSH_HOME/dsh-ssh.key`, owner-only) and are never sent back to the browser; leaving them
+blank while editing keeps the current value. Deleting a
 host does not automatically unmount its mounted workspaces, but those workspaces
 become inaccessible since the host no longer exists.
 
