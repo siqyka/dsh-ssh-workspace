@@ -7,6 +7,6 @@
 # SFTP, and registers the remote-workspace agent tools.
 - insert:
     - id: ssh-workspace
-      name: '@dsh-community/dsh-ssh-workspace'
+      name: '@shiqyka/dsh-ssh-workspace'
       config:
         announceToAgent: true

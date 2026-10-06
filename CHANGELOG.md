@@ -4,6 +4,13 @@
 
 ## [0.1.24] - 2026-10-06
 
+### 变更
+
+- 包名由 `@dsh-community/dsh-ssh-workspace` 改为 `@shiqyka/dsh-ssh-workspace`，并加
+  `publishConfig.access = "public"`，以便发布到 npm；`cordis.patch.yml` 的插件行
+  名称与 `lib/client.js` 的 client 插件 id 已同步。安装用
+  `dsh plugin add @shiqyka/dsh-ssh-workspace`。
+
 ### 安全
 
 - 存储中的密码与私钥口令改为**加密保存**：AES-256-GCM，密文写入 `dsh-ssh.json`

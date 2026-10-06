@@ -74,8 +74,8 @@ peer 由宿主提供）→ `node --check` 全部 `lib/*.js` → `node tests/run.
 ## 打包与安装
 
 ```
-npm pack                                    # 生成 dsh-community-dsh-ssh-workspace-<version>.tgz
-# 编辑 profile 的 package.json：@dsh-community/dsh-ssh-workspace 的依赖改为 file:<tgz 绝对路径>，并同步版本号
+npm pack                                    # 生成 shiqyka-dsh-ssh-workspace-<version>.tgz
+# 编辑 profile 的 package.json：@shiqyka/dsh-ssh-workspace 的依赖改为 file:<tgz 绝对路径>，并同步版本号
 # 在 profile 目录执行 pnpm install             # 解包进 profile 的 node_modules
 # 重启 DSH
 ```

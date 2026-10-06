@@ -53,7 +53,7 @@ check('the patch file exists', existsSync(patchPath), patchPath)
 if (existsSync(patchPath)) {
   const patch = readFileSync(patchPath, 'utf8')
   check('the patch inserts the plugin row by package name',
-    patch.includes(`@dsh-community/${pkg.name.split('/').pop()}`) || patch.includes(pkg.name),
+    patch.includes(pkg.name),
     patch.slice(0, 120))
 }
 

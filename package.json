@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-community/dsh-ssh-workspace",
+  "name": "@shiqyka/dsh-ssh-workspace",
   "version": "0.1.24",
   "description": "Remote SSH workspaces for DSH: mount a directory on an SSH host as a DSH workspace with browser UI sidebar panel",
   "type": "module",
@@ -66,5 +66,9 @@
     "workspace",
     "remote"
   ],
-  "author": "siqyka"
+  "author": "siqyka",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

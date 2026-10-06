@@ -1,0 +1,49 @@
+# 发布流程 / releasing
+#   npm version patch -m "chore: release %s"   # 改版本号 + 提交 + 打 tag
+#   git push --follow-tags                     # 推 tag 触发本 workflow
+#
+# 需要仓库 secret：NPM_TOKEN（npmjs 的 granular token，勾 Read and write + bypass 2FA）。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      # Same install shape as ci.yml: only the ssh2 tree, no DSH peers, no
+      # native build (ssh2's optional cpu-features is skipped).
+      - name: Install
+        run: npm ci --ignore-scripts
+      - name: Syntax-check every module
+        run: |
+          for f in lib/*.js; do node --check "$f"; done
+      - name: Smoke tests
+        run: node tests/run.mjs
+      # A tag that disagrees with package.json would publish the wrong version.
+      - name: Tag must match package.json
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const tag = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+            if (p.version !== tag) {
+              console.error('tag ' + tag + ' does not match package.json ' + p.version);
+              process.exit(1);
+            }
+            console.log('publishing ' + p.name + '@' + p.version);
+          "
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
