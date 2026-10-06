@@ -8,8 +8,8 @@
 
 - 包名由 `@dsh-community/dsh-ssh-workspace` 改为 `@shiqyka/dsh-ssh-workspace`，并加
   `publishConfig.access = "public"`，以便发布到 npm；`cordis.patch.yml` 的插件行
-  名称与 `lib/client.js` 的 client 插件 id 已同步。安装用
-  `dsh plugin add @shiqyka/dsh-ssh-workspace`。
+  名称与 `lib/client.js` 的 client 插件 id 已同步。安装时在插件管理界面填 npm 包名
+  `@shiqyka/dsh-ssh-workspace`（也可填仓库地址）。
 
 ### 安全
 

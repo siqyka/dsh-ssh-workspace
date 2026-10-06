@@ -99,8 +99,13 @@ DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服�
 ## 快速开始
 
 1. **安装**：打开官方桌面客户端，进入「设置」中的「插件」页面（或左侧导航栏的插件入口）；
-2. **输入地址**：在插件管理界面的安装输入框中输入本仓库地址
-   `https://github.com/siqyka/dsh-ssh-workspace`，点击安装；
+2. **输入来源**：在插件管理界面的安装输入框中二选一，点击安装：
+   - **npm 包**（走 npm 分发，支持锁定版本）：
+     `@shiqyka/dsh-ssh-workspace`，或指定版本
+     `@shiqyka/dsh-ssh-workspace@0.1.24`
+     （[npm 页面](https://www.npmjs.com/package/@shiqyka/dsh-ssh-workspace)）；
+   - **仓库地址**（从 Git 取最新代码）：
+     `https://github.com/siqyka/dsh-ssh-workspace`
 3. **重启**：安装完成后重启客户端，即可开始使用。
 
 之后的使用流程：

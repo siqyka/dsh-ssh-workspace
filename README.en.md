@@ -105,8 +105,14 @@ same error semantics.
 
 1. **Install**: open the official desktop client and go to the **Plugins** page under
    **Settings** (or the plugins entry in the left navigation bar);
-2. **Enter the address**: in the plugin manager's install field, enter this repository's
-   address `https://github.com/siqyka/dsh-ssh-workspace` and click Install;
+2. **Enter the source**: in the plugin manager's install field, use either of these and
+   click Install:
+   - **npm package** (distributed via npm, version pinning supported):
+     `@shiqyka/dsh-ssh-workspace`, or pin a version
+     `@shiqyka/dsh-ssh-workspace@0.1.24`
+     ([npm page](https://www.npmjs.com/package/@shiqyka/dsh-ssh-workspace));
+   - **repository address** (latest code from Git):
+     `https://github.com/siqyka/dsh-ssh-workspace`
 3. **Restart**: restart the client once installation finishes, and you're ready to go.
 
 From there:
