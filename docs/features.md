@@ -15,10 +15,10 @@
 | 项 | 数值 |
 | --- | --- |
 | Agent 工具 | 10 个 `ssh_workspace_*` |
-| 浏览器 HTTP 路由 | 22 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
+| 浏览器 HTTP 路由 | 23 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
 | 接管的服务 seam | 4 个：`ctx.fs`、`ctx.shell`、`ctx.subprocess`、`ctx.subprocess.spawnTerminal` |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
-| 冒烟测试套件 | 28 个（活跃 22 个合计 911 项断言，6 个需真实主机 / 完整 DSH 树则 SKIP；真实装配树下合计 1133 项） |
+| 冒烟测试套件 | 31 个（裸检出活跃 25 个合计 1052 项断言，6 个需真实主机 / 完整 DSH 树则 SKIP） |
 
 设计前提：**不注册第二个 fs 服务**。远端方法装在部署已挂载的那一个 `ctx.fs` 实例上，
 `ssh://` 路径走 SFTP，其余路径原样转发给原后端——因此本地工作区的一切行为不受影响。
@@ -242,6 +242,22 @@
 
 详见 [forward-persistence.md](./forward-persistence.md)。
 
+## 五之二、断线与重连
+
+| 功能 | 说明 |
+| --- | --- |
+| 后台重连 | 连接意外断开后自动重试，不需要用户先做一次操作；1 秒起指数退避、60 秒封顶、默认不限次数 |
+| 只在有人用时重试 | 判定依据是「已挂载工作区 / `holds > 0` / 有 `enabled` 的保存转发」，全都没有就停——关掉的工作区不会在后台被拨回来 |
+| 「断开」是终态 | 手动断开与改配置都会取消后台循环：按钮说了断，就真的不再拨号 |
+| 不可恢复的错误立即停 | 未知别名、读不到私钥、主机密钥不匹配标记为 fatal，不每分钟重复同一个失败 |
+| 恢复保存的转发 | 只由后台重连触发（前台首次连接不触发），重开该主机 `enabled` 的映射；关掉的映射不会被重新打开 |
+| 状态可读 | 面板主机卡片显示「重连中（第 N 次，M 秒后）」/「重连已停止」+ 原因；`ssh_workspace_status` 的 `reconnecting` 给出同样的字段 |
+| 立即重试 | `POST /hosts/reconnect` 跳过等待；失败时返回真实错误，而不是乐观的「正在重试」 |
+| 事件有节制 | 前 3 次、之后每 5 次以及结束那次写 `reconnect` 事件，长时间断网不会冲掉 40 条环形缓冲里的其它信息 |
+| 可关闭 | `engine.reconnect: false` 退回旧的「只在操作时重连一次」 |
+
+实现见 [architecture.md](./architecture.md#后台重连libreconnectjs)。
+
 ## 六、界面集成
 
 | 功能 | 说明 |
@@ -294,8 +310,13 @@
 | `engine.connectTimeoutMs` | `15000` | 单次 SSH 握手超时（毫秒） |
 | `engine.keepaliveIntervalMs` | `15000` | keepalive 心跳间隔（毫秒） |
 | `engine.sweepIntervalMs` | `60000` | 空闲连接扫描周期（毫秒） |
+| `engine.reconnect` | 见下 | 断线后的后台重连策略；`false` 关闭 |
+| `engine.reconnect.baseDelayMs` | `1000` | 首次重试等待（毫秒），之后按 2 的幂增长 |
+| `engine.reconnect.maxDelayMs` | `60000` | 单次等待上限（毫秒） |
+| `engine.reconnect.maxAttempts` | `0` | 最多尝试次数；`0` 表示不限次数 |
+| `engine.reconnect.jitter` | `0.2` | 向下抖动比例（不会超过上限） |
 
-`engine` 下四项均为可选，非法值回落默认，通常无需配置。
+`engine` 下各项均为可选，非法值回落默认，通常无需配置。
 
 面板里另有 `forwards.autoStart`（启动时自动开启已存隧道），写在存储里而非插件配置。
 

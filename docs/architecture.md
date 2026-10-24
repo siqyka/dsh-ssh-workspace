@@ -418,6 +418,25 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 | 主机变更 | `forget(alias)` 丢弃旧连接，下次操作按新配置重连 | — |
 | 主动断开 | `hosts/disconnect` 先 `savedForwards.closeAlias(alias)`（逐条走 `closeById`，与端口行「断开」同一条路径）再 `forget(alias)`，响应 `closedForwards` 报告拆了几条隧道 | — |
 | 测试连接 | `test` 连一次即 `forget(alias)` 释放（被转发的 `holds` 钉住时不释放） | — |
+| 后台重连 | 1s 起指数退避、60s 封顶、默认不限次数 | `engine.reconnect.baseDelayMs` / `maxDelayMs` / `maxAttempts` / `jitter`（`false` 关闭） |
+
+### 后台重连（`lib/reconnect.js`）
+
+每个别名一台小状态机，由**连接意外关闭**驱动，不依赖「下一次操作」：
+
+- **触发**：`client` 的 `close` 事件发现该记录**仍在池中**就武装（所有主动路径——`forget`、
+  `sweep`、被替换的记录——都先摘池再 `end()`，所以「还在池里」等价于「不是我们关的」）。
+  前台操作连接失败时也会把别名交给它，这是合盖唤醒后最常见的路径。
+- **停止规则比延迟阶梯更重要**：每次尝试前重新问 `#isWanted(alias)`——已挂载根、
+  `holds > 0`、或注册的额外谓词（`addWantedCheck`，目前是「该主机有 `enabled` 的保存转发」）。
+  三者皆无就停，所以卸载最后一个工作区不会被后台拨号。不可恢复的错误（未知别名、
+  读不到私钥、主机密钥不匹配）标记 `fatal` 后立刻停止，不每分钟重复同一个失败。
+- **恢复消费者**：`onReconnected` 只由后台循环调用（前台 `acquire` 不调用，否则每次首次连接
+  都像一次恢复而重开用户关掉的隧道），当前用途是重开该主机 `enabled` 的保存转发；文件系统
+  seam 与持久 shell 在下次使用时自行重连。
+- **可观测**：每轮写 `reconnect` 事件（前 3 次、之后每 5 次、以及结束那次，避免一下午的断网
+  冲掉 40 条环形缓冲），状态经 `ssh_workspace_status` 的 `reconnecting` 字段与面板卡片暴露；
+  `POST /hosts/reconnect` 跳过等待立即尝试。
 
 **连接与转发的方向性是单向的**，且两个方向都有测试守着：
 
@@ -453,7 +472,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   `priority: -100` 遮蔽原生 `directoryFlow` 双入口）与远端目录对话框；
 - 工作区标记是 **DOM 装饰**：不删改 React 节点，隐藏原生文件夹图标、
   插入自有 `svg[data-sshwsp-mark]`，MutationObserver 自愈重扫；
-- 与宿主通信走 22 条路由（前缀 `/api/dsh-ssh-workspace/`）：
+- 与宿主通信走 23 条路由（前缀 `/api/dsh-ssh-workspace/`）：
   `hosts`、`hosts/save`、`hosts/delete`、`hosts/forget-key`、
   `hosts/disconnect`、`test`、`ls`、`status`、`mount`、`unmount`、`enable`、
   `forward`、`unforward`、`forward/save`、`forward/toggle`、`forward/delete`、

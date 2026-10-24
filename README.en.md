@@ -169,6 +169,11 @@ become inaccessible since the host no longer exists.
 | `engine.connectTimeoutMs` | `15000` | Per-connect SSH handshake budget (ms) |
 | `engine.keepaliveIntervalMs` | `15000` | Keepalive heartbeat interval (ms) |
 | `engine.sweepIntervalMs` | `60000` | How often idle connections are swept (ms) |
+| `engine.reconnect` | see below | Background reconnect after a drop; `false` restores the old "retry once inside the operation" behaviour |
+| `engine.reconnect.baseDelayMs` | `1000` | Wait before the first retry (ms); doubles per attempt |
+| `engine.reconnect.maxDelayMs` | `60000` | Ceiling for a single wait (ms) |
+| `engine.reconnect.maxAttempts` | `0` | Attempt limit; `0` means unlimited |
+| `engine.reconnect.jitter` | `0.2` | Downward-only jitter ratio, so several hosts do not reconnect in lockstep; never exceeds the ceiling |
 
 > All four `engine` entries are optional (invalid values fall back to the defaults) and rarely need tuning.
 

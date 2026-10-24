@@ -156,8 +156,13 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | `engine.connectTimeoutMs` | `15000` | 单次 SSH 连接握手超时（毫秒） |
 | `engine.keepaliveIntervalMs` | `15000` | keepalive 心跳间隔（毫秒） |
 | `engine.sweepIntervalMs` | `60000` | 空闲连接的扫描周期（毫秒） |
+| `engine.reconnect` | 见下 | 断线后的后台重连策略；传 `false` 退回「只在操作时重连一次」 |
+| `engine.reconnect.baseDelayMs` | `1000` | 首次重试的等待（毫秒），之后按 2 的幂增长 |
+| `engine.reconnect.maxDelayMs` | `60000` | 单次等待的上限（毫秒） |
+| `engine.reconnect.maxAttempts` | `0` | 最多尝试次数；`0` 表示不限次数 |
+| `engine.reconnect.jitter` | `0.2` | 向下抖动的比例，用来避免多主机同时重连；不会超过上限 |
 
-> `engine` 下四项均为可选（非法值回落默认），通常无需配置。
+> `engine` 下各项均为可选（非法值回落默认），通常无需配置。
 
 ## Agent 工具
 

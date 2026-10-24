@@ -44,6 +44,7 @@ const SUITES = [
   'peers',
   'peer-mode',
   'diagnostics',
+  'reconnect',
   'client-shape',  'backdrop-dismiss',
   'projection-relax',
   'projection-real',

@@ -23,7 +23,7 @@
 | `lib/forward-persist.js` | 已存映射：**意图**（`enabled`）与**事实**（`live`）分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径（后者逐条走前者） |
 | `lib/transfer.js` | 文件传输：本机 ↔ 远端的流式 SFTP 拷贝与目录树上传（原子发布） |
 | `lib/store.js` | `$DSH_HOME/dsh-ssh.json` 存储：校验、合并（保留未知字段）、原子写 |
-| `lib/routes.js` | 浏览器半边的 22 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / test / ls / status / mount / unmount / enable / forward / unforward / forward-save / toggle / delete / remember / probe / settings / transfer / download / upload） |
+| `lib/routes.js` | 浏览器半边的 23 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / reconnect / test / ls / status / mount / unmount / enable / forward / unforward / forward-save / toggle / delete / remember / probe / settings / transfer / download / upload） |
 | `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
 | `lib/tools.js` | 10 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → 各 profile → 部署自带树 |
@@ -114,9 +114,9 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 ## 冒烟测试与 CI
 
 `tests/` 下是一组按依赖分层的冒烟套件；`npm test`（即 `node tests/run.mjs`）依次以子进程运行
-全部套件（也可 `node tests/run.mjs live acceptance` 只跑指定套件）。共 30 个套件，
+全部套件（也可 `node tests/run.mjs live acceptance` 只跑指定套件）。共 31 个套件，
 断言数如下（下表按裸检出实测，`DSH_CORE_ROOT` / `DSH_WS_TEST_ALIAS` 未设置时
-6 个套件整体 SKIP，其余 24 个套件合计 989 项断言；`DSH_CORE_ROOT` 指向真实装配树时
+6 个套件整体 SKIP，其余 25 个套件合计 1052 项断言；`DSH_CORE_ROOT` 指向真实装配树时
 `projection-real` / `lifecycle` / `tool-schemas` / `boot` 四个跑起来，合计 **1212** 项，此时只剩
 **3 条 SKIP 行**：`live` 与 `acceptance` 整体跳过，加上 `boot-smoke` 内部那段需要真实主机的
 远端检查——`boot-smoke` 本身仍在运行并贡献 29 项断言，所以「跳过套件数」是 2 个、
@@ -129,6 +129,7 @@ SKIP 行是 3 条，两者不要混用）。下表的项数是数每个套件打
 | `peers-smoke` | 无 | 15 | 依赖声明本身：宿主包必须是 `peerDependencies`（不能是普通依赖），且每个都标 `peerDependenciesMeta.<name>.optional`——否则 npm 7+ 会把它们装成一份私有宿主副本，正是「服务实例分裂」的来源；meta 表不得出现非 peer 项；`ssh2` 必须留在 `dependencies`；真实解析路径可用且按名记忆化，缺失时错误信息点名 specifier 并列出搜过的根。**失败文案按角色分流**：缺宿主 peer 与缺本包自己的依赖是两种不同的修复，前者归宿主、后者归装本包的包管理器，因此 `requirePeer` 收 `kind` 参数，且 `engine.js` 加载 `ssh2` 时必须传 `'dependency'`——否则用户会被引去查 `peerDependencies`，那里没有错也没有修法。peer 声明也是宿主读取的数据：`app-boot` 的 `unmetRequirements` 在缺 `engines.dsh` 时用它做版本门禁，`routeLinked` 用 `readPeerNames` 决定 linked 安装路由到宿主哪一份依赖 |
 | `peer-mode-smoke` | 无 | 24 | 检测器本身。它是所有 peer 套件的信任根，答错时没有别的套件会发现，所以用四态合成树单独驱动：生成根必须整棵报 `stub` 且每个包都带 `__dshStub`（漏标的 stub 会被当成 REAL，比没有 stub 更糟）；真包与替身并存必须报 `mixed` 而非 `real`（旧检测器只看 `dsh-fs`，随后套件在没看过的那个 stub 上崩）；**解析到但加载抛错必须是 `broken` 并保留解析路径与错误**（旧代码把它报成「没装」，把人引向一次改变不了任何东西的安装）；`absent` 真的缺席；只查套件声明的包（缺无关 peer 不得连带跳过）；端到端两种结局——装坏的树让套件 **FAIL(1)** 且打印真实原因、stub 树 SKIP(0)，两者都不得执行到断言；未设置 `DSH_CORE_ROOT` 报 `absent` |
 | `diagnostics-smoke` | 无 | 36 | 面向用户的诊断环形缓冲：条目字段与毫秒时间戳、无别名时不写空字段、**容量上限丢最旧留最新**（含"恰好等于容量"的边界）、`list()` 交出副本因而调用方改不动历史、`list(n)` 取最新 n 条、`clear()`、记录永不抛（循环引用 / Symbol / 非法 kind / 坏容量都不得让被观测的操作失败）、kind 词表封闭且覆盖连接 / 断连 / 重连 / 降级 / 转发。还钉住上游补丁结论必须一路送到状态面（引擎字段 + 事件 + 两个 status 出口 + `index.js` 的接线），因为"算出来了但没人接手"正是这轮修掉的缺陷形态。最后三条钉住"为什么要这个模块"：引擎必须往这里记连接事件，且不得改用 `logger.debug`——本宿主没有 console exporter、`debug` 级别低于所有 exporter 默认级别，写进去等于没写 |
+| `reconnect-smoke` | 无 | 63 | 断线后的后台重连策略（`lib/reconnect.js`，纯逻辑、注入时钟）：退避从 1s 倍增到 60s 封顶、抖动只向下因此上限是真上限、只对「还有人要」的主机启动（没人要时不武装、不拨号）、消费者全没了就停并在状态里报 `gave-up`、成功即清条目并触发恢复钩子、`maxAttempts` 有界阶梯、`fatal` 错误第一次就停、手动重试跳过等待且失败后重新武装、`cancel` 之后永不拨号（「断开」必须是终态）、暴露的条目不带定时器句柄且改它不影响调度器、`isWanted` 抛错不得被当成「要」、`dispose` 停掉一切。最后钉住引擎与路由的接线：close 事件武装、摘池后的主动关闭不得武装、`forget` 取消、前台失败也交给后台、`background: true` 不递归、已保存转发让主机保持「要」 |
 | `client-shape-smoke` | 无 | 57 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案 |
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、三个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 66 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
@@ -147,11 +148,11 @@ SKIP 行是 3 条，两者不要混用）。下表的项数是数每个套件打
 | `forward-smoke` | 无 | 34 | 隧道本身：建立 / 拆除、`closeForAlias` 按主机拆除且**只拆该主机**、`holds` 引用计数、关闭转发不得断开主机 |
 | `forward-persist-smoke` | 无 | 102 | 已存映射：意图 / 事实分离、端口预检三态、占用端口不落盘、自动开启幂等、连接断开留痕、**主动断开主机与端口行「断开」逐字段一致**（`live` / `enabled` / `error` 三元组） |
 | `capabilities-smoke` | 无 | 19 | 主机能力探测（rg / git / inotifywait）与提示渲染 |
-| `routes-smoke` | 无 | 126 | 22 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
+| `routes-smoke` | 无 | 128 | 23 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |
-| `lifecycle-smoke` | `DSH_CORE_ROOT` | SKIP | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 22 路由 / 10 工具） |
+| `lifecycle-smoke` | `DSH_CORE_ROOT` | SKIP | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 23 路由 / 10 工具） |
 | `boot-smoke` | `DSH_CORE_ROOT`（远端段另需 `DSH_WS_TEST_ALIAS`） | SKIP | 生产顺序引导、`ctx.fs` 接管与还原、工具端到端、挂载 → 停用 → 读被拒 → 启用往返 |
-| `tool-schemas-smoke` | `DSH_CORE_ROOT` | SKIP | 工具 schema 过真实 `assertSupportedJsonSchema` + render 冒烟（160 项） |
+| `tool-schemas-smoke` | `DSH_CORE_ROOT` | SKIP | 工具 schema 过真实 `assertSupportedJsonSchema` + render 冒烟（161 项） |
 | `projection-real-smoke` | `DSH_CORE_ROOT` | SKIP | `UPSTREAM-1` 补丁对**真实** `SessionProjectionRegistry` + `WorkingDirectoryService` + 真实 zod，按生产顺序装配：复现 `Invalid input` → 打补丁后 `restore` / `viewCheckpoint` 双双通过 → 报告 `probe: 'broken'` → 卸载后已打开的 ssh:// 会话仍可读。第一节断言的是**缺陷仍然存在**，红 = 删补丁（失败信息自带删除清单） |
 | `live-smoke` | `DSH_WS_TEST_ALIAS`（peers 可解析） | SKIP | 远端 SFTP 全量契约、写围栏、错误语义、原子写、symlink |
 | `acceptance-smoke` | `DSH_CORE_ROOT` + `DSH_WS_TEST_ALIAS` | SKIP | 经补丁后 `ctx.fs` 的端到端验收（挂载 → 读写 → 围栏 → 卸载） |
@@ -167,7 +168,7 @@ SKIP 行是 3 条，两者不要混用）。下表的项数是数每个套件打
 跳过（跳过的套件无法失败，正是这样一次跳过让一个调用了未导入函数的 upload 处理器
 绿着发了出去）。只有需要**真实框架**的四个套件（`lifecycle` / `boot` / `tool-schemas` /
 `projection-real`）与需要真实主机的两个（`live` / `acceptance`）仍 SKIP 并给出原因。
-这正是 CI 的形态，30/30 报告成功。
+这正是 CI 的形态，31/31 报告成功。
 
 这些套件靠 `tests/support/peer-mode.mjs` 判断手上这棵树能不能证明它们要证明的事。
 它对每个包给出四态，其中两态的差别很关键：
