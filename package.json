@@ -18,8 +18,9 @@
   "scripts": {
     "test": "node tests/run.mjs",
     "lint": "node scripts/lint.mjs",
-    "check:docs": "node scripts/check-doc-links.mjs",
-    "check": "npm run lint && npm run check:docs && npm test && npm pack --dry-run"
+    "check:docs": "node scripts/check-doc-links.mjs && node scripts/doc-numbers.mjs --check",
+    "check": "npm run lint && npm run check:docs && npm test && npm pack --dry-run",
+    "doc-numbers": "node scripts/doc-numbers.mjs"
   },
   "exports": {
     ".": {

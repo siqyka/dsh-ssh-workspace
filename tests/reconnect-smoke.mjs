@@ -214,6 +214,49 @@ console.log('\n[attempt counting and recovery]')
   scheduler.dispose()
 }
 
+// ------------------------------------------------- the foreground/background race
+console.log('\n[restore fires even when the attempt reused a healthy connection]')
+
+{
+  // The race O-05 described: the user does something (a file-tree refresh, a
+  // `cd`) while a retry timer is armed, that foreground call reconnects first,
+  // and the timer then fires to find a healthy record. `attempt` returns the
+  // existing record WITHOUT dialing, so a restore hook wired into the connect
+  // would never run — the connection is back but the saved tunnels stay dead.
+  let dialed = 0
+  const { scheduler, clock } = makeScheduler({
+    attempt: async () => {
+      dialed += 1
+      // The second call finds the connection the foreground operation already
+      // established: it does not dial, it returns what exists.
+      return dialed === 1 ? { alias: 'box' } : { alias: 'box', reused: true }
+    },
+  })
+  let restored = 0
+  scheduler.onRestored = () => { restored += 1 }
+  scheduler.noteLost('box', 'transport lost')
+  await clock.advance(1000)
+  check('the restore ran after the attempt returned a reused record', restored === 1, String(restored))
+  check('the entry is cleared either way', scheduler.stateOf('box') === undefined, JSON.stringify(scheduler.stateOf('box')))
+  scheduler.dispose()
+}
+
+{
+  // A reused record must not be treated as a failed attempt: the connection
+  // exists, which is exactly what the loop was waiting for. `calls` is the
+  // scheduler's own record of attempts, so this also proves the loop stopped
+  // after the single success instead of re-arming.
+  const { scheduler, clock, calls } = makeScheduler()
+  let restored = 0
+  scheduler.onRestored = () => { restored += 1 }
+  scheduler.noteLost('box', 'transport lost')
+  await clock.advance(1000)
+  check('a successful attempt still counts as recovery', restored === 1, String(restored))
+  check('the attempt was made exactly once', calls.length === 1, JSON.stringify(calls))
+  check('the loop is not re-armed after success', clock.pending() === 0, String(clock.pending()))
+  scheduler.dispose()
+}
+
 // ------------------------------------------------------------------- limits
 console.log('\n[bounded ladders and fatal errors]')
 
@@ -356,7 +399,19 @@ console.log('\n[engine wiring]')
   check('the loop consults the mounted roots', /this\.fs\?\.listRoots\?\.\(\)/u.test(engineSource) && /parseRemotePath\(root\)\?\.alias === alias/u.test(engineSource))
   check('reconnect policy is configurable, and can be switched off', /options\.reconnect === false/u.test(engineSource))
   check('a saved tunnel keeps the host wanted after its listener dies', /addWantedCheck\(alias => savedForwards\.hasEnabled\(alias\)\)/u.test(readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')))
-  check('the reconnect hook only fires from the background loop', /async #backgroundConnect[\s\S]{0,600}this\.onReconnected\?\./u.test(engineSource))
+  // The hook moved from "this attempt dialed" to "the scheduler succeeded".
+  // A foreground operation can heal the host while a retry timer is armed; the
+  // attempt then returns the existing record without dialing, and a hook wired
+  // into the connect would never run — the host would come back with its saved
+  // tunnels still dead. The restore therefore hangs off `onRestored`, which the
+  // scheduler calls on success whether or not the attempt was the one that
+  // established the connection.
+  check('the restore hook runs from the scheduler success path, not from connect',
+    /onRestored: alias => \{ this\.onReconnected\?\.\(alias\) \}/u.test(engineSource))
+  check('a successful background connect no longer fires the hook itself',
+    !/async #backgroundConnect[\s\S]{0,600}this\.onReconnected\?\./u.test(engineSource))
+  check('a manual retry also restores (it is a recovery too)',
+    /await this\.attempt\(target\)[\s\S]{0,200}onRestored\?\./u.test(readFileSync(path.join(pluginRoot, 'lib', 'reconnect.js'), 'utf8')))
 }
 
 {

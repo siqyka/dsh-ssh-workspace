@@ -20,6 +20,7 @@
  */
 
 import path from 'node:path'
+import { removeScratch, resolveScratchDir } from './scratch.mjs'
 
 const alias = process.env.DSH_WS_TEST_ALIAS
 if (!alias) {
@@ -32,7 +33,17 @@ if (process.env.DSH_CORE_ROOT !== undefined && process.env.DSH_CORE_ROOT !== '')
   process.env.DSH_PEER_ROOT = [process.env.DSH_CORE_ROOT, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 }
 
-const sandbox = process.env.DSH_WS_TEST_DIR ?? '/tmp/dsh-ssh-workspace-test'
+// Validated before anything is created: a value that cannot be proven to name
+// a scratch directory is refused, so the cleanup below can never widen into an
+// `rm -rf` of something the suite did not make.
+const scratch = resolveScratchDir(process.env, '/tmp/dsh-ssh-workspace-test')
+if (!scratch.ok) {
+  console.log('\n=== live smoke ===\n')
+  console.log(`  SKIP  refusing to run: ${scratch.reason}`)
+  console.log('\n=== 0 passed, 0 failed, 1 suite skipped ===\n')
+  process.exit(0)
+}
+const sandbox = scratch.path
 
 const failures = []
 const passes = []
@@ -102,7 +113,7 @@ const target = (p) => ({ targetKey: formatRemotePath(alias, p), displayPath: for
 try {
   // Prepare a scratch directory through the engine's own exec (proves exec too).
   console.log('\n[exec]')
-  const prepared = await engine.exec(alias, `rm -rf ${sandbox} && mkdir -p ${sandbox}/sub && echo READY`)
+  const prepared = await engine.exec(alias, `rm -rf -- ${shellQuote(sandbox)} && mkdir -p ${shellQuote(`${sandbox}/sub`)} && echo READY`)
   check('remote exec runs a command', prepared.success && prepared.stdout.includes('READY'), JSON.stringify(prepared))
   check('remote exec reports an exit code', prepared.exitCode === 0, String(prepared.exitCode))
 
@@ -331,10 +342,8 @@ try {
   failures.push(`unexpected exception: ${error?.stack ?? error}`)
   console.error('\nUNEXPECTED EXCEPTION\n', error)
 } finally {
-  try {
-    await engine.exec(alias, `rm -rf ${sandbox}`)
-    console.log('\ncleaned up the remote scratch directory')
-  } catch { /* best effort */ }
+  const removed = await removeScratch(engine, alias, sandbox)
+  console.log(removed.ok ? '\ncleaned up the remote scratch directory' : '\nrefused to clean up: ' + removed.reason)
   engine.dispose()
 }
 

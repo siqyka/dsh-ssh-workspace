@@ -13,6 +13,14 @@
  * assembled tree; a stub cannot verify what they exist to verify, and a false
  * pass would be worse than an honest skip.
  *
+ * ## Three outcomes, not two
+ *
+ * A skipping suite exits 0, which is indistinguishable from a passing one at the
+ * process level. That is how a summary could read "all green" while several
+ * suites had never executed. The runner therefore classifies each suite as
+ * pass / skip / fail and prints the skipped ones by name, so a reader can see
+ * exactly which evidence is missing.
+ *
  * Usage:
  *   node tests/run.mjs                 # everything (live suites skip if not configured)
  *   node tests/run.mjs live acceptance # only the named suites
@@ -45,7 +53,14 @@ const SUITES = [
   'peer-mode',
   'diagnostics',
   'reconnect',
-  'client-shape',  'backdrop-dismiss',
+  'replay',
+  'host-key',
+  'host-listing',
+  'scratch-safety',
+  'doc-numbers',
+  'upstream-contract',
+  'client-shape',
+  'backdrop-dismiss',
   'projection-relax',
   'projection-real',
   'tree-transfer',
@@ -55,6 +70,7 @@ const SUITES = [
   'probe',
   'lifecycle',
   'phase6',
+  'watch-lifecycle',
   'store-lock',
   'transfer',
   'mode-gate',
@@ -94,23 +110,60 @@ if (!childEnv.DSH_CORE_ROOT && childEnv.DSH_NO_PEER_STUBS !== '1') {
   }
 }
 
-let failed = 0
+/**
+ * Per-suite outcomes, in three states.
+ *
+ * A suite that skips exits 0, exactly like one that passes, so "everything
+ * green" used to be able to mean "several suites never ran". The exit code is
+ * the only channel a child process has, so the runner detects a skip the way the
+ * suites themselves announce it: by looking for the skip line they print. That
+ * keeps every suite unchanged — it still prints the line for a human — while
+ * letting the summary tell PASS from SKIP.
+ *
+ * @type {Array<{name: string, state: 'pass'|'skip'|'fail', detail?: string}>}
+ */
+const outcomes = []
 for (const name of names) {
   const file = path.join(here, `${name}-smoke.mjs`)
   console.log(`\n──────────────────────────  ${name}-smoke  ──────────────────────────`)
   if (!existsSync(file)) {
     console.log(`  FAIL  suite file is missing: ${file}`)
-    failed += 1
+    outcomes.push({ name, state: 'fail', detail: 'suite file is missing' })
     continue
   }
-  const result = spawnSync(process.execPath, [file], { stdio: 'inherit', env: childEnv })
+  // Output is captured AND forwarded: the user still watches the suite run live,
+  // and the runner keeps the text it needs to classify the outcome.
+  const result = spawnSync(process.execPath, [file], { encoding: 'utf8', env: childEnv })
+  if (result.stdout !== null && result.stdout !== undefined && result.stdout !== '') process.stdout.write(result.stdout)
+  if (result.stderr !== null && result.stderr !== undefined && result.stderr !== '') process.stderr.write(result.stderr)
   if (result.error !== undefined && result.error !== null) {
     console.log(`  FAIL  could not spawn the suite: ${result.error.message}`)
-    failed += 1
-  } else if (result.status !== 0) {
-    failed += 1
+    outcomes.push({ name, state: 'fail', detail: result.error.message })
+    continue
   }
+  if (result.status !== 0) {
+    outcomes.push({ name, state: 'fail', detail: `exit ${result.status}` })
+    continue
+  }
+  // A skip LINE, not the word "skip" anywhere: a suite's prose may mention it.
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+  const skipped = /^\s*SKIP\s/mu.test(output)
+  outcomes.push({ name, state: skipped ? 'skip' : 'pass' })
 }
 
-console.log(`\n=== run.mjs: ${names.length - failed}/${names.length} suite(s) reported success ===`)
-process.exit(failed === 0 ? 0 : 1)
+const failed = outcomes.filter(outcome => outcome.state === 'fail')
+const skipped = outcomes.filter(outcome => outcome.state === 'skip')
+const passed = outcomes.filter(outcome => outcome.state === 'pass')
+
+console.log(`\n=== run.mjs: ${passed.length} passed, ${skipped.length} skipped, ${failed.length} failed (${names.length} suite(s)) ===`)
+// Skips are listed by name and never folded into the pass count: a reader must
+// be able to see which evidence is missing, not just that nothing failed.
+if (skipped.length > 0) {
+  console.log('skipped (did NOT run — set the environment each suite names to include them):')
+  for (const outcome of skipped) console.log(`  SKIP  ${outcome.name}-smoke`)
+}
+if (failed.length > 0) {
+  console.log('failed:')
+  for (const outcome of failed) console.log(`  FAIL  ${outcome.name}-smoke${outcome.detail === undefined ? '' : ` — ${outcome.detail}`}`)
+}
+process.exit(failed.length === 0 ? 0 : 1)

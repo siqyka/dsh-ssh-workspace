@@ -314,7 +314,7 @@ check('the upload route is registered', upload !== undefined)
   await upload.handler(fakeReq({
     method: 'POST',
     url: `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv')}`,
-    headers: { host: 'localhost:4074' },
+    headers: { host: 'localhost:4074', 'content-type': 'application/octet-stream' },
   }), res)
   check('an upload without a name is refused', state.status === 400, String(state.status))
 }
@@ -326,11 +326,68 @@ check('the upload route is registered', upload !== undefined)
     await upload.handler(fakeReq({
       method: 'POST',
       url: `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv')}&name=${encodeURIComponent(hostile)}`,
-      headers: { host: 'localhost:4074' },
+      headers: { host: 'localhost:4074', 'content-type': 'application/octet-stream' },
     }), res)
     check(`the name ${JSON.stringify(hostile)} is refused as a path escape`, state.status === 400,
       `status=${state.status} body=${state.body}`)
   }
+}
+
+// --- upload: the CSRF premise is the media type ---------------------------
+//
+// Every other POST endpoint demands `application/json`, which a cross-site form
+// cannot send. `/upload` carries raw bytes instead, so it demands
+// `application/octet-stream` — equally impossible for a form, and therefore the
+// same protection. Without this check the endpoint was the one write path a
+// `text/plain` form post could reach.
+{
+  // A request that would otherwise be VALID: loopback, right Host, right method,
+  // a legal single-segment name. Only the media type is wrong, so a refusal
+  // here cannot be explained by anything else.
+  const url = `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv/app')}&name=notes.txt`
+  for (const [label, contentType] of [
+    ['missing content-type', null],
+    ['text/plain (a form is allowed to send this)', 'text/plain'],
+    ['application/x-www-form-urlencoded', 'application/x-www-form-urlencoded'],
+    ['multipart/form-data', 'multipart/form-data; boundary=x'],
+    ['application/json (the JSON guard is not the raw guard)', 'application/json'],
+  ]) {
+    const files = new Map()
+    const localEngine = fakeEngine(files)
+    const localRoutes = makeRoutes({
+      engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
+    })
+    const localUpload = localRoutes.find(route => route.path === ROUTES.upload)
+    const { res, state } = fakeRes()
+    await localUpload.handler(fakeUploadReq({
+      url,
+      chunks: [Buffer.from('attacker bytes')],
+      contentType,
+    }), res)
+    check(`an upload with ${label} is refused with 415`, state.status === 415, `status=${state.status} body=${state.body}`)
+    check(`an upload with ${label} writes NO bytes`, files.size === 0, `files=${[...files.keys()].join(',')}`)
+    // No staging file was opened and no directory was created: the refusal
+    // happened before the first remote call, not in the middle of the write.
+    check(`an upload with ${label} never reached SFTP`,
+      localEngine.state.opened === 0 && localEngine.state.mkdirs.length === 0,
+      `opened=${localEngine.state.opened} mkdirs=${localEngine.state.mkdirs.length}`)
+  }
+
+  // The control: the same request WITH the right type succeeds, so the refusals
+  // above are caused by the media type and not by a broken fixture.
+  const files = new Map()
+  const localEngine = fakeEngine(files)
+  const localRoutes = makeRoutes({
+    engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
+  })
+  const localUpload = localRoutes.find(route => route.path === ROUTES.upload)
+  const { res, state } = fakeRes()
+  await localUpload.handler(fakeUploadReq({
+    url,
+    chunks: [Buffer.from('legitimate bytes')],
+  }), res)
+  check('the same request with application/octet-stream succeeds', state.status === 200, `status=${state.status} body=${state.body}`)
+  check('the accepted upload actually wrote its bytes', files.size === 1, `files=${[...files.keys()].join(',')}`)
 }
 
 /**
@@ -340,12 +397,15 @@ check('the upload route is registered', upload !== undefined)
  * exposed as an async iterator over fixed-size chunks — the same shape a real
  * IncomingMessage offers.
  */
-function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST' }) {
+function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST', contentType = 'application/octet-stream' }) {
   let index = 0
   return {
     method,
     url,
-    headers: { host },
+    // `null` means "send no Content-Type at all": a default parameter would
+    // silently turn an explicit `undefined` into the accepted type, which is
+    // exactly the case this fixture exists to send.
+    headers: contentType === null ? { host } : { host, 'content-type': contentType },
     socket: { remoteAddress: '127.0.0.1', localPort: 4074 },
     on () {},
     [Symbol.asyncIterator] () {

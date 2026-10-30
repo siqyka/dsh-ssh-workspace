@@ -230,5 +230,59 @@ try {
   rmSync(home, { recursive: true, force: true })
 }
 
+// --- concurrent metadata reads share one round trip -----------------------
+//
+// The panel and the file tree refresh the same paths at the same moment. With
+// a value-only cache both missed and both issued their own SFTP round trip;
+// caching the in-flight PROMISE makes the second caller join the first.
+{
+  const state = { loads: 0 }
+  const engine = {
+    async withSftp (_alias, operation) {
+      state.loads += 1
+      // A real round trip is asynchronous, which is what makes the duplicate
+      // possible: both callers reach `load()` before either result is stored.
+      await new Promise(resolve => setTimeout(resolve, 5))
+      return await operation({
+        stat: (_p, cb) => cb(undefined, { size: 3, mtime: 1, mode: 0o100644, isDirectory: () => false, isFile: () => true }),
+        readdir: (_p, cb) => cb(undefined, []),
+      })
+    },
+  }
+  const fs = new RemoteFileSystem({ base: {}, engine, roots: new Set(['ssh://h/root']) })
+  const target = { targetKey: 'ssh://h/root/a.txt', displayPath: 'ssh://h/root/a.txt' }
+  const results = await Promise.all([fs.stat(target, undefined), fs.stat(target, undefined), fs.stat(target, undefined)])
+  check('three concurrent stats issue one load', state.loads === 1, `${state.loads} loads`)
+  check('all three callers receive the value', results.every(r => r !== undefined && r !== null), JSON.stringify(results))
+}
+
+// --- a failed metadata read is not cached --------------------------------
+{
+  const state = { loads: 0 }
+  const engine = {
+    async withSftp (_alias, operation) {
+      state.loads += 1
+      const attempt = state.loads
+      await new Promise(resolve => setTimeout(resolve, 5))
+      return await operation({
+        stat: (_p, cb) => {
+          if (attempt === 1) { const error = new Error('transient'); error.code = 4; cb(error); return }
+          cb(undefined, { size: 1, mtime: 1, mode: 0o100644, isDirectory: () => false, isFile: () => true })
+        },
+        readdir: (_p, cb) => cb(undefined, []),
+      })
+    },
+  }
+  const fs = new RemoteFileSystem({ base: {}, engine, roots: new Set(['ssh://h/root']) })
+  const target = { targetKey: 'ssh://h/root/x.txt', displayPath: 'ssh://h/root/x.txt' }
+  let firstError
+  try { await fs.stat(target, undefined) } catch (error) { firstError = error }
+  check('the first read fails as told', firstError !== undefined, String(firstError))
+  const second = await fs.stat(target, undefined)
+  check('the second read retries instead of replaying the failure', state.loads === 2, `${state.loads} loads`)
+  check('the retry returns the live value', second !== undefined, JSON.stringify(second))
+}
+
+
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)

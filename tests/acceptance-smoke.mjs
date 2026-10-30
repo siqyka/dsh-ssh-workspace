@@ -21,6 +21,8 @@
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { removeScratch, resolveScratchDir } from './scratch.mjs'
+import { shellQuote } from '../lib/engine.js'
 
 const alias = process.env.DSH_WS_TEST_ALIAS
 const coreRoot = process.env.DSH_CORE_ROOT
@@ -33,7 +35,16 @@ if (!alias || !coreRoot) {
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const sandbox = process.env.DSH_WS_TEST_DIR ?? '/tmp/dsh-ssh-workspace-acceptance'
+// Resolved and validated up front: a suite that prepares a directory it cannot
+// safely remove would leave litter on the host and hide the reason.
+const scratch = resolveScratchDir(process.env, '/tmp/dsh-ssh-workspace-acceptance')
+if (!scratch.ok) {
+  console.log('\n=== acceptance smoke ===\n')
+  console.log(`  SKIP  refusing to run: ${scratch.reason}`)
+  console.log('\n=== 0 passed, 0 failed, 1 suite skipped ===')
+  process.exit(0)
+}
+const sandbox = scratch.path
 
 const requireFromCore = createRequire(path.join(coreRoot, 'noop.cjs'))
 const { Context, Service } = requireFromCore('@deepseek-ai/cordis')
@@ -111,12 +122,18 @@ check('plugins mounted', registry.tools.size === 5, `registered ${registry.tools
 // Prepare the remote directory with the plugin's own exec tool, so the mount
 // below tests a directory that genuinely exists on the host.
 const prep = await registry.tools.get('ssh_workspace_exec').execute(
-  { alias, command: `rm -rf ${sandbox} && mkdir -p ${sandbox}/notes && echo PREPARED` }, {})
+  { alias, command: `rm -rf -- ${shellQuote(sandbox)} && mkdir -p ${shellQuote(`${sandbox}/notes`)} && echo PREPARED` }, {})
 check('remote directory prepared via ssh_workspace_exec', prep.success === true && prep.stdout.includes('PREPARED'), JSON.stringify(prep).slice(0, 200))
 
+// Everything from here on can fail midway, so the remote cleanup lives in a
+// `finally` below: a suite that leaves its scratch directory behind on a
+// failure is how the host accumulates litter nobody looks at.
+let mountedForCleanup = false
+try {
 const mount = await registry.tools.get('ssh_workspace_mount').execute(
   { alias, remotePath: sandbox, title: 'acceptance', register: false }, {})
 check('mount a remote directory as a workspace', mount.ok === true, JSON.stringify(mount))
+mountedForCleanup = mount.ok === true
 const workspace = mount.workspacePath
 check('the workspace path uses the ssh:// scheme', workspace === `ssh://${alias}${sandbox}`, String(workspace))
 
@@ -214,12 +231,40 @@ const status = await registry.tools.get('ssh_workspace_status').execute({}, {})
 check('status reports the mount and a live connection',
   status.mounted.includes(workspace) && status.connections.some(c => c.alias === alias), JSON.stringify(status))
 
-const unmount = await registry.tools.get('ssh_workspace_unmount').execute({ workspacePath: workspace, deregister: false }, {})
-check('unmount removes the remote workspace', unmount.ok === true && unmount.wasMounted === true, JSON.stringify(unmount))
-
-await registry.tools.get('ssh_workspace_exec').execute({ alias, command: `rm -rf ${sandbox}` }, {})
-
-await fiber.dispose()
+const unmount = await registry.tools.get('ssh_workspace_unmount').execute({ workspacePath: workspace, mode: 'detach' }, {})
+check('unmount detaches the remote workspace', unmount.ok === true && unmount.wasMounted === true, JSON.stringify(unmount))
+// The mode is asserted, not assumed: the tool used to be driven with a
+// `deregister` boolean, and the suite kept passing that long after the
+// parameter was renamed — so this line is what stops that from happening again.
+check('unmount echoes the requested mode', unmount.mode === 'detach', String(unmount.mode))
+check('detach keeps the workspace record (it is not deregistered)', unmount.deregistered === false, String(unmount.deregistered))
+} catch (error) {
+  failures.push(`unexpected exception: ${error?.stack ?? error}`)
+  console.error('\nUNEXPECTED EXCEPTION\n', error)
+} finally {
+  // Best effort, but only onto a path this module has proven is a scratch
+  // directory, and only with the plugin's own quoting.
+  if (mountedForCleanup) {
+    try {
+      const unmount = await registry.tools.get('ssh_workspace_unmount').execute({ workspacePath: workspace, mode: 'detach' }, {})
+      if (unmount?.ok !== true) console.log(`  note  could not detach on cleanup: ${JSON.stringify(unmount)}`)
+    } catch { /* the connection may be the thing that failed */ }
+  }
+  // Cleanup goes through the same public tool the suite already used, not
+  // through the engine: the engine is not on `ctx`, and reaching into the
+  // plugin's internals just to delete a directory would be the wrong coupling.
+  const execTool = registry.tools.get('ssh_workspace_exec')
+  const removed = await removeScratch(
+    { exec: (target, command) => execTool.execute({ alias: target, command }, {}) },
+    alias,
+    sandbox,
+  ).catch(error => ({ ok: false, reason: String(error) }))
+  const note = removed.ok
+    ? '\ncleaned up the remote scratch directory'
+    : '\nrefused to clean up: ' + removed.reason
+  console.log(note)
+  await fiber.dispose()
+}
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {

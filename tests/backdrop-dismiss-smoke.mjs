@@ -232,9 +232,16 @@ function guardOf (componentName) {
 
 console.log('\n[the dialog body still stops propagation-free dismissal]')
 
-check('the inner dialog panels keep their own click handling (unchanged)',
-  (source.match(/className: 'sshwsp-dialog[^']*', onClick: \((?:event|e)\) => (?:event|e)\.stopPropagation\(\)/gu) ?? []).length === 3,
-  `${(source.match(/className: 'sshwsp-dialog[^']*', onClick: \((?:event|e)\) => (?:event|e)\.stopPropagation\(\)/gu) ?? []).length} panel(s)`)
+// The panels must still stop their own clicks from reaching the backdrop,
+// which is what makes click-to-dismiss safe. The assertion is on BEHAVIOUR
+// rather than on the exact property order: the a11y wiring adds `role`/ref
+// props between `className` and `onClick`, and matching that order would make a
+// harmless insertion look like a regression.
+{
+  const panels = [...source.matchAll(/className: 'sshwsp-dialog[^']*'[\s\S]{0,400}?onClick: \((?:event|e)\) => (?:event|e)\.stopPropagation\(\)/gu)]
+  check('every dialog panel still stops its own clicks (unchanged)',
+    panels.length === 3, `${panels.length} panel(s)`)
+}
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {

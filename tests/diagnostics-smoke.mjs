@@ -23,7 +23,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { Diagnostics, CAPACITY, KINDS } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'diagnostics.js')).href)
+const { Diagnostics, CAPACITY, KINDS, SCHEMA_VERSION } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'diagnostics.js')).href)
 
 let passed = 0
 let failures = 0
@@ -218,6 +218,58 @@ console.log('\n[an obsolete workaround reaches the status surfaces]')
   check('lib/index.js hands the projection verdict to the engine',
     /engine\.noteUpstreamWorkaround\(installed\.id/u.test(indexSource),
     'installProjectionRelaxation() returns probe/detail but nothing records them')
+}
+
+
+console.log('\n[seq and the shareable report]')
+
+// An outage is read as a sequence, and the ring drops its oldest entries. A
+// position-in-array is therefore useless for ordering: the numbers must keep
+// increasing across evictions.
+{
+  const log = new Diagnostics(3)
+  for (let index = 0; index < 6; index += 1) log.record(KINDS.connect, `event ${index}`)
+  const kept = log.list()
+  check('the ring keeps only its capacity', kept.length === 3, String(kept.length))
+  check('seq keeps increasing after eviction',
+    kept.map(entry => entry.seq).join(',') === '4,5,6', JSON.stringify(kept.map(entry => entry.seq)))
+  check('the newest entry has the highest seq',
+    kept.at(-1).seq === 6, String(kept.at(-1).seq))
+  check('a gap is visible: the report says how many were recorded',
+    log.exportText().includes('entries: 3 of 6 recorded'), log.exportText().split('\n')[1])
+}
+
+console.log('\n[a shared report must not leak secrets]')
+
+{
+  const log = new Diagnostics(10)
+  log.record(KINDS.degraded, 'could not read /home/alice/.ssh/id_ed25519')
+  log.record(KINDS.connect, 'password=hunter2 rejected')
+  log.record(KINDS.connect, 'could not write /Users/alice/project')
+  log.record(KINDS.connect, 'ok', { alias: 'alice-laptop' })
+  const text = log.exportText()
+
+  check('the report names its schema version', text.includes(`schemaVersion: ${SCHEMA_VERSION}`), text.split('\n')[0])
+  check('the local username is masked', !text.includes('alice/.ssh'), text)
+  check('the private key path is masked', !/id_ed25519/u.test(text), text)
+  check('a password value is masked', !text.includes('hunter2'), text)
+  // "alice-laptop" → "al***p": enough to correlate two events from the same
+  // host, not enough to identify the machine.
+  check('the alias is shortened, not dropped',
+    /al\*\*\*p/u.test(text), text)
+  check('the redaction is on by default', !text.includes('hunter2') && text.includes('<redacted>'), text)
+}
+
+console.log('\n[the report is plain text, not a serialised object]')
+
+{
+  const log = new Diagnostics(5)
+  log.record(KINDS.connect, 'connected to box.example:22')
+  const text = log.exportText()
+  check('the report has no JSON braces', !text.trimStart().startsWith('{') && !text.includes('":'), text)
+  check('every event is numbered', text.includes('#1'), text)
+  check('the timestamp is ISO, so two machines can be compared',
+    /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/u.test(text), text)
 }
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)

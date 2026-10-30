@@ -279,6 +279,39 @@ check('lib/ ships in the tarball', files.includes('lib/'), JSON.stringify(files)
 check('cordis.patch.yml ships in the tarball', files.includes('cordis.patch.yml'), JSON.stringify(files))
 check('tests are not shipped in the tarball', !files.some(entry => String(entry).startsWith('tests')), JSON.stringify(files))
 
+console.log('\n[a11y: the dialog contract]')
+
+// The dialogs already had Esc, aria-labels on icon buttons and focus rings.
+// What they lacked is the half that decides whether a keyboard or screen-reader
+// user can operate them: dialog semantics, focus moved in on open, focus
+// returned to the trigger on close, and a trap so Tab cannot walk behind the
+// backdrop into the page.
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const count = (re) => (source.match(re) ?? []).length
+  check('the shared hook exists once, not per dialog',
+    count(/function useDialogA11y /gu) === 1, `${count(/function useDialogA11y /gu)} definition(s)`)
+  check('the dialog role and modal flag are set',
+    /role: 'dialog'/u.test(source) && /'aria-modal': 'true'/u.test(source), 'missing role or aria-modal')
+  check('the dialog is labelled by its own title element',
+    /'aria-labelledby': titleId/u.test(source) && /id: dialog\.titleId/u.test(source), 'title not wired')
+  check('focus moves INTO the dialog on open',
+    /focusables\[0\]\.focus\(\)/u.test(source), 'no initial focus')
+  check('focus returns to the opener on close',
+    /opener\.focus\(\)/u.test(source) && /document\.contains\(opener\)/u.test(source), 'no focus return')
+  check('Tab wraps from the last control to the first',
+    /document\.activeElement === last/u.test(source) && /first\.focus\(\)/u.test(source), 'no forward wrap')
+  check('Shift+Tab wraps from the first control to the last',
+    /document\.activeElement === first/u.test(source) && /last\.focus\(\)/u.test(source), 'no backward wrap')
+  check('the trap is a capture-phase listener, so it wins over inner handlers',
+    /addEventListener\('keydown', onKeyDown, true\)/u.test(source), 'not capture phase')
+  check('Esc is ignored while a request is in flight',
+    /if \(busyRef\.current\) return/u.test(source), 'Esc not gated on busy')
+  check('both dialogs use the hook',
+    count(/useDialogA11y\(\{/gu) === 2, `${count(/useDialogA11y\(\{/gu)} call site(s)`)
+}
+
+
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {
   console.log('\nfailures:')

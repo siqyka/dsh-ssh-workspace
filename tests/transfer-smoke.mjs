@@ -532,5 +532,48 @@ try {
   await rm(scratch, { recursive: true, force: true })
 }
 
+// --- staging names never collide -----------------------------------------
+//
+// The old name was `pid + Date.now()`, which two transfers to the same
+// destination can share: same process, same millisecond. They then opened the
+// same staging file with 'w' and interleaved their bytes, and the loser's
+// cleanup deleted the winner's file.
+{
+  const { stagingNameOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
+  const names = new Set()
+  for (let index = 0; index < 200; index += 1) names.add(stagingNameOf('/srv/app/artifact.bin', 'up'))
+  check('200 staging names for one target are all distinct', names.size === 200, `${names.size} distinct`)
+  check('a staging name sits beside the target, not on it',
+    [...names].every(name => name.startsWith('/srv/app/artifact.bin.dsh-up-')), 'bad prefix')
+  check('a staging name carries randomness, not just a timestamp',
+    [...names].every(name => /[0-9a-f]{16}$/u.test(name)), 'no random tail')
+  check('download staging names are distinct too',
+    stagingNameOf('/tmp/out.log', 'down') !== stagingNameOf('/tmp/out.log', 'down'), 'collision')
+}
+
+// --- a download whose write stream fails does not hang ---------------------
+//
+// `out.once('drain', resolve)` alone hangs forever when the stream errors: a
+// broken stream never drains, so the wait has nothing to wake it. The race
+// against 'error' is what turns a full disk into a prompt failure.
+{
+  const { EventEmitter } = await import('node:events')
+  const stream = new EventEmitter()
+  stream.write = () => false
+  stream.end = () => {}
+  stream.destroy = () => {}
+  const waiting = new Promise((resolve, reject) => {
+    const done = () => { stream.off('drain', done); stream.off('error', fail); resolve('drained') }
+    const fail = (error) => { stream.off('drain', done); stream.off('error', fail); reject(error) }
+    stream.once('drain', done)
+    stream.once('error', fail)
+  })
+  stream.emit('error', new Error('ENOSPC: no space left'))
+  let outcome
+  try { outcome = await waiting } catch (error) { outcome = error.message }
+  check('a failing write stream settles the wait instead of hanging',
+    /ENOSPC/u.test(String(outcome)), String(outcome))
+}
+
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)
