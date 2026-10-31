@@ -109,7 +109,7 @@ same error semantics.
    click Install:
    - **npm package** (distributed via npm, version pinning supported):
      `@shiqyka/dsh-ssh-workspace`, or pin a version
-     `@shiqyka/dsh-ssh-workspace@0.2.7`
+     `@shiqyka/dsh-ssh-workspace@0.2.8`
      ([npm page](https://www.npmjs.com/package/@shiqyka/dsh-ssh-workspace));
    - **repository address** (latest code from Git):
      `https://github.com/siqyka/dsh-ssh-workspace`
