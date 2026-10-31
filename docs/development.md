@@ -15,7 +15,7 @@
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 25 | directory listing |
-| test suites | 38 | `tests/run.mjs` |
+| test suites | 39 | `tests/run.mjs` |
 | passing assertions (sampled) | — | run `node tests/run.mjs` and pass `--assertions N` |
 
 <!-- doc-numbers:end -->
@@ -151,6 +151,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `peer-mode-smoke` | 无 | 24 | 检测器本身。它是所有 peer 套件的信任根，答错时没有别的套件会发现，所以用四态合成树单独驱动：生成根必须整棵报 `stub` 且每个包都带 `__dshStub`（漏标的 stub 会被当成 REAL，比没有 stub 更糟）；真包与替身并存必须报 `mixed` 而非 `real`（旧检测器只看 `dsh-fs`，随后套件在没看过的那个 stub 上崩）；**解析到但加载抛错必须是 `broken` 并保留解析路径与错误**（旧代码把它报成「没装」，把人引向一次改变不了任何东西的安装）；`absent` 真的缺席；只查套件声明的包（缺无关 peer 不得连带跳过）；端到端两种结局——装坏的树让套件 **FAIL(1)** 且打印真实原因、stub 树 SKIP(0)，两者都不得执行到断言；未设置 `DSH_CORE_ROOT` 报 `absent` |
 | `diagnostics-smoke` | 无 | 36 | 面向用户的诊断环形缓冲：条目字段与毫秒时间戳、无别名时不写空字段、**容量上限丢最旧留最新**（含"恰好等于容量"的边界）、`list()` 交出副本因而调用方改不动历史、`list(n)` 取最新 n 条、`clear()`、记录永不抛（循环引用 / Symbol / 非法 kind / 坏容量都不得让被观测的操作失败）、kind 词表封闭且覆盖连接 / 断连 / 重连 / 降级 / 转发。还钉住上游补丁结论必须一路送到状态面（引擎字段 + 事件 + 两个 status 出口 + `index.js` 的接线），因为"算出来了但没人接手"正是这轮修掉的缺陷形态。最后三条钉住"为什么要这个模块"：引擎必须往这里记连接事件，且不得改用 `logger.debug`——本宿主没有 console exporter、`debug` 级别低于所有 exporter 默认级别，写进去等于没写 |
 | `reconnect-smoke` | 无 | 63 | 断线后的后台重连策略（`lib/reconnect.js`，纯逻辑、注入时钟）：退避从 1s 倍增到 60s 封顶、抖动只向下因此上限是真上限、只对「还有人要」的主机启动（没人要时不武装、不拨号）、消费者全没了就停并在状态里报 `gave-up`、成功即清条目并触发恢复钩子、`maxAttempts` 有界阶梯、`fatal` 错误第一次就停、手动重试跳过等待且失败后重新武装、`cancel` 之后永不拨号（「断开」必须是终态）、暴露的条目不带定时器句柄且改它不影响调度器、`isWanted` 抛错不得被当成「要」、`dispose` 停掉一切。最后钉住引擎与路由的接线：close 事件武装、摘池后的主动关闭不得武装、`forget` 取消、前台失败也交给后台、`background: true` 不递归、已保存转发让主机保持「要」 |
+| `fake-transport-smoke` | 真实 `ssh2`（peer stub 根不够） | 23 | **触发，而不是分支**。`reconnect-smoke` 驱动注入时钟的调度器、`replay-smoke` 与 `host-key-smoke` 手工置 `record.broken`——三者都只证明「代码知道连接死了之后做什么」，没有一个证明「连接会被报告为死了」。本套件对着 `tests/support/fake-ssh-server.mjs`（ssh2 自带 `Server`，真实 TCP）跑引擎：①无人操作时 socket 被硬断 → 后台循环自行启动 → 自动连回，日志顺序 `disconnect → 后台重试 → connect → reconnected`，服务器连接数 1→2；②前台先把主机治好、后台 attempt 命中健康记录时恢复钩子**仍然执行**（接在「本次调用建了 socket」上就会漏，这正是 O-05 的原始 bug）；③`forget` 与空闲回收都**不**触发重连（「断开」不能被写成「一直拨号」）；④服务器换密钥 → 拒绝、阶梯终止于 `gave-up`、记录指纹与出示指纹**双双**写进诊断、且此后不再拨号。两个实现细节：硬断必须 `destroy()` 而非 `end()`（合盖不发 FIN；ssh2 的 `Connection` 只暴露 `end()`，真实 socket 经 `_sock` 取）；换密钥必须重建监听器（ssh2 在构造时把 `hostKeys` 解析进闭包，无法原地替换，重建恰好也是「主机重装后同地址回来」的真实序列） |
 | `client-shape-smoke` | 无 | 57 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案 |
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、三个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 66 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |

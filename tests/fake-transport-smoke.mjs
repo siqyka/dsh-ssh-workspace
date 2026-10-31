@@ -1,0 +1,281 @@
+/**
+ * Real-transport reconnect: the trigger, not the branch.
+ *
+ * `reconnect-smoke` drives the scheduler with an injected clock and a fake
+ * `attempt`; `replay-smoke` and `host-key-smoke` set `record.broken` by hand.
+ * All three prove what the code does *after* it learns the connection is dead.
+ * None of them proves the connection ever gets reported dead — that is
+ * `client.on('close')` firing on a socket the process did not close, and a
+ * hand-set boolean cannot exercise it.
+ *
+ * This suite runs the engine against `tests/support/fake-ssh-server.mjs`, a
+ * real ssh2 server on a real TCP socket, and asserts the four timing cases a
+ * stub cannot produce:
+ *
+ *  1. a socket destroyed under a live connection starts the background loop
+ *     (nobody is operating, so nothing else would);
+ *  2. the loop's success path really restores the host, and the restore hook
+ *     runs even when a foreground operation healed the host first;
+ *  3. a deliberate close does NOT start the loop — "disconnect" must not
+ *     become "keep dialing";
+ *  4. a host-key change on the server is refused, and the refusal is fatal
+ *     rather than retried forever.
+ *
+ * Run: node tests/fake-transport-smoke.mjs
+ */
+
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const pluginRoot = path.resolve(here, '..')
+const supportDir = path.join(here, 'support')
+
+let passed = 0
+const failures = []
+function check (label, ok, detail) {
+  if (ok) {
+    passed += 1
+    console.log(`  PASS  ${label}`)
+  } else {
+    failures.push(`${label}${detail === undefined ? '' : ` — ${detail}`}`)
+    console.log(`  FAIL  ${label}${detail === undefined ? '' : ` — ${detail}`}`)
+  }
+}
+
+console.log('\n=== fake transport smoke ===\n')
+
+// ------------------------------------------------------------------ imports
+// This suite needs NO host peer package: `engine.js` imports only local modules,
+// and its one external dependency is `ssh2`, which is a real dependency of this
+// plugin. The gate is therefore "can a real ssh2 be loaded", not "is a DSH tree
+// assembled" — a stub `ssh2` (the runner's peer-stub root supplies one that
+// throws on construction) cannot serve a suite whose subject is the socket.
+const coreRoot = process.env.DSH_CORE_ROOT
+let realSsh2 = false
+try {
+  const ssh2 = createRequire(`${pluginRoot}/package.json`)('ssh2')
+  // The stub marks itself and throws on `new Client()`; the real module has
+  // `Server` and `utils.generateKeyPairSync`. Checking for the capability is
+  // cheaper than constructing a Client just to discard it.
+  realSsh2 = typeof ssh2.Server === 'function' && typeof ssh2.utils?.generateKeyPairSync === 'function'
+} catch {
+  realSsh2 = false
+}
+if (!realSsh2) {
+  console.log('  SKIP  no real ssh2 is resolvable from this checkout (the peer stub cannot serve this suite)')
+  console.log('\n=== 0 passed, 0 failed, 1 suite skipped ===')
+  process.exit(0)
+}
+if (coreRoot === undefined) {
+  // Not required, but noted: the engine resolves `@deepseek-ai/dsh-fs` at
+  // `requirePeer` time only when a tool set is built, which this suite does not
+  // do. Keeping the note avoids the reader wondering why no core root was set.
+  console.log('[no DSH_CORE_ROOT: not needed here — engine.js imports only local modules]')
+}
+
+const { startFakeSshServer, freshHostKey } = await import(pathToFileURL(path.join(supportDir, 'fake-ssh-server.mjs')).href)
+const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'store.js')).href)
+const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
+
+const cleanups = []
+const track = (fn) => { cleanups.push(fn) }
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * An engine wired to one fake host.
+ *
+ * The backoff is shortened to hundreds of milliseconds so a suite can watch
+ * several attempts; the real defaults are minutes and would make this a
+ * minutes-long test. `jitter: 0` makes the ladder's timing exact.
+ */
+async function engineOver (server, { reconnect = true } = {}) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsh-fake-transport-'))
+  track(() => rmSync(dir, { recursive: true, force: true }))
+  const storeFile = path.join(dir, 'hosts.json')
+  writeFileSync(storeFile, JSON.stringify({
+    version: 1,
+    hosts: [{
+      alias: 'fake',
+      host: '127.0.0.1',
+      port: server.port,
+      user: 'tester',
+      auth: { kind: 'password', password: 'sekret' },
+    }],
+  }, null, 2), 'utf8')
+  const entryStore = new HostConfigStore(storeFile)
+  // A config path that does not exist: the store entry must be the only source,
+  // so a `Host fake` block in the developer's own ~/.ssh/config cannot leak in.
+  const store = new HostStore(path.join(dir, 'no-ssh-config'), entryStore)
+  const engine = new SshWorkspaceEngine({
+    store,
+    reconnect: reconnect === false
+      ? false
+      : { baseDelayMs: 150, maxDelayMs: 300, jitter: 0, maxAttempts: 0 },
+    sweepIntervalMs: 3_600_000,
+  })
+  track(() => engine.dispose())
+  return engine
+}
+
+/** Wait until `predicate` holds, or fail after `timeout`. */
+async function waitFor (predicate, timeout = 3_000) {
+  const started = Date.now()
+  while (Date.now() - started < timeout) {
+    if (await predicate()) return true
+    await sleep(20)
+  }
+  return false
+}
+
+// ================================================================ [1] trigger
+console.log('[1] a socket destroyed under a live connection starts the loop')
+{
+  const server = await startFakeSshServer({ pluginRoot, password: 'sekret' })
+  track(() => server.close())
+  const engine = await engineOver(server)
+  // `isWanted` is what keeps the loop from dialing a host nobody wants. In a
+  // real deployment a mounted root or a held forward answers this; here a check
+  // stands in for that consumer, because this suite is about the trigger.
+  engine.addWantedCheck(() => true)
+
+  const record = await engine.acquire('fake')
+  check('the connection came up over a real socket', record.broken === false && server.connections === 1, `connections=${server.connections}`)
+
+  // Nobody operates on the connection. The socket simply dies, as it would when
+  // a lid closes. This is the case the one-shot retry inside an operation can
+  // never cover, because there is no operation.
+  server.dropAll()
+  const lost = await waitFor(() => engine.reconnector?.stateOf('fake') !== undefined)
+  check('the death is noticed with no operation in flight', lost, JSON.stringify(engine.reconnector?.stateOf('fake')))
+  const state = engine.reconnector?.stateOf('fake')
+  check('the loop reports the waiting phase', state?.phase === 'waiting', JSON.stringify(state))
+  check('the first attempt is scheduled', (state?.attempts ?? 0) >= 1, JSON.stringify(state))
+  check('the reason names the transport', /transport/u.test(state?.reason ?? ''), String(state?.reason))
+
+  const reconnected = await waitFor(() => server.connections >= 2 && engine.pool.get('fake')?.broken === false)
+  check('a second connection is opened on its own', reconnected, `connections=${server.connections}`)
+  check('the loop clears once the host is back', engine.reconnector?.stateOf('fake') === undefined, JSON.stringify(engine.reconnector?.list?.()))
+  const events = engine.diagnostics.list()
+  check('the loss is in the diagnostics ring',
+    events.some(event => event.kind === 'disconnect' && /retrying in the background/u.test(event.message)),
+    JSON.stringify(events.map(event => event.kind)))
+  check('the recovery is in the diagnostics ring',
+    events.some(event => event.kind === 'reconnect' && /reconnected after/u.test(event.message)),
+    JSON.stringify(events.map(event => event.kind)))
+}
+
+// ================================================================= [2] restore
+console.log('\n[2] the restore hook runs on the success path, even when healed first')
+{
+  const server = await startFakeSshServer({ pluginRoot, password: 'sekret' })
+  track(() => server.close())
+  const engine = await engineOver(server)
+  engine.addWantedCheck(() => true)
+
+  let restored = 0
+  engine.onReconnected = () => { restored += 1 }
+
+  await engine.acquire('fake')
+  server.dropAll()
+  await waitFor(() => engine.reconnector?.stateOf('fake') !== undefined)
+
+  // The user comes back and clicks something before the timer fires: a
+  // foreground acquire heals the host. The background attempt then finds a
+  // healthy record and does NOT dial again — but something on this host still
+  // needs restoring (saved forwards, in a real deployment), so the hook must
+  // run anyway. Wiring it into "this call built the socket" is how a host came
+  // back with its tunnels still dead.
+  await engine.acquire('fake')
+  const healed = engine.pool.get('fake')?.broken === false
+  check('a foreground operation heals the host first', healed)
+  const settled = await waitFor(() => engine.reconnector?.stateOf('fake') === undefined)
+  check('the background loop settles on the reused record', settled, JSON.stringify(engine.reconnector?.list?.()))
+  check('the restore hook ran exactly once', restored === 1, String(restored))
+}
+
+// ============================================================ [3] deliberate close
+console.log('\n[3] a deliberate close does not start the loop')
+{
+  const server = await startFakeSshServer({ pluginRoot, password: 'sekret' })
+  track(() => server.close())
+  const engine = await engineOver(server)
+  engine.addWantedCheck(() => true)
+
+  await engine.acquire('fake')
+  engine.forget('fake')
+  await sleep(400)
+  check('no retry loop is armed after forget', engine.reconnector?.stateOf('fake') === undefined, JSON.stringify(engine.reconnector?.list?.()))
+  check('no second connection was dialed', server.connections === 1, `connections=${server.connections}`)
+
+  // The same rule for the sweeper: an idle connection reaped on purpose must
+  // stay gone. A loop here would turn every idle timeout into a redial. The
+  // record's `idleAt` is moved back by hand because `acquire` stamps it to now,
+  // which is exactly what keeps a freshly used connection out of the sweep.
+  const idle = await engine.acquire('fake')
+  idle.idleAt = Date.now() - 10_000
+  engine.tuning.idleTimeoutMs = 5_000
+  engine.sweep()
+  await sleep(400)
+  check('the idle sweep does not arm a retry either', engine.reconnector?.stateOf('fake') === undefined, JSON.stringify(engine.reconnector?.list?.()))
+  check('and the pool is empty after the sweep', engine.pool.get('fake') === undefined, JSON.stringify([...engine.pool.keys()]))
+}
+
+// =============================================================== [4] host key
+console.log('\n[4] a changed host key is refused and is not retried forever')
+{
+  const server = await startFakeSshServer({ pluginRoot, password: 'sekret' })
+  track(() => server.close())
+  const engine = await engineOver(server)
+  engine.addWantedCheck(() => true)
+
+  const record = await engine.acquire('fake')
+  check('the first connection pins the key', engine.store.knownHostKey('fake')?.fingerprint === server.fingerprint, String(engine.store.knownHostKey('fake')?.fingerprint))
+
+  // The server presents a DIFFERENT key to the next connection. A client that
+  // trusted it would be talking to something else; the engine must refuse.
+  const impostor = freshHostKey(pluginRoot)
+  server.setHostKey(impostor.private, impostor.public)
+  server.dropAll()
+  await waitFor(() => engine.reconnector?.stateOf('fake') !== undefined)
+
+  const failed = await waitFor(() => engine.reconnector?.stateOf('fake')?.phase === 'gave-up', 5_000)
+  const events = engine.diagnostics.list()
+  // A fatal stop KEEPS its entry in the `gave-up` phase on purpose: the panel
+  // must be able to say "reconnect stopped, here is why" rather than silently
+  // going quiet. What must stop is the dialing, not the reporting.
+  check('the mismatch ends the ladder', failed, JSON.stringify(engine.reconnector?.list?.()))
+  check('the refusal is recorded as fatal, not as a plain failure',
+    events.some(event => event.kind === 'degraded' && /background reconnect stopped/u.test(event.message)),
+    JSON.stringify(events.slice(-3).map(event => `${event.kind}: ${event.message}`)))
+  // The message must name both fingerprints; a reader deciding "is this an
+  // attack or a reinstall?" needs both to compare. The pinned value is taken
+  // from the store rather than from the server, because the point is that the
+  // RECORDED one is shown.
+  const recorded = engine.store.knownHostKey('fake')?.fingerprint ?? ''
+  const presented = impostor.fingerprint
+  const degraded = events.filter(event => event.kind === 'degraded').at(-1)?.message ?? ''
+  check('the refusal names the recorded fingerprint', recorded !== '' && degraded.includes(recorded), `${recorded} in ${degraded.slice(0, 200)}`)
+  check('and the fingerprint that was presented', degraded.includes(presented), `${presented} in ${degraded.slice(0, 200)}`)
+  check('the old connection was dropped', record.broken === true)
+  // A fatal stop must not leave a second dial in flight.
+  const connectionsAfter = server.connections
+  await sleep(300)
+  check('nothing is dialing after the fatal stop', server.connections === connectionsAfter, `${connectionsAfter} → ${server.connections}`)
+}
+
+// ==================================================================== cleanup
+for (const cleanup of cleanups.reverse()) {
+  try { await cleanup() } catch { /* a teardown failure must not mask a result */ }
+}
+
+console.log(`\n=== fake transport smoke: ${passed} passed, ${failures.length} failed ===\n`)
+if (failures.length > 0) {
+  console.log('failures:')
+  for (const failure of failures) console.log(`  ${failure}`)
+}
+process.exit(failures.length === 0 ? 0 : 1)

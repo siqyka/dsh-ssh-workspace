@@ -52,6 +52,12 @@ The detector reports one of four states per package. The two that matter:
 `live` and `acceptance` likewise skip without `DSH_WS_TEST_ALIAS` — no stub can
 fake an SSH server.
 
+A **real** in-process SSH server does exist, for transport-level tests:
+`tests/support/fake-ssh-server.mjs` (used by `fake-transport-smoke`). It is not a
+stub and deliberately does not live here — it speaks the real protocol over a
+real socket, which is exactly what the `ssh2` stub above cannot do. It needs a
+genuine `ssh2`, so `fake-transport-smoke` skips when only the stub is resolvable.
+
 ## Opting out
 
 ```

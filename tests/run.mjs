@@ -53,6 +53,7 @@ const SUITES = [
   'peer-mode',
   'diagnostics',
   'reconnect',
+  'fake-transport',
   'replay',
   'host-key',
   'host-listing',
