@@ -121,7 +121,86 @@ console.log('\n[4] a usable store entry is still a row')
   check('a complete listing reports nothing skipped', (listing.skipped ?? []).length === 0, JSON.stringify(listing.skipped))
 }
 
-console.log('\n[5] the tool renderer keeps the three cases apart')
+console.log('\n[5] `none` cancels a proxy instead of configuring one')
+{
+  // The override idiom: `Host *` carries the jump host, one host cancels it.
+  // Reading `none` as a hop refuses a host the user explicitly set to connect
+  // directly — and the refusal message would claim a jump host that is not there.
+  const { store, dir } = storeWith({
+    configText: 'Host cleared\n  HostName cleared.example\n  ProxyJump none\n'
+      + 'Host cmdCleared\n  HostName cmd.example\n  ProxyCommand none\n'
+      + 'Host stillJumps\n  HostName jump.example\n  ProxyJump bastion\n',
+  })
+  track(dir)
+  const listing = store.listing()
+  const aliases = listing.rows.map(row => row.alias).sort()
+  check('ProxyJump none is listed as a direct host',
+    aliases.includes('cleared'), JSON.stringify(aliases))
+  check('ProxyCommand none is listed as a direct host',
+    aliases.includes('cmdCleared'), JSON.stringify(aliases))
+  check('a real jump host is still refused',
+    !aliases.includes('stillJumps'), JSON.stringify(aliases))
+  check('exactly the jump-host block is reported as skipped',
+    (listing.skipped ?? []).length === 1, JSON.stringify(listing.skipped))
+  check('the skip names the jump host, not the cancelled ones',
+    listing.skipped[0]?.alias === 'stillJumps', JSON.stringify(listing.skipped))
+  // `none` must also survive resolve(), not just listing(): a listed host that
+  // throws on resolve is a row the user can click and then cannot use.
+  const resolved = store.resolve('cleared')
+  check('resolve() accepts ProxyJump none too',
+    resolved.host === 'cleared.example', JSON.stringify(resolved))
+}
+
+console.log('\n[6] a jump host in a wildcard block still applies')
+{
+  // The usual way to declare a bastion: `Host *` at the top of the file.
+  // Reading only exact blocks turned "reach this through a bastion" into
+  // "connect directly" — silent, and unsafe.
+  const { store, dir } = storeWith({
+    configText: 'Host *\n  ProxyJump bastion\n\nHost viaStar\n  HostName via.example\n',
+  })
+  track(dir)
+  const listing = store.listing()
+  check('a host covered only by `Host *` is not listed',
+    !listing.rows.some(row => row.alias === 'viaStar'), JSON.stringify(listing.rows))
+  check('it is reported as skipped, with the jump-host reason',
+    (listing.skipped ?? []).some(entry => entry.alias === 'viaStar' && /jump host/u.test(entry.reason)),
+    JSON.stringify(listing.skipped))
+}
+
+console.log('\n[7] per-host values win over a later catch-all, as in OpenSSH')
+{
+  // OpenSSH takes the FIRST value obtained, so a `Host *` placed at the END
+  // cannot override a `ProxyJump none` written above it for that host.
+  const { store, dir } = storeWith({
+    configText: 'Host direct\n  HostName direct.example\n  ProxyJump none\n\n'
+      + 'Host plain\n  HostName p.example\n\n'
+      + 'Host *\n  ProxyJump bastion\n',
+  })
+  track(dir)
+  const listing = store.listing()
+  check('the earlier `ProxyJump none` still wins for its host',
+    listing.rows.some(row => row.alias === 'direct'), JSON.stringify(listing.rows))
+  check('a host with no earlier value inherits the catch-all jump host',
+    !listing.rows.some(row => row.alias === 'plain'), JSON.stringify(listing.rows))
+}
+
+console.log('\n[8] a negated pattern exempts a host from a wildcard block')
+{
+  const { store, dir } = storeWith({
+    configText: 'Host * !exempt\n  ProxyJump bastion\n\nHost exempt\n  HostName ex.example\n',
+  })
+  track(dir)
+  const listing = store.listing()
+  check('the exempted host is listed',
+    listing.rows.some(row => row.alias === 'exempt'), JSON.stringify(listing.rows))
+  check('a `!name` pattern never becomes a row of its own',
+    !listing.rows.some(row => row.alias === '!exempt'), JSON.stringify(listing.rows))
+  check('nothing else is skipped for a proxy reason',
+    (listing.skipped ?? []).length === 0, JSON.stringify(listing.skipped))
+}
+
+console.log('\n[9] the tool renderer keeps the three cases apart')
 {
   const { renderHostsForTest } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
     .catch(() => ({ renderHostsForTest: undefined }))
