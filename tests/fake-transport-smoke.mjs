@@ -24,6 +24,7 @@
  * Run: node tests/fake-transport-smoke.mjs
  */
 
+import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -93,7 +94,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  * several attempts; the real defaults are minutes and would make this a
  * minutes-long test. `jitter: 0` makes the ladder's timing exact.
  */
-async function engineOver (server, { reconnect = true } = {}) {
+async function engineOver (server, { reconnect = true, agentForward = false } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'dsh-fake-transport-'))
   track(() => rmSync(dir, { recursive: true, force: true }))
   const storeFile = path.join(dir, 'hosts.json')
@@ -105,6 +106,7 @@ async function engineOver (server, { reconnect = true } = {}) {
       port: server.port,
       user: 'tester',
       auth: { kind: 'password', password: 'sekret' },
+      ...(agentForward ? { agentForward: true } : {}),
     }],
   }, null, 2), 'utf8')
   const entryStore = new HostConfigStore(storeFile)
@@ -266,6 +268,85 @@ console.log('\n[4] a changed host key is refused and is not retried forever')
   const connectionsAfter = server.connections
   await sleep(300)
   check('nothing is dialing after the fatal stop', server.connections === connectionsAfter, `${connectionsAfter} → ${server.connections}`)
+}
+
+// ================================================================ [5] channel opts
+console.log('\n[5] every command channel opens with a real options bag')
+{
+  // The regression this exists for: `runRemoteCommand` used to pass `undefined`
+  // as ssh2's second argument when the host did not ask for agent forwarding —
+  // which is the DEFAULT for every host. ssh2 only substitutes `{}` when that
+  // argument is a function, so `undefined` reached `opts.allowHalfOpen` and
+  // threw synchronously. Because the throw happened inside the promise
+  // executor, every command rejected, the capability probe swallowed it and
+  // reported all-unknown, and the audit never recorded a row. Nothing but a
+  // real client over a real socket distinguishes "the channel opened" from
+  // "a fake that ignores its arguments accepted anything".
+  const server = await startFakeSshServer({
+    pluginRoot,
+    password: 'sekret',
+    onExec: ({ stream }) => {
+      stream.write('probe-ok\n')
+      stream.exit(0)
+      stream.end()
+    },
+  })
+  track(() => server.close())
+
+  const plain = await engineOver(server)
+  plain.addWantedCheck(() => true)
+  const outcome = await plain.exec('fake', 'echo probe-ok')
+  check('a non-forwarding host runs a command at all', outcome.success === true, JSON.stringify(outcome))
+  check('and its output comes back', outcome.stdout.includes('probe-ok'), JSON.stringify(outcome.stdout))
+  check('the run is recorded in the audit', plain.audit?.list?.().length === 1, JSON.stringify(plain.audit?.list?.()))
+
+  // A server that REJECTS the forwarding request must not stop the command.
+  // `AllowAgentForwarding no` is standard hardening, and ssh2 turns that
+  // rejection into a channel-open error — so without the retry, checking the
+  // box would mean "this host can no longer run anything".
+  const refused = await engineOver(server, { agentForward: true })
+  refused.addWantedCheck(() => true)
+  // A forwarding host needs an agent ON the connection for ssh2 to even send
+  // the request, and this machine has none: the reachability gate keeps it
+  // inert, which is exactly the behaviour that must NOT be mistaken for the
+  // retry. Prove the gate first, then force the retry path directly below.
+  const inert = await refused.exec('fake', 'echo probe-ok')
+  check('with no reachable agent, forwarding stays inert', inert.success === true && inert.forwardingRefused === undefined, JSON.stringify(inert))
+  check('...and no agent request was ever sent', server.agentRequests === 0, String(server.agentRequests))
+
+  // The retry itself, driven directly: a fake client whose FIRST call rejects
+  // the forwarding request and whose SECOND succeeds. This is the one timing a
+  // real server cannot produce on demand (it needs an agent on the connection
+  // AND `AllowAgentForwarding no`), and the reachability gate above keeps the
+  // real path inert on this machine, so the branch is pinned here instead.
+  const engine = new SshWorkspaceEngine({ reconnect: false, sweepIntervalMs: 3_600_000 })
+  track(() => engine.dispose())
+  const calls = []
+  const fakeClient = {
+    exec (command, options, callback) {
+      calls.push(options)
+      if (calls.length === 1) {
+        callback(new Error('Unable to request agent forwarding'))
+        return
+      }
+      const stream = new EventEmitter()
+      stream.stderr = new EventEmitter()
+      stream.signal = () => {}
+      stream.close = () => {}
+      callback(undefined, stream)
+      setTimeout(() => {
+        stream.emit('data', Buffer.from('retried\n'))
+        stream.emit('close', 0)
+      }, 0)
+    },
+  }
+  engine.acquire = async () => ({ alias: 'fake', client: fakeClient, idleAt: Date.now(), inFlight: 0, holds: 0, broken: false, agentForward: true })
+  engine.closeRecord = () => {}
+  const retried = await engine.exec('fake', 'echo retried')
+  check('a refused forwarding request is retried once', calls.length === 2, String(calls.length))
+  check('the retry drops the flag', calls[1]?.agentForward === undefined, JSON.stringify(calls[1]))
+  check('the command still runs', retried.success === true && retried.stdout.includes('retried'), JSON.stringify(retried))
+  check('the refusal is reported, not hidden', retried.forwardingRefused === true, JSON.stringify(retried))
 }
 
 // ==================================================================== cleanup

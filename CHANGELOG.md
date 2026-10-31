@@ -36,6 +36,10 @@
 - **对话框缺键盘与读屏契约**：抽出共享的 `useDialogA11y`——`role="dialog"` + `aria-modal` + `aria-labelledby`、打开移入焦点、关闭归还触发元素、Tab 环绕、请求进行中 Esc 不生效。
 - **能力探测用子串匹配判断工具存在**：原实现是 `stdout.includes('rg')`，路径或 locale 值里出现工具名就误报为已安装。环境事实与工具判定共享同一路输出后，这会从理论缺陷变成日常误报；现在每条事实走独立前缀行（`dsh-tool:rg`）并整行匹配。
 - **支持包把未打码的 alias 嵌进报告**：第一版直接嵌入审计的 `exportText()` 输出，而那段文本带着明文 alias（它是写给本地读者看的）。改为从 rows 自己渲染——脱敏必须发生在字符串**形成**的地方，导出时再脱敏救不了别的读者。
+- **勾选「转发 ssh-agent」后目录浏览不可用**：引擎此前把 `agentForward` 塞进 ssh2 的连接级 config，而 ssh2 会把连接级该字段当成整条连接的转发许可——连接上没有配置 agent（key / password 认证正是如此）时 `connect()` 直接抛 `You must set a valid agent path to allow agent forwarding`，连接建不起来，SFTP 浏览随之全挂；即便有 agent 也会把转发请求加到包括只读 SFTP 在内的所有通道上。现在连接级不再携带该字段：转发意图记在连接记录上，由统一的 `channelExecOptions` 只在 exec / shell 命令通道上表达（快照 exec、`openChannel` 的监视器 / 终端 / 持久 shell、shell 与 subprocess 路由全部走它），SFTP 路径不受影响；需要转发而连接上没有 agent 时（key / password 认证）会探测本机 ssh-agent 并挂上（配置的密钥 / 密码仍是第一认证方式，认证类型不变），本机没有 agent 时转发空转、连接照常；agent 认证且无 ssh-agent 的明确报错保持不变。
+- **每条远端命令都失败，能力探测全报「未确定」**：上面那处改动的收尾把 ssh2 的第二个参数写成了 `agentForward === true ? {…} : undefined`，而 ssh2 的 `exec(cmd, opts, cb)` 只在 `opts` 是**函数**时才替换成 `{}`——显式 `undefined` 会一路走到 `opts.allowHalfOpen` 并**同步抛出**。抛出发生在 promise executor 里，于是 `runRemoteCommand` 变成 reject；`probeCapabilities` 的 catch 把它读成「探不出来」，七项工具与四项环境事实全部渲染成 `unknown`，审计一条不写。未勾选转发的主机（即所有主机的默认路径）受影响。现在恒传对象，并把同步抛出收敛成普通 outcome——否则调用方会把「命令被拒」误判成「连接已断」，进而触发一次重连。
+- **本机没有 ssh-agent 时，认证失败被报成「取不到 agent 身份」**：`resolveAgentPath` 是名字解析器而不是存活检查（Windows 上无条件返回 `pageant`），ssh2 又不在连接时校验端点，于是挂一个没在跑的 agent 会让认证阶段报 `Failed to retrieve identities from agent`，把真正的原因（密码错 / 密钥被拒）盖掉。现在连接前先用 `getIdentities` 问一次（2 秒超时），答不上来就当没有 agent，转发随之空转；`agent` 认证路径不变，它本来就该报「没有 ssh-agent」。
+- **服务器禁止转发时，勾选该选项会让整条命令失败**：`AllowAgentForwarding no` 是标准加固项，sshd 会拒绝每通道的 `auth-agent-req`，ssh2 把它变成通道打开错误。现在识别出这一种拒绝（`isAgentForwardingRefusal`，只认转发相关措辞，`Not connected` / `administratively prohibited` 都不算）后重试一次不带该标志，命令照常执行，结果里带 `forwardingRefused` 说明转发没生效——转发是便利，命令才是目的。
 
 ### 测试
 

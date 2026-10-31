@@ -95,17 +95,18 @@ export function fingerprintOf (publicKeyLine) {
  */
 export async function startFakeSshServer (options = {}) {
   const ssh2 = loadSsh2(options.pluginRoot)
-  const { utils } = ssh2
   const user = options.user ?? 'tester'
   const password = options.password
   const allowPublicKey = options.allowPublicKey !== false
 
-  let keyPair = utils.generateKeyPairSync('ed25519')
+  // Parsed-and-retried: see `freshHostKey` for why a generated key is not
+  // trusted until ssh2 has accepted it.
+  let keyPair = freshHostKey(options.pluginRoot)
   const rejectRemaining = { value: 0 }
   let closed = false
   let boundPort = 0
   const clients = new Set()
-  const state = { connections: 0, sessions: 0, execs: [], sftpChannels: 0 }
+  const state = { connections: 0, sessions: 0, execs: [], sftpChannels: 0, agentRequests: 0 }
 
   /**
    * Build and listen on one ssh2 Server.
@@ -148,6 +149,16 @@ export async function startFakeSshServer (options = {}) {
         client.on('session', (accept) => {
           state.sessions += 1
           const session = accept()
+          // Agent forwarding is a per-CHANNEL request (`auth-agent-req`) that
+          // arrives before the exec itself. Without a listener here ssh2 rejects
+          // it, which is what a hardened server (`AllowAgentForwarding no`)
+          // does — the default, so a suite that wants forwarding to succeed
+          // must opt in with `allowAgentForwarding: true`.
+          session.on('auth-agent', (acceptAgent, rejectAgent) => {
+            state.agentRequests += 1
+            if (options.allowAgentForwarding === true) acceptAgent()
+            else rejectAgent()
+          })
           session.on('exec', (acceptExec, rejectExec, info) => {
             const stream = acceptExec()
             state.execs.push(info.command)
@@ -216,6 +227,8 @@ export async function startFakeSshServer (options = {}) {
     get connections () { return state.connections },
     get sessions () { return state.sessions },
     get sftpChannels () { return state.sftpChannels },
+    /** Count of per-channel agent-forwarding requests seen. */
+    get agentRequests () { return state.agentRequests },
     get execs () { return [...state.execs] },
     /** Every live connection destroyed, as a network blip would. */
     dropAll () {
@@ -254,11 +267,29 @@ export async function startFakeSshServer (options = {}) {
 /**
  * A second host key, for the mismatch case.
  *
+ * The returned key is PARSED before it is handed out. `generateKeyPairSync` has
+ * been seen to return an unusable PEM under load (ssh2 then throws
+ * "Cannot parse privateKey: Malformed OpenSSH private key" from the Server
+ * constructor, which surfaces as an intermittent suite crash rather than a
+ * readable failure). A key that cannot be parsed is not a fact about the plugin
+ * under test, so it is regenerated instead of propagated.
+ *
  * @param {string} pluginRoot - where to resolve ssh2 from.
  * @returns {{private: string, public: string, fingerprint: string}} the key pair.
  */
 export function freshHostKey (pluginRoot) {
-  const { utils } = loadSsh2(pluginRoot)
-  const pair = utils.generateKeyPairSync('ed25519')
-  return { private: pair.private, public: pair.public, fingerprint: fingerprintOf(pair.public) }
+  const ssh2 = loadSsh2(pluginRoot)
+  const { utils } = ssh2
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const pair = utils.generateKeyPairSync('ed25519')
+    try {
+      // The constructor is where ssh2 parses `hostKeys`; parsing here proves
+      // the key is usable by the same code path that will consume it.
+      new ssh2.Server({ hostKeys: [pair.private] })
+    } catch {
+      continue
+    }
+    return { private: pair.private, public: pair.public, fingerprint: fingerprintOf(pair.public) }
+  }
+  throw new Error('could not generate a host key ssh2 is willing to parse (5 attempts)')
 }
