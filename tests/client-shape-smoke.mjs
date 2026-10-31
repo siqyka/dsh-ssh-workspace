@@ -455,7 +455,103 @@ console.log('\n[a11y: the menu contract]')
 }
 
 // ---------------------------------------------------------------------------
-// The diagnostic report: opened in the panel, copied from inside the window.
+// The self-check card survives a page switch, and its header expands
+//
+// The reported bug: the card said "2 missing" with no way to learn WHICH two,
+// and switching to another page and back did not help. The cause was not a
+// missing interaction — it was that the rows were read from `checkReports`,
+// which is React state and dies with the panel, while `missing` travelled in
+// `/status` and survived. The card therefore kept its count and lost its names.
+//
+// Both halves are pinned here: the summary arithmetic is EXECUTED (a grep for
+// `missing.length` would pass on any of the broken variants), and the wiring is
+// checked so the state list cannot quietly go back to being the only source.
+// ---------------------------------------------------------------------------
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const count = (re) => (source.match(re) ?? []).length
+
+  // The self-check's rows must come from /status first. `checkReports` is a
+  // cache that dies with the panel, so preferring it is what produced a card
+  // that could count but not name.
+  check('the self-check rows fall back to the status payload',
+    /rows: checkReports\[check\.alias\]\?\.rows \?\? check\.rows \?\? \[\]/u.test(source),
+    'rows still come only from the transient report cache')
+  // Scoped to the /status route: `rows: report.rows` also appears in the
+  // on-demand /self-check route, so an unscoped match passes even after the
+  // status payload has dropped them — which is the exact regression this line
+  // exists to catch.
+  {
+    const routesSource = readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')
+    const statusStart = routesSource.indexOf('path: ROUTES.status')
+    const statusEnd = routesSource.indexOf('path: ROUTES.selfCheck', statusStart)
+    const statusRoute = statusStart >= 0 && statusEnd > statusStart
+      ? routesSource.slice(statusStart, statusEnd)
+      : ''
+    check('the /status route is locatable', statusRoute.length > 0, 'could not slice the status handler')
+    check('/status ships the self-check rows, not just the count',
+      /selfCheck: \[\.\.\.\(engine\.capabilities\?\.keys\?\.\(\) \?\? \[\]\)\]/u.test(statusRoute)
+      && /rows: report\.rows/u.test(statusRoute),
+      'the durable source does not ship the rows')
+  }
+
+  const match = source.match(/function selfCheckSummary \(rows, missing\) \{([\s\S]*?)\n {4}\}/u)
+  check('the self-check summary is a pure, extractable function', match !== null, 'selfCheckSummary not found')
+  if (match !== null) {
+    // eslint-disable-next-line no-new-func
+    const selfCheckSummary = new Function('rows', 'missing', match[1])
+    const cases = [
+      // [label, rows, missing, expected]
+      ['all present', [{ tool: 'rg', state: 'present' }, { tool: 'git', state: 'present' }], [], { present: 2, total: 2, absentCount: 0 }],
+      ['two absent', [{ tool: 'rg', state: 'present' }, { tool: 'git', state: 'absent' }, { tool: 'rsync', state: 'absent' }], [], { present: 1, total: 3, absentCount: 2 }],
+      // The bug's own state: the count arrived, the rows did not. The summary
+      // must still report the count, and name nothing rather than invent names.
+      ['rows lost, count kept', [], ['git', 'rsync'], { present: 0, total: 0, absentCount: 2 }],
+      ['nothing probed at all', [], [], { present: 0, total: 0, absentCount: 0 }],
+      ['unknown is not absent', [{ tool: 'rg', state: 'unknown' }], [], { present: 0, total: 1, absentCount: 0 }],
+      ['rows win over a stale missing list', [{ tool: 'rg', state: 'absent' }], ['git', 'rsync'], { present: 0, total: 1, absentCount: 1 }],
+    ]
+    for (const [label, rows, missing, expected] of cases) {
+      const actual = selfCheckSummary(rows, missing)
+      check(`selfCheckSummary: ${label}`,
+        actual.present === expected.present && actual.total === expected.total && actual.absentCount === expected.absentCount,
+        JSON.stringify(actual))
+    }
+    check('selfCheckSummary names the absent tools',
+      JSON.stringify(selfCheckSummary([{ tool: 'git', state: 'absent' }], []).absent) === JSON.stringify(['git']),
+      JSON.stringify(selfCheckSummary([{ tool: 'git', state: 'absent' }], []).absent))
+    check('selfCheckSummary keeps unknown apart from absent',
+      JSON.stringify(selfCheckSummary([{ tool: 'rg', state: 'unknown' }], []).unknown) === JSON.stringify(['rg']),
+      JSON.stringify(selfCheckSummary([{ tool: 'rg', state: 'unknown' }], []).unknown))
+  }
+
+  // The disclosure itself: a button (keyboard-reachable, announces its state),
+  // opening on click, and closed by default.
+  check('the self-check header is a button, not a div with onClick',
+    /className: 'sshwsp-check-head',\s*\n?\s*'aria-expanded':/u.test(source),
+    'header is not a disclosure button')
+  check('the header announces whether it is open', /'aria-expanded': canExpand \? open : undefined/u.test(source),
+    'aria-expanded not tied to the per-host state')
+  check('clicking the header toggles that host only', /setExpandedChecks\(\(prev\) => \(\{ \.\.\.prev, \[check\.alias\]: !open \}\)\)/u.test(source),
+    'toggle is not per-alias')
+  check('the expanded state lives above the row, so a poll does not collapse it',
+    /const \[expandedChecks, setExpandedChecks\] = React\.useState\(\{\}\)/u.test(source),
+    'expansion state would reset on every refresh')
+  check('the detail list renders only when expanded',
+    /open && jsx\(SelfCheckList, \{ rows: check\.rows, t \}\)/u.test(source),
+    'rows render regardless of the disclosure')
+  check('the card is closed until the user opens it', count(/const open = expandedChecks\[check\.alias\] === true/gu) === 1,
+    'default state is not "closed"')
+
+  // A host whose rows never arrived still cannot be named — the honest thing
+  // is to show the names inline instead of a dead count.
+  check('an unexpandable card still names what it can',
+    /!canExpand && \(check\.missing \?\? \[\]\)\.length > 0/u.test(source),
+    'a count with no way to see what it counts')
+  check('the disclosure has its own styles',
+    /\.sshwsp-check-head \{/u.test(source) && /\.sshwsp-check-caret \{/u.test(source),
+    'no style for the header or the caret')
+}
 //
 // This section pins the SHAPE of the fix, not "there is a button": the failure
 // being prevented is the new-window path, which looks correct in a browser and
