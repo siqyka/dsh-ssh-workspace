@@ -311,6 +311,69 @@ console.log('\n[a11y: the dialog contract]')
     count(/useDialogA11y\(\{/gu) === 2, `${count(/useDialogA11y\(\{/gu)} call site(s)`)
 }
 
+console.log('\n[a11y: the menu contract]')
+
+// The menu had `role="menu"` / `role="menuitem"` and Esc, which is what a
+// screen reader needs. It had no keyboard half: opening left focus on the
+// trigger, so ArrowDown did nothing and Tab walked out of the popover.
+//
+// The index arithmetic is EXTRACTED from the source and executed here rather
+// than grepped for. A grep for `'ArrowDown'` passes whether the wrapping is
+// right or the modulo is wrong — and this repository has already shipped
+// assertions of exactly that kind (see O-14 in optimization-and-future.md).
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const count = (re) => (source.match(re) ?? []).length
+
+  // The client is a Host factory (`window.__ModuleLoader__.load({...})`), so it
+  // cannot be imported; the function is self-contained and pure, so slicing it
+  // out and evaluating it exercises the real code instead of a copy that can drift.
+  const match = source.match(/function nextMenuIndex \(key, current, count\) \{([\s\S]*?)\n {4}\}/u)
+  check('the menu index helper is a pure, extractable function', match !== null, 'nextMenuIndex not found')
+
+  if (match !== null) {
+    // eslint-disable-next-line no-new-func
+    const nextMenuIndex = new Function('key', 'current', 'count', match[1])
+    const cases = [
+      // [key, current, count, expected]
+      ['ArrowDown', 0, 2, 1],
+      ['ArrowDown', 1, 2, 0], // wraps past the last item
+      ['ArrowUp', 0, 2, 1], // wraps before the first item
+      ['ArrowUp', 1, 2, 0],
+      ['ArrowDown', -1, 2, 0], // focus still on the trigger
+      ['ArrowUp', -1, 2, 1],
+      ['Home', 1, 3, 0],
+      ['End', 0, 3, 2],
+      ['Enter', 0, 2, null], // not a navigation key
+      ['Escape', 0, 2, null],
+      ['ArrowDown', 0, 0, null], // no items: nothing to focus
+      ['ArrowUp', 0, 0, null],
+    ]
+    for (const [key, current, itemCount, expected] of cases) {
+      const actual = nextMenuIndex(key, current, itemCount)
+      check(`${key} from ${current} of ${itemCount} goes to ${expected}`,
+        actual === expected, `got ${actual}`)
+    }
+  }
+
+  check('the menu takes focus when it opens',
+    /enabledItems\(\)\[0\]\?\.focus\?\.\(\)/u.test(source), 'no initial focus')
+  check('focus-on-open is gated on the popover actually being open',
+    /if \(!options\.open\) return/u.test(source), 'not gated on open')
+  check('disabled items are skipped by the arrow walk',
+    /menuitem"\]:not\(\[disabled\]\)/u.test(source), 'disabled items not excluded')
+  check('the menu handler is a capture-phase listener',
+    /addEventListener\('keydown', onKeyDown, true\)/u.test(source), 'not capture phase')
+  check('the menu claims a key only when it owns focus',
+    /document\.activeElement !== menuRef\.current/u.test(source), 'claims keys globally')
+  check('Tab closes the menu instead of walking into the page behind it',
+    /if \(event\.key === 'Tab'\)/u.test(source) && /closeRef\.current\(\)/u.test(source), 'Tab not handled')
+  check('the hook is defined once',
+    count(/function useMenuKeyboard /gu) === 1, `${count(/function useMenuKeyboard /gu)} definition(s)`)
+  check('the menu is wired to the hook',
+    count(/useMenuKeyboard\(\{/gu) === 1, `${count(/useMenuKeyboard\(\{/gu)} call site(s)`)
+}
+
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {

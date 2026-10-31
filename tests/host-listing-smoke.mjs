@@ -16,7 +16,7 @@
  * Run: node tests/host-listing-smoke.mjs
  */
 
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -107,6 +107,43 @@ console.log('\n[3] an unreadable store is an ERROR, not an empty list')
     (listing.skipped ?? []).some(entry => /host store could not be read/u.test(entry.reason)),
     JSON.stringify(listing.skipped))
   check('rows() degrades without throwing', store.rows().length === 0, 'threw')
+}
+
+// The case above simulates the failure through a store double, which proves the
+// reporting path but not that a real read error reaches it.
+//
+// The first version of this case used `chmod 000` and had to be skipped on
+// Windows (where chmod leaves the ACL alone, so the file stays readable) — a
+// skipped case proves nothing on the platform CI runs on most. Making the
+// config path a DIRECTORY instead fails `readFileSync` identically everywhere
+// (EISDIR), so the case runs unconditionally.
+//
+// It also found a real gap: `listing()` guarded the entry store but not
+// `sshConfigAliases()`, so an unreadable ssh_config threw straight out of the
+// listing instead of being reported. That is the same "empty vs. unreadable"
+// confusion O-10 is about, left half-done.
+console.log('\n[3b] a real read error on the ssh config is reported, not thrown')
+{
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsh-hosts-perm-'))
+  track(dir)
+  const configPath = path.join(dir, 'ssh_config')
+  mkdirSync(configPath)
+  const store = new HostStore(configPath)
+  store.entryStore = { load: () => [], sshConfigAliases: () => [] }
+  let listing = null
+  let thrown = null
+  try {
+    listing = store.listing()
+  } catch (error) {
+    thrown = error
+  }
+  check('listing() does not throw on an unreadable ssh config',
+    thrown === null, thrown === null ? '' : String(thrown))
+  check('the failure is reported as storeError',
+    typeof listing?.storeError === 'string' && /ssh config could not be read/u.test(listing.storeError),
+    String(listing?.storeError))
+  check('it degrades to no rows rather than inventing them',
+    listing?.rows.length === 0, JSON.stringify(listing?.rows))
 }
 
 console.log('\n[4] a usable store entry is still a row')

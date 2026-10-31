@@ -9,6 +9,10 @@
 - **断线后自动重连**：连接意外断开后由后台循环按指数退避重连（1 秒起、60 秒封顶、默认不限次数），不再等下一次操作才恢复。面板主机卡片显示「重连中（第 N 次，M 秒后）」/「重连已停止」+ 原因，`ssh_workspace_status` 新增 `reconnecting` 字段，`POST /hosts/reconnect`（「立即重连」按钮）跳过等待。
 - **重连后恢复已存隧道**：该主机 `enabled` 的保存转发自动重开；只由后台重连触发，普通首次连接不会把用户关掉的隧道重新打开。
 - **`engine.reconnect` 配置**：可调 `baseDelayMs` / `maxDelayMs` / `maxAttempts` / `jitter`，传 `false` 退回旧行为。
+- **菜单可用键盘操作**：「添加工作区」菜单打开时聚焦第一项，`ArrowDown` / `ArrowUp` 环绕移动，`Home` / `End` 跳到首尾，跳过禁用项，`Tab` 关闭菜单而不是把焦点走丢到背后的页面。
+- **诊断文本可导出**：`ssh_workspace_status` 新增 `diagnosticsSchemaVersion` 与 `diagnosticsText`——纯文本、带序号与时间戳、默认脱敏（家目录用户名、私钥路径、显式口令值），可直接贴进 issue。
+- **主机列表能区分「空」与「读不出来」**：`ssh_workspace_hosts` 与状态接口返回 `skipped` / `storeError`，被跳过的条目带原因。
+- **文档数字从源码生成**：新增 `scripts/doc-numbers.mjs`，路由 / 工具 / 补丁 / 模块 / 套件数由源码统计并就地替换；`--check` 在过期时指出具体哪一行，已接入 `npm run check:docs`。
 
 ### 修复
 
@@ -16,16 +20,30 @@
 - **重连状态在界面上不可见**：原来只有「已连接 / 已断开」两态，重连中与放弃重连无法区分。现在两者各有文案，且带尝试次数与倒计时。
 - **空闲连接关闭会误触发重连**：`forget` / 空闲回收 / 被替换的记录在关闭时不会武装后台循环（先摘池再 `end()`），避免「点了断开又自己连上」。
 - **面板状态文案显示原始键名**：`connections.connected` / `connections.broken` 从未在词典里定义，连接状态一直渲染成 `connections.connected`；已补齐中英文案。
+- **失败重放会重复执行写操作**：传输断开时原先「没有输出 = 没执行」的判断对 `rm -f`、`touch`、`git commit -q` 这类静默命令是错的。写类 SFTP 操作不再重放，改为标记 `outcome: 'unknown'` 并提示「可能已在主机上完成，重跑前请先确认」；命令重放改为显式 `replay: 'safe'`，只有插件自己的只读探针声明它。
+- **推送式监视降级后轮询句柄泄漏**：`watch()` 改用单一可变句柄，降级接替的轮询不再无人关闭；轮询初始化失败也不再被静默吞掉。
+- **原始字节上传绕开了 CSRF 前提**：`/upload` 现在要求 `application/octet-stream`（其余 POST 靠 `Content-Type: application/json` 挡跨站表单），`/download` 走同一守卫。跨站表单无法构造该类型，`fetch` 设置它会触发服务器从不批准的预检。
+- **跳板机主机被直连**：`ProxyJump` 在 ssh-config 块里是字符串，而判定只接受数组，于是 `ProxyJump bastion` 被判为「没有跳板机」，主机被列出并**直连目标**。现在两种形状都接受，并按 OpenSSH 的 first-wins 规则处理 `Host *` 通配块（支持 `!name` 排除），`ProxyJump none` 视为「不用代理」。
+- **持久 shell 超时后下一条命令读到上一条的输出**：超时或取消把会话标记为需重新同步，下一条 `run` 先发隔断屏障并丢弃屏障之前的全部输出；多字节解码改用 `StringDecoder`，被切在 chunk 边界的中文不再变成替换字符。
+- **传输暂存名可能碰撞**：暂存名在 `pid + 时间戳` 后加 16 位随机十六进制并用 `wx`（O_EXCL）打开——随机避免碰撞，独占把罕见碰撞变成重试而不是相互覆盖。下载侧等待改为与 `error` 竞速，写流出错不再永久挂起；`/download` 补上背压与取消。
+- **首次主机密钥落盘失败仍静默连**：不再只写无人读取的日志，而是记录一条 `degraded` 诊断并在状态输出 `unpinnedHostKeys` 警告行；后来成功固定时警告自动清除。
+- **并发首读开两条第二通道**：`streamChannel` 加 single-flight，并发只开一条，失败时清空槽位以便重试；元数据缓存改为缓存**进行中的 Promise**，并发同目标 stat 只发一次远端请求，失败不缓存。
+- **对话框缺键盘与读屏契约**：抽出共享的 `useDialogA11y`——`role="dialog"` + `aria-modal` + `aria-labelledby`、打开移入焦点、关闭归还触发元素、Tab 环绕、请求进行中 Esc 不生效。
 
 ### 测试
 
 - 新增 `tests/reconnect-smoke.mjs`（63 项）：用注入时钟驱动退避阶梯、停止规则、fatal 错误、手动重试与取消，并钉住引擎 / 路由 / 转发的接线。反向验证：去掉 close 事件的武装后 1 条变红；把「没人要就停」改成恒真后 3 条变红。
+- 新增 **假 SSH 服务器** `tests/support/fake-ssh-server.mjs`（用 `ssh2` 自带的 `Server` 在进程内起真实 SSH 服务）与 `tests/fake-transport-smoke.mjs`（23 项）：断言硬断后后台循环自行启动并连回、前台已恢复时后台仍执行恢复钩子、`forget` 与空闲回收**不**触发重连、服务器换密钥后拒绝并写进诊断。它取代了「手工把 `record.broken` 置为 true」——那证明分支，证明不了触发。
+- 新增 `replay-smoke`、`watch-lifecycle-smoke`、`scratch-safety-smoke`、`host-key-smoke`、`host-listing-smoke`、`upstream-contract-smoke`、`doc-numbers-smoke` 七个套件；`client-shape-smoke` 新增 27 项（对话框 10 + 菜单 17）。
+- **菜单方向键的算术抽成纯函数 `nextMenuIndex` 并在测试里真实执行**（12 个用例覆盖环绕、`current = -1` 入口、空列表、非导航键），而不是 grep 源码里有没有 `'ArrowDown'` 字样。
+- 汇总输出改为 PASS / SKIP / FAIL 三态并按名字列出跳过项，不再把 SKIP 当 PASS。
 
 ### 文档
 
 - `architecture.md` 新增「后台重连」一节；`troubleshooting.md` 新增「断线之后没有反应？」排查表。
 - `features.md` 新增「断线与重连」能力表，`ui.md` 记录卡片状态与「立即重连」按钮。
 - 两个 README 的配置表补上 `engine.reconnect`；路由 / 套件 / 断言计数按实测更新。
+- 新增 `docs/optimization-and-future.md`：16 项优化的完整审阅、每项的推进结果与反向验证、明确不做的事、9 个能力方向；已登记进 `docs/README.md` 索引与两个根 README。
 
 ## [0.2.7] - 2026-10-24
 
