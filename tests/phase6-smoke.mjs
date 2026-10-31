@@ -74,7 +74,15 @@ async function runExec (closeArgs, output) {
     inFlight: 0,
     idleAt: Date.now(),
     broken: false,
-    client: { exec: (_script, cb) => cb(undefined, fakeChannel(closeArgs, output)) },
+    // Real ssh2's exec is `exec(command[, options], callback)`; the shell
+    // router passes the channel-options bag (agent forwarding lives there),
+    // so the double honours both arities like the real API does.
+    client: {
+      exec: (_script, optionsOrCb, maybeCb) => {
+        const cb = typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb
+        cb(undefined, fakeChannel(closeArgs, output))
+      },
+    },
   }
   const engine = { acquire: async () => record, release: () => {}, forget: () => {}, assertNotDisabled () {} }
   const ctx = {

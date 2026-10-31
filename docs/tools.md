@@ -121,7 +121,7 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 `nohup` / 会话），插件看不到；它能恢复的是自己拥有的东西（连接池、已存隧道、监视器），
 不能恢复它只是**启动过**的东西。所以它报告代次，而不是声称连续。
 
-### 自检、命令与支持包
+### 自检、命令与诊断报告
 
 `selfCheck[]`：每台被探测过的主机一条 `{ alias, missing[], rows[], text }`。`rows` 是三态
 （`present` / `absent` / `unknown`），`text` 与面板渲染的是同一份措辞。**只有 `absent` 带
@@ -132,9 +132,15 @@ durationMs / exitCode / timedOut`，以及可选的 `outcomeUnknown`、`refused`
 `refused: true` 是唯一确定「没跑」的条目。渲染时只列失败、超时、结果未知与被拒绝的，因为
 一条成功的 `ls` 不是新闻。
 
-`auditText`：同一份记录的可粘贴文本。`supportBundle`：完整支持包——版本、补丁判定、主机
-配置（含 `~/.ssh/config` 里未被采用的条目）、工作区、连接、转发、每主机自检、命令与事件，
-路径与凭据已脱敏，**不上传到任何地方**。
+`auditText`：同一份记录的可粘贴文本。`supportBundle`：完整诊断报告（面板与文档里叫「诊断
+报告」，字段名沿用 `supportBundle` 不变）——开头是 `## diagnosis` 判定，然后是版本、补丁
+判定、主机密钥、主机配置（含 `~/.ssh/config` 里未被采用的条目与被跳过的条目）、工作区、
+连接（含代次）、转发、每主机自检、命令与事件，路径与凭据已脱敏。
+
+`diagnosis`：面板状态灯的判定，`{ version, state, warn, unknown, findings[], text }`。
+`state` 三值——`ok` / `warn` / `unknown`——且**只有需要处理的事项才进 `findings`**，所以
+`findings` 为空恰好等价于 `state: 'ok'`。判定只读上面这些字段，不探测、不连接、不读文件。
+它和报告、面板是同一个模块（`lib/diagnosis.js`），三处不会讲三个故事。
 
 ## ssh_workspace_exec
 

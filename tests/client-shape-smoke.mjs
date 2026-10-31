@@ -316,8 +316,8 @@ console.log('\n[a11y: the dialog contract]')
     /addEventListener\('keydown', onKeyDown, true\)/u.test(source), 'not capture phase')
   check('Esc is ignored while a request is in flight',
     /if \(busyRef\.current\) return/u.test(source), 'Esc not gated on busy')
-  check('both dialogs use the hook',
-    count(/useDialogA11y\(\{/gu) === 2, `${count(/useDialogA11y\(\{/gu)} call site(s)`)
+  check('every dialog uses the hook',
+    count(/useDialogA11y\(\{/gu) === 3, `${count(/useDialogA11y\(\{/gu)} call site(s)`)
 }
 
 console.log('\n[a11y: the menu contract]')
@@ -381,6 +381,183 @@ console.log('\n[a11y: the menu contract]')
     count(/function useMenuKeyboard /gu) === 1, `${count(/function useMenuKeyboard /gu)} definition(s)`)
   check('the menu is wired to the hook',
     count(/useMenuKeyboard\(\{/gu) === 1, `${count(/useMenuKeyboard\(\{/gu)} call site(s)`)
+  // A screen reader announces "item N of M" only when BOTH attributes are
+  // present; `role="menu"` alone leaves the count to the reader's guess. The
+  // position must be derived from the row's index, not written per item, or it
+  // drifts the moment a row is added.
+  check('each menu item states the set size',
+    /'aria-setsize': rows\.length/u.test(source), 'aria-setsize not derived from the row list')
+  check('each menu item states its own 1-based position',
+    /'aria-posinset': index \+ 1/u.test(source), 'aria-posinset not derived from the row index')
+  check('the position is taken from the map callback',
+    /rows\.map\(\(row, index\)/u.test(source), 'index not available to the item')
+}
+
+// ---------------------------------------------------------------------------
+// The panel's empty state: "nothing configured" vs "could not read it"
+//
+// The route has always shipped `skipped` and `storeError`; the tools and the
+// diagnostic report render them. The panel did not, so an unreadable store and
+// an empty one produced the same sentence — and that sentence ("no SSH hosts
+// configured") is the one a user cannot act on. Rendering the gaps is the
+// other half of O-10, not a cosmetic addition.
+// ---------------------------------------------------------------------------
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  check('the panel keeps the listing gaps from the hosts response',
+    /setListingGaps\(\{ skipped: hostsData\.skipped \?\? \[\], storeError: hostsData\.storeError \}\)/u.test(source),
+    'the response gaps are dropped')
+  check('an unreadable store gets its own sentence, not the empty-state one',
+    /listingGaps\.storeError !== undefined \? t\('panel\.storeError'\) : t\('panel\.empty'\)/u.test(source),
+    'store failure rendered as "empty"')
+  check('the store error itself is shown, not just announced',
+    /children: String\(listingGaps\.storeError\)/u.test(source), 'the reason is not displayed')
+  check('skipped entries are counted in the panel',
+    /t\('panel\.skipped'\)\.replace\('\{n\}', String\(listingGaps\.skipped\.length\)\)/u.test(source),
+    'skipped entries invisible')
+  // Gaps must survive a PARTIAL listing too: a host that exists but cannot be
+  // used is exactly the one the user is looking for, and it used to disappear
+  // because the rows that did load rendered over it.
+  check('gaps are shown alongside rows, not only when the list is empty',
+    (source.match(/listingGaps\.skipped\.length > 0 &&/gu) ?? []).length === 2,
+    `${(source.match(/listingGaps\.skipped\.length > 0 &&/gu) ?? []).length} render site(s)`)
+  check('the empty-state detail has its own style',
+    /\.sshwsp-empty-detail \{/u.test(source), 'no style for the detail line')
+}
+
+// ---------------------------------------------------------------------------
+// The diagnostic report: opened in the panel, copied from inside the window.
+//
+// This section pins the SHAPE of the fix, not "there is a button": the failure
+// being prevented is the new-window path, which looks correct in a browser and
+// does nothing in the Desktop shell.
+// ---------------------------------------------------------------------------
+if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
+  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+
+  // Slice the report section out of the panel so the assertions below cannot be
+  // satisfied by an unrelated `window.open` elsewhere in the file. Matched
+  // without a trailing line ending: the bundle's line endings are not part of
+  // what this pins, and a CRLF checkout would otherwise break the slice.
+  const start = client.indexOf('// ---- Diagnostic report')
+  const end = client.indexOf('// ---- Diagnostic report dialog', start)
+  const section = start >= 0 && end > start ? client.slice(start, end) : ''
+  const countIn = (re) => (section.match(re) ?? []).length
+  check('the report section is locatable', section.length > 0, 'section markers missing')
+
+  check('the "open" control is not an anchor with a target window',
+    !/jsx\('a', \{[\s\S]{0,200}?href: API\.supportBundle/u.test(section),
+    'a relative href resolves against dsh-app:// and is denied by the window-open policy')
+  check('nothing in the report section opens a window',
+    !/window\.open\(/u.test(section) && !/target: '_blank'/u.test(section),
+    'a new window cannot carry the Host session and cannot be admitted by the Desktop shell')
+  check('the report section renders the open control as a single button',
+    countIn(/jsx\('button', \{/gu) === 1,
+    `${countIn(/jsx\('button', \{/gu)} button(s) — copy moved into the dialog`)
+
+  // The dialog is the mechanism that replaces the window, so it has to exist,
+  // be mounted from the panel, and be dismissible like every other dialog.
+  check('a report dialog component exists',
+    /function ReportDialog \(\{ text, onClose, onCopy, t \}\) \{/u.test(client), 'ReportDialog not defined')
+  check('the panel mounts it from fetched text, not from a URL',
+    /reportText !== null && jsx\(ReportDialog, \{/u.test(client), 'dialog not mounted')
+  check('the report text comes from a fetch of the route',
+    /await fetch\(API\.supportBundle\)/u.test(client), 'no fetch of the report route')
+  check('the dialog shows the text in a read-only, selectable field',
+    /readOnly: true/u.test(client) && /spellCheck: false/u.test(client),
+    'a plain <pre> is not selectable enough to copy from by hand')
+
+  // Wrapping replaced sideways scrolling: a report is read line by line, and
+  // dragging horizontally to finish a sentence is the step that makes it unread.
+  check('the dialog wraps long lines instead of scrolling sideways',
+    /wrap: 'soft'/u.test(client) &&
+      /\.sshwsp-report-text \{[^}]*white-space: pre-wrap/u.test(client) &&
+      /\.sshwsp-report-text \{[^}]*overflow-x: hidden/u.test(client),
+    'sideways scrolling makes the reader drag to finish a sentence')
+
+  // Copying moved from the section's toolbar into the report window itself.
+  check('the dialog carries its own copy control',
+    /onClick: handleCopy/u.test(client) && /children: t\('support\.copy'\)/u.test(client),
+    'copy must be reachable from the open report window')
+  check('the dialog copies the text already on screen, not a fresh fetch',
+    /const copyOpenReport = async \(\) => \{[\s\S]{0,400}?writeText\(reportText\)/u.test(client),
+    'a re-fetch could return a different report than the one displayed')
+  check('the copy label is the short form, since it sits inside the report',
+    /'support\.copy': '复制'/u.test(client) && /'support\.copy': 'Copy'/u.test(client),
+    'the dialog button needs no noun — the dialog already says what it is')
+
+  // Opening must NOT select all: the whole report flashes selected while the
+  // user is still reading, and any keystroke replaces the selection. Sliced to
+  // the component and COUNTED, because a pattern like "no `area.select()` on
+  // mount" is trivially satisfied by writing `areaRef.current?.select()`.
+  const dlgStart = client.indexOf('function ReportDialog (')
+  const dlgEnd = client.indexOf('// Main panel', dlgStart)
+  const dlg = dlgStart >= 0 && dlgEnd > dlgStart ? client.slice(dlgStart, dlgEnd) : ''
+  const selectSites = (dlg.match(/\.select\(/gu) ?? []).length
+  const handleCopyAt = dlg.indexOf('const handleCopy = async () => {')
+  const selectAt = dlg.indexOf('.select(')
+  check('the report dialog is locatable', dlg.length > 0, 'component not found')
+  check('the text is not auto-selected when the dialog opens',
+    selectSites === 1 && handleCopyAt >= 0 && selectAt > handleCopyAt,
+    `${selectSites} select() call(s) — the only one may be the copy fallback`)
+  // ...but a FAILED copy does select it: the user pressed "copy" and must be
+  // able to finish it by hand.
+  check('a failed clipboard write selects the text for a manual copy',
+    /if \(\(await onCopy\(\)\) === true\) return[\s\S]{0,400}?\.select\(\)/u.test(dlg),
+    'the copy button would silently do nothing without clipboard permission')
+
+  // One fetch spelling. Asserting the CALL COUNT would just re-state the
+  // handlers; the thing worth pinning is that the route is fetched in exactly
+  // one place, so no handler can drift in its error handling.
+  const fetchSites = (client.match(/fetch\(API\.supportBundle\)/gu) ?? []).length
+  check('the report route is fetched in exactly one place',
+    /function fetchReportText \(\)/u.test(client) && fetchSites === 1,
+    `${fetchSites} fetch site(s) — a second fetch spelling drifts`)
+
+  // ---- the status dot
+  //
+  // The dot is the one thing the report section could not say before. What is
+  // pinned here is the SHAPE of the verdict's rendering, not "a dot exists":
+  // a dot that is always green is worse than no dot at all, because it
+  // asserts health it never checked.
+  check('the report title carries a status dot',
+    /className: 'sshwsp-report-title'/u.test(section) && /sshwsp-dot sshwsp-dot-/u.test(section),
+    'the verdict needs a mark beside the title, not another sentence')
+  check('the dot distinguishes all three states',
+    /\$\{diagnosis\.state === 'ok' \? 'ok' : diagnosis\.state === 'warn' \? 'err' : 'warn'\}/u.test(section),
+    'ok / warn / unknown must not collapse into two colours — "could not judge" is neither')
+  check('the dot is not hardcoded to a single state',
+    !/className: 'sshwsp-dot sshwsp-dot-ok'/u.test(section),
+    'a literal green dot asserts health nothing checked')
+  check('the dot has a role and a label for screen readers',
+    /role: 'img'/u.test(section) && /'aria-label': diagnosis\.state === 'ok'/u.test(section),
+    'colour alone carries no information for a reader who cannot see it')
+  // A red dot that names nothing is a puzzle: the findings must be reachable
+  // in the panel, not only inside the pasted report. Asserting only that the
+  // class name and `finding.detail` appear is not enough — disabling the list
+  // (`.length > 99`) leaves both in the source and the section still renders.
+  // So the GUARD is what gets pinned.
+  check('the findings are listed in the panel',
+    /\(diagnosis\.findings \?\? \[\]\)\.length > 0 && jsxs\('div', \{ className: 'sshwsp-diagnosis'/u.test(section) &&
+      /finding\.detail/u.test(section),
+    'the dot must be actionable without opening the report')
+  check('...and the list is not truncated to nothing',
+    !/\(diagnosis\.findings \?\? \[\]\)\.slice\(0, 0\)/u.test(section) &&
+      !/\(diagnosis\.findings \?\? \[\]\)\.length > [2-9][0-9]/u.test(section),
+    'a list that renders nothing is the same as no list')
+  // The verdict is computed on the server from the same fields the report
+  // prints, so the two cannot disagree.
+  check('the dot reads the server verdict rather than deriving its own',
+    /const diagnosis = status\.diagnosis/u.test(client),
+    'a client-side re-derivation is a second implementation of the same judgement')
+
+  // The hint no longer claims anything about uploading. It is a statement of
+  // what the text CONTAINS; the report's own closing note is where the
+  // no-upload stance lives, and saying it twice made it read like a disclaimer.
+  check('the panel hint describes the contents only',
+    /'support\.hint': '版本、补丁状态/u.test(client) &&
+      !/support\.hint': '[^']*不会上传/u.test(client),
+    'the hint still carries the upload promise')
 }
 
 

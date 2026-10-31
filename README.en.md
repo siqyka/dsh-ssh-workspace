@@ -165,6 +165,8 @@ become inaccessible since the host no longer exists.
 | --- | --- | --- |
 | `enabled` | `true` | Master switch |
 | `announceToAgent` | `false` | Whether to inject a capability description (a system-prompt section) into every agent |
+| `allowLan` | `false` | LAN deployment: the browser HTTP routes accept private-network source addresses (IPv4 RFC1918, IPv6 ULA/link-local) |
+| `allowedHosts` | `[]` | Extra `Host` values to admit (with `allowLan`), e.g. when the panel is reached by a LAN hostname |
 | `engine.idleTimeoutMs` | `1800000` | Recycle a connection after it stays idle this long (ms) |
 | `engine.connectTimeoutMs` | `15000` | Per-connect SSH handshake budget (ms) |
 | `engine.keepaliveIntervalMs` | `15000` | Keepalive heartbeat interval (ms) |
@@ -176,6 +178,29 @@ become inaccessible since the host no longer exists.
 | `engine.reconnect.jitter` | `0.2` | Downward-only jitter ratio, so several hosts do not reconnect in lockstep; never exceeds the ceiling |
 
 > All four `engine` entries are optional (invalid values fall back to the defaults) and rarely need tuning.
+
+### LAN deployments (`allowLan`)
+
+By default only the **loopback interface** may call the browser routes
+(`127.0.0.1` / `::1` / `localhost`). When the webserver binds `0.0.0.0` and the
+browser sits on another LAN machine, requests are refused with
+`forbidden: loopback-only` — that is the anti-DNS-rebinding fence, not a
+malfunction. With `allowLan: true`:
+
+- the source address may be any **private-network** address (IPv4 `10/8`,
+  `172.16/12`, `192.168/16`; IPv6 ULA `fc00::/7` and link-local `fe80::/10`);
+  public addresses are still refused;
+- the `Host` header must name one of **this machine's own listening
+  addresses** (each interface address plus the port; loopback spellings always
+  work), and a mismatching Host still gets
+  `forbidden: unexpected Host header …` — the anti-rebinding semantics carry
+  over unchanged;
+- if the panel is reached by a name the machine's interfaces do not know (a
+  LAN hostname, a reverse-proxy spelling), add it to `allowedHosts` (case and
+  surrounding whitespace insensitive, with or without a port);
+- the JSON content-type check on POST and the 405/415 handling are unchanged.
+
+See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY.md) for the full security discussion.
 
 ## Agent tools
 

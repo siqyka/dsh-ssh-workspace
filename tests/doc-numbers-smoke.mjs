@@ -86,7 +86,21 @@ console.log('\n[3] the generated region is well formed')
 console.log('\n[4] a stale document is detected, not silently accepted')
 {
   const document = readFileSync(path.join(pluginRoot, 'docs', 'development.md'), 'utf8')
-  const region = numbers.renderNumbers()
+  // The assertion total is the one figure that cannot be computed from source —
+  // it needs a full test run — so it is STAMPED into the document and `--check`
+  // replays that stamp. Comparing a stamped document against the placeholder
+  // would report it stale forever the moment anyone measured it, which is the
+  // bug this suite caught when the sample was first written.
+  const stamped = /^\| passing assertions \(sampled\) \| (\d+) \| measured ([^|]+?) \|/mu.exec(document)
+  check('the document stamps a measured assertion total', stamped !== null,
+    'no stamp row — the sampled figure exists to be measured, not guessed')
+  const region = stamped === null
+    ? numbers.renderNumbers()
+    : numbers.renderNumbers({
+        assertions: Number.parseInt(stamped[1], 10),
+        // The row reads `measured <date>`; `renderNumbers` adds the word itself.
+        sampledAt: stamped[2].trim(),
+      })
   const current = numbers.spliceRegion(document, region)
   check('splicing the current numbers is a no-op (the doc is up to date)',
     current === document, 'docs/development.md is stale — run node scripts/doc-numbers.mjs')

@@ -147,10 +147,32 @@ export function renderNumbers (options = {}) {
     const when = options.sampledAt ?? new Date().toISOString().slice(0, 10)
     lines.push(`| passing assertions (sampled) | ${options.assertions} | measured ${when} |`)
   } else {
-    lines.push('| passing assertions (sampled) | — | run `node tests/run.mjs` and pass `--assertions N` |')
+    lines.push('| passing assertions (sampled) | — | run `node scripts/doc-numbers.mjs --assertions N` with the count from a full test run |')
   }
   lines.push('', END)
   return lines.join('\n')
+}
+
+/**
+ * Read the stamped assertion sample back out of a document.
+ *
+ * The assertion total is the one figure this script cannot compute: it requires
+ * running every suite. It is therefore STAMPED by a caller who measured it, and
+ * `--check` has to honour that stamp — comparing against the placeholder would
+ * declare a freshly stamped document stale on the very next check.
+ *
+ * A missing or unparsable row means "not stamped", so a document that never had
+ * a sample keeps the placeholder rather than failing to check.
+ *
+ * @param {string} document - the document text.
+ * @returns {{assertions: number, sampledAt: string} | undefined} the stamp, when present.
+ */
+function readStamp (document) {
+  const row = /\| passing assertions \(sampled\) \| (\d+) \| measured ([^|]+?) \|/u.exec(document)
+  if (row === null) return undefined
+  const assertions = Number.parseInt(row[1], 10)
+  if (!Number.isInteger(assertions) || assertions <= 0) return undefined
+  return { assertions, sampledAt: row[2].trim() }
 }
 
 /**
@@ -188,7 +210,13 @@ function main () {
     console.error(`doc-numbers: ${path.relative(root, TARGET)} does not exist`)
     process.exit(1)
   }
-  const region = renderNumbers({ assertions, sampledAt })
+  // A sampled number cannot be regenerated from the source — it comes from a
+  // test run. `--check` must therefore REPLAY the stamped sample instead of
+  // comparing against the placeholder, or the moment someone stamps a count
+  // every subsequent `--check` would call the document stale. The stamp is read
+  // back out of the document itself, which is the only place it exists.
+  const stamped = assertions === undefined ? readStamp(document) : undefined
+  const region = renderNumbers(stamped === undefined ? { assertions, sampledAt } : stamped)
   const expected = spliceRegion(document, region)
 
   if (check) {

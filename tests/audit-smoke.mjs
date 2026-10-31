@@ -161,7 +161,11 @@ console.log('\n[the engine records every command it runs]')
   // would be invisible.
   const engine = new SshWorkspaceEngine({})
   const client = {
-    exec (_command, callback) {
+    // Real ssh2's exec is `exec(command[, options], callback)`; the engine
+    // passes the channel-options bag (agent forwarding lives there), so the
+    // double honours both arities like the real API does.
+    exec (_command, optionsOrCallback, maybeCallback) {
+      const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
       const stream = new EventEmitter()
       stream.stderr = new EventEmitter()
       stream.signal = () => {}
@@ -190,7 +194,8 @@ console.log('\n[the engine records every command it runs]')
   // A cwd travels as its own field, not baked into the command line.
   const engine = new SshWorkspaceEngine({})
   const client = {
-    exec (_command, callback) {
+    exec (_command, optionsOrCallback, maybeCallback) {
+      const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
       const stream = new EventEmitter()
       stream.stderr = new EventEmitter()
       stream.signal = () => {}

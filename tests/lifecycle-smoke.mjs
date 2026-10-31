@@ -54,11 +54,11 @@ const EXPECTED_TOOLS = [
   'ssh_workspace_unforward',
 ]
 // Route paths the browser half must expose. Kept in step with ROUTES in
-// lib/routes.js: hosts, host save/delete/forget-key/disconnect, test, ls,
-// status, mount, unmount, enable, forward, unforward, the six saved-forward
-// routes (save/toggle/delete/remember/probe/settings), transfer, download,
-// upload.
-const EXPECTED_ROUTES = 22
+// lib/routes.js: hosts, host save/delete/forget-key/disconnect/reconnect,
+// test, ls, status, self-check, support-bundle, mount, unmount, enable,
+// forward, unforward, the six saved-forward routes
+// (save/toggle/delete/remember/probe/settings), transfer, download, upload.
+const EXPECTED_ROUTES = 25
 
 let failures = 0
 function check (label, ok, detail) {

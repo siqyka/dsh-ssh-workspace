@@ -31,7 +31,7 @@
 | `host` / `port` / `user` | 连接目标；默认端口 22 |
 | `auth` | `{ kind: "key" \| "password" \| "agent", keyPath?, passphrase?, password?, agentPath? }` |
 | `description` / `tags` | 备注与标签（`ssh_workspace_hosts` 可搜索） |
-| `agentForward` | 布尔。转发本机 ssh-agent，使远端命令（如远端 `git push`）能用本机密钥认证，私钥不落到远端 |
+| `agentForward` | 布尔。在远端**命令通道**（exec / shell / 终端 / 持久 shell）上转发本机 ssh-agent，使远端命令（如远端 `git push`）能用本机密钥认证，私钥不落到远端；SFTP（浏览 / 传输）不受影响，认证方式也不因此改变 |
 | `compress` | 布尔。传输压缩，以 CPU 换带宽，慢链路（跨国 / 移动网络）下明显更快 |
 | `proxyJump` | 非空时解析明确拒绝（见下） |
 | `createdAt` / `updatedAt` | 时间戳 |
@@ -39,6 +39,13 @@
 `agentForward` / `compress` 都是**可选布尔**：缺省等于 ssh2 默认（关闭），
 所以老版本写入的条目与新版本字节级兼容。面板的主机编辑器里以复选框呈现，
 勾掉即从文件中删除该字段，不会残留 `false`。
+
+`agentForward` 是**逐通道**生效的：ssh2 的转发请求只能挂在 exec / shell 通道上，
+连接级同名字段会把整条连接（含只读 SFTP）都卷进来，本插件不使用它。转发的
+前提是连接上挂着一个可解析的本机 ssh-agent（`SSH_AUTH_SOCK` / pageant，或
+agent 认证自带的 `agentPath`）：key / password 认证的主机勾选后若本机有 agent
+会自动挂上（配置的密钥 / 密码仍是第一认证方式），本机没有 agent 时转发空转、
+连接照常；agent 认证却找不到 ssh-agent 仍会在连接时报错。
 
 ## ~/.ssh/config 回退
 

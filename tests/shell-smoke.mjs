@@ -262,6 +262,105 @@ console.log('\n=== shell smoke ===\n')
     prepared.state.writes >= 3, `writes=${prepared.state.writes}`)
 }
 
+// --- concurrent opens for one session open exactly one PTY -----------------
+//
+// The defect: `open` checked the map, found nothing, and each caller opened its
+// own channel. The second overwrote the first in the map, so the first session
+// kept running with no reference able to close it — a leaked PTY plus a leaked
+// connection hold for the life of the process. A burst of tool calls on a cold
+// session is exactly that shape.
+{
+  const prepared = fakeChannel({ results: {} })
+  let openOnce
+  const gate = new Promise((resolve) => { openOnce = resolve })
+  const engine = {
+    opened: [],
+    assertNotDisabled () {},
+    async openChannel (_alias, command, options) {
+      this.opened.push({ command, options })
+      await gate
+      return { channel: prepared.channel, release: prepared.release ?? (() => {}) }
+    },
+  }
+  const shells = new ShellManager({ engine })
+  const first = shells.open('test', { session: 's' })
+  const second = shells.open('test', { session: 's' })
+  const third = shells.run('test', 'pwd', { session: 's' })
+  openOnce()
+  const [a, b, c] = await Promise.all([first, second, third])
+  check('concurrent opens for one session open exactly one channel',
+    engine.opened.length === 1, `opened=${engine.opened.length}`)
+  check('concurrent opens return the same session object', a === b, 'distinct sessions')
+  check('only one session is registered', shells.shells.size === 1, String(shells.shells.size))
+  check('the in-flight slot is cleared after the open', shells.opening.size === 0, String(shells.opening.size))
+  check('the run through the shared open still executed', c.exitCode === 0, String(c.exitCode))
+}
+
+// --- a failed open is not cached -------------------------------------------
+//
+// Caching the rejection would make every later caller await the same error
+// instead of retrying: one transient refusal would poison the session forever.
+{
+  let attempts = 0
+  const prepared = fakeChannel({ results: {} })
+  const engine = {
+    opened: [],
+    assertNotDisabled () {},
+    async openChannel (_alias, command, options) {
+      attempts += 1
+      this.opened.push({ command, options })
+      if (attempts === 1) throw new Error('the host refused the channel')
+      return { channel: prepared.channel, release: prepared.release ?? (() => {}) }
+    },
+  }
+  const shells = new ShellManager({ engine })
+  let message
+  try { await shells.open('test') } catch (error) { message = error.message }
+  check('a failed open rejects with the engine error',
+    String(message) === 'the host refused the channel', String(message))
+  check('a failed open leaves no session registered', shells.shells.size === 0, String(shells.shells.size))
+  const retried = await shells.open('test')
+  check('the next open retries instead of reusing the rejection', attempts === 2, `attempts=${attempts}`)
+  check('the retry produced a live session', retried.alive === true)
+}
+
+// --- a session that arrives after dispose is closed ------------------------
+//
+// Unloading the plugin must not leave a PTY behind. An open still in flight
+// cannot be awaited (its channel does not exist yet), so the session closes
+// itself on arrival — otherwise the hold would outlive the plugin entirely.
+{
+  const prepared = fakeChannel({ results: {} })
+  let releases = 0
+  prepared.release = () => { releases += 1 }
+  let openOnce
+  const gate = new Promise((resolve) => { openOnce = resolve })
+  const engine = {
+    opened: [],
+    assertNotDisabled () {},
+    async openChannel (_alias, command, options) {
+      this.opened.push({ command, options })
+      await gate
+      return { channel: prepared.channel, release: prepared.release }
+    },
+  }
+  const shells = new ShellManager({ engine })
+  const pending = shells.open('test')
+  shells.dispose()
+  openOnce()
+  let message
+  try { await pending } catch (error) { message = error.message }
+  check('an open in flight when the manager is disposed rejects',
+    typeof message === 'string' && message.includes('disposed'), String(message))
+  check('the arriving channel is closed, not registered',
+    shells.shells.size === 0, String(shells.shells.size))
+  check('the arriving channel released its hold', releases === 1, String(releases))
+  let afterDispose
+  try { await shells.open('test') } catch (error) { afterDispose = error.message }
+  check('a disposed manager opens nothing new',
+    typeof afterDispose === 'string' && afterDispose.includes('disposed'), String(afterDispose))
+}
+
 // --- a multi-byte character split across chunks survives --------------------
 {
   const prepared = fakeChannel({ results: { 'echo 中文': { output: '中文', code: 0 } }, splitOutput: true })

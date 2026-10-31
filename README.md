@@ -152,6 +152,8 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | --- | --- | --- |
 | `enabled` | `true` | 总开关 |
 | `announceToAgent` | `false` | 是否向每个 agent 注入能力说明（系统提示词段落） |
+| `allowLan` | `false` | 局域网部署：浏览器的 HTTP 路由接受私网来源地址（IPv4 RFC1918、IPv6 ULA/链路本地） |
+| `allowedHosts` | `[]` | 额外放行的 `Host` 值（配合 `allowLan`，如面板经局域网主机名访问时） |
 | `engine.idleTimeoutMs` | `1800000` | 连接空闲超过该时长后回收（毫秒） |
 | `engine.connectTimeoutMs` | `15000` | 单次 SSH 连接握手超时（毫秒） |
 | `engine.keepaliveIntervalMs` | `15000` | keepalive 心跳间隔（毫秒） |
@@ -163,6 +165,23 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | `engine.reconnect.jitter` | `0.2` | 向下抖动的比例，用来避免多主机同时重连；不会超过上限 |
 
 > `engine` 下各项均为可选（非法值回落默认），通常无需配置。
+
+### 局域网部署（`allowLan`）
+
+默认只接受**本机回环**访问（`127.0.0.1` / `::1` / `localhost`）。webserver 绑定
+`0.0.0.0`、浏览器从局域网另一台机器访问时，请求会被 `forbidden: loopback-only`
+拒绝——这是防 DNS-rebinding 的围栏，不是故障。设 `allowLan: true` 后：
+
+- 来源地址放宽到**私网地址**（IPv4 `10/8`、`172.16/12`、`192.168/16`；IPv6 ULA
+  `fc00::/7` 与链路本地 `fe80::/10`），公网地址仍被拒绝；
+- `Host` 头必须命名**本机真实监听地址**（由本机各网卡地址 + 端口拼出，回环拼写
+  始终有效），不匹配的 Host 仍以 `forbidden: unexpected Host header …` 拒绝——
+  防 rebinding 语义原样保留；
+- 若面板经一个本机网卡不知道的名字访问（局域网主机名、反代拼写），把它加进
+  `allowedHosts`（大小写与首尾空白不敏感，可带端口也可不带）；
+- POST 的 JSON content-type 校验、405/415 等其余防护不变。
+
+安全语义的完整说明见 [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY.md)。
 
 ## Agent 工具
 

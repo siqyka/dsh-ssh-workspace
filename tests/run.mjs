@@ -63,6 +63,7 @@ const SUITES = [
   'upstream-contract',
   'audit',
   'capabilities-report',
+  'diagnosis',
   'support-bundle',
   'client-shape',
   'backdrop-dismiss',

@@ -15,6 +15,7 @@
 
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -136,11 +137,18 @@ function fakeReq (options = {}) {
 
 /** A fake engine that serves and accepts in-memory files. */
 function fakeEngine (files, directories = new Set()) {
-  const state = { opened: 0, closed: 0, renamed: [], unlinked: [], mkdirs: [] }
+  const state = { opened: 0, closed: 0, renamed: [], unlinked: [], mkdirs: [], holds: 0, holdPeak: 0, inFlight: 0 }
   return {
     state,
     async withSftp (_alias, work) {
-      return await work({
+      // The record is passed to the callback the way the real engine passes it:
+      // `holds` is the sweeper's long-lived-consumer counter, and a streaming
+      // read pins it for as long as the generator is open (see openRemoteRead).
+      const record = { holds: 0, idleAt: Date.now(), inFlight: 0 }
+      state.record = record
+      state.inFlight += 1
+      try {
+        return await work({
         stat (target, callback) {
           if (directories.has(target)) {
             callback(null, { size: 0, isDirectory: () => true, mode: 0o040755 })
@@ -166,6 +174,11 @@ function fakeEngine (files, directories = new Set()) {
           callback(null)
         },
         read (handle, buffer, offset, length, position, callback) {
+          // The stream is live right now, so this is where the connection pin
+          // must be observable. Recording it here (rather than after the
+          // request returns) is the difference between "the hold was released"
+          // and "the hold was never taken".
+          state.holdsDuringStream = state.record?.holds ?? 0
           const slice = handle.__content.subarray(position, position + length)
           slice.copy(buffer, offset)
           callback(null, slice.length, buffer)
@@ -205,7 +218,10 @@ function fakeEngine (files, directories = new Set()) {
           callback(null)
         },
         unlink (target, callback) { state.unlinked.push(target); files.delete(target); callback(null) },
-      })
+      }, record)
+      } finally {
+        state.inFlight -= 1
+      }
     },
   }
 }
@@ -259,6 +275,15 @@ check('the transfer route is registered', routes.some(route => route.path === RO
     String(state.headers?.['content-disposition'] ?? '').includes('attachment'), JSON.stringify(state.headers?.['content-disposition']))
   check('the file handle is closed after streaming', engine.state.closed === engine.state.opened && engine.state.opened > 0,
     `opened=${engine.state.opened} closed=${engine.state.closed}`)
+  // The sweeper reaps a connection whose `holds` is 0 and whose idle time
+  // exceeds the timeout, so a download that outlives `idleTimeoutMs` must pin
+  // the connection for as long as its stream is open. `withSftp` alone cannot
+  // do this: it decrements `inFlight` when the callback returns, and the
+  // callback returns a generator, so the read happens outside that window.
+  check('the connection is pinned while the stream is live',
+    engine.state.holdsDuringStream >= 1, String(engine.state.holdsDuringStream))
+  check('the pin is released once the stream ends',
+    (engine.state.record?.holds ?? -1) === 0, String(engine.state.record?.holds))
 }
 
 {
@@ -397,7 +422,7 @@ check('the upload route is registered', upload !== undefined)
  * exposed as an async iterator over fixed-size chunks — the same shape a real
  * IncomingMessage offers.
  */
-function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST', contentType = 'application/octet-stream' }) {
+function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST', contentType = 'application/octet-stream', remoteAddress = '127.0.0.1' }) {
   let index = 0
   return {
     method,
@@ -406,7 +431,7 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
     // silently turn an explicit `undefined` into the accepted type, which is
     // exactly the case this fixture exists to send.
     headers: contentType === null ? { host } : { host, 'content-type': contentType },
-    socket: { remoteAddress: '127.0.0.1', localPort: 4074 },
+    socket: { remoteAddress, localPort: 4074 },
     on () {},
     [Symbol.asyncIterator] () {
       return {
@@ -1117,6 +1142,281 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
     rmSync(dir, { recursive: true, force: true })
   }
 }
+
+// --- allowLan: the LAN-deployment fence ------------------------------------
+//
+// `allowLan` widens "who may call these endpoints" from the loopback interface
+// to this machine's own addresses, for deployments whose webserver is bound to
+// a LAN interface. Both halves of the fence must survive the widening: the
+// remote address has to be loopback or a PRIVATE network one (a public address
+// is still refused), and the Host header has to name this server — a rebound
+// page must send its own hostname, so the anti-rebinding property carries
+// over. The default mode keeps its historical wording byte for byte, asserted
+// here explicitly so a future rewording is a conscious act.
+{
+  const doubles = () => ({
+    engine: { pool: new Map(), store: { rows: () => [] } },
+    router: { listRoots: () => [], listDisabled: () => [] },
+    forwards: { list: () => [] },
+    shells: { list: () => [] },
+    ctx: { get: () => undefined },
+  })
+
+  // The engine behind the streaming routes must be able to serve a file, so
+  // the download assertions prove the fence PASSES and the bytes flow — not
+  // merely that the answer is not 403.
+  const lanEngine = Object.assign(fakeEngine(new Map([
+    ['/srv/report.txt', Buffer.from('hello from the remote host')],
+  ])), { pool: new Map() })
+  const lanRoutes = makeRoutes({
+    ...doubles(),
+    engine: lanEngine,
+    allowLan: true,
+    allowedHosts: ['Panel.LAN', ' panel2.lan '],
+  })
+  const lanStatus = lanRoutes.find(route => route.path === ROUTES.status)
+  const lanDownload = lanRoutes.find(route => route.path === ROUTES.download)
+  const lanUpload = lanRoutes.find(route => route.path === ROUTES.upload)
+
+  const realHosts = Object.values(os.networkInterfaces()).flat()
+    .filter(entry => entry?.internal === false && typeof entry?.address === 'string' && entry.address !== '')
+    .map(entry => (entry.address.includes(':') ? `[${entry.address.toLowerCase()}]:4074` : `${entry.address.toLowerCase()}:4074`))
+
+  // A private origin with a configured extra Host passes the shared guard —
+  // and the configured value is normalized, so mixed case and stray spaces
+  // still match.
+  {
+    const { res, state } = fakeRes()
+    await lanStatus.handler(fakeReq({ remoteAddress: '192.168.1.244', headers: { host: 'panel.lan:4074' } }), res)
+    check('allowLan admits a private origin with a configured Host', state.status === 200, `${state.status} ${state.body}`)
+  }
+  // The machine's own interface address is a valid Host by construction.
+  if (realHosts.length > 0) {
+    const { res, state } = fakeRes()
+    await lanStatus.handler(fakeReq({ remoteAddress: '10.66.0.7', headers: { host: realHosts[0] } }), res)
+    check(`allowLan admits the machine's own interface Host (${realHosts[0]})`, state.status === 200, `${state.status} ${state.body}`)
+  } else {
+    check("allowLan admits the machine's own interface Host", true, 'no non-internal interface on this machine — case not exercisable')
+  }
+  // All private-network address classes are admitted: RFC1918, the mapped
+  // IPv4 spelling, IPv6 ULA and link-local (with its zone suffix).
+  for (const [address, label] of [
+    ['10.0.0.5', 'RFC1918'],
+    ['172.16.5.5', 'RFC1918 172.16/12'],
+    ['::ffff:192.168.9.9', 'mapped IPv4'],
+    ['fd12:3456:789a::1', 'IPv6 ULA'],
+    ['fe80::1%eth0', 'IPv6 link-local'],
+  ]) {
+    const { res, state } = fakeRes()
+    await lanStatus.handler(fakeReq({ remoteAddress: address, headers: { host: 'panel2.lan:4074' } }), res)
+    check(`allowLan admits a ${label} origin`, state.status === 200, `${state.status} ${state.body}`)
+  }
+  // A wrong Host is still refused, and the reason stays distinguishable from
+  // the origin refusal.
+  {
+    const { res, state } = fakeRes()
+    await lanStatus.handler(fakeReq({ remoteAddress: '192.168.1.244', headers: { host: 'evil.example:4074' } }), res)
+    check('allowLan still refuses a rebinding Host header', state.status === 403, String(state.status))
+    check('...naming the Host header as the cause', JSON.parse(state.body).error.includes('unexpected Host header'), state.body)
+  }
+  // A Host naming a DIFFERENT private address is not this server.
+  {
+    const { res, state } = fakeRes()
+    await lanStatus.handler(fakeReq({ remoteAddress: '192.168.1.244', headers: { host: '192.168.1.1:4074' } }), res)
+    check('allowLan refuses a Host that names another machine', state.status === 403, String(state.status))
+  }
+  // A public origin is refused even with a perfect Host, and the refusal says
+  // why rather than claiming "loopback-only".
+  {
+    const { res, state } = fakeRes()
+    await lanStatus.handler(fakeReq({ remoteAddress: '8.8.8.8', headers: { host: 'panel.lan:4074' } }), res)
+    check('allowLan still refuses a public origin', state.status === 403, String(state.status))
+    check('...naming the address class as the cause',
+      JSON.parse(state.body).error.includes('neither loopback nor a private network address'), state.body)
+  }
+  // The byte-streaming routes apply the same verdict with their terse wording.
+  {
+    const { res, state } = fakeRes()
+    await lanDownload.handler(fakeReq({
+      url: `${ROUTES.download}?alias=a&path=${encodeURIComponent('/srv/report.txt')}`,
+      remoteAddress: '192.168.1.244',
+      headers: { host: 'panel.lan:4074' },
+    }), res)
+    check('allowLan lets a LAN browser download', state.status === 200, `${state.status} ${state.body}`)
+    check('...the body is the remote content', state.body === 'hello from the remote host', JSON.stringify(state.body))
+  }
+  {
+    const { res, state } = fakeRes()
+    await lanDownload.handler(fakeReq({ remoteAddress: '192.168.1.244', headers: { host: 'evil.example:4074' } }), res)
+    check('allowLan download still refuses a rebinding Host', state.status === 403 && state.body === '{"error":"forbidden"}',
+      `${state.status} ${state.body}`)
+  }
+  {
+    // `fakeReq` has no body iterator, so the handler used to fail past the
+    // fence with `req is not async iterable` and still answer 200 — which made
+    // "the route proceeds" pass for the wrong reason. The fixture now carries
+    // real bytes, so 200 here means the upload actually ran.
+    const { res, state } = fakeRes()
+    await lanUpload.handler(fakeUploadReq({
+      url: `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv')}&name=x.txt`,
+      host: 'panel.lan:4074',
+      chunks: [Buffer.from('lan bytes')],
+    }), res)
+    check('allowLan upload passes the fence (route proceeds)', state.status === 200, `${state.status} ${state.body}`)
+    check('...and writes the uploaded bytes', JSON.parse(state.body).ok === true && JSON.parse(state.body).bytes === 9,
+      state.body)
+  }
+  {
+    const { res, state } = fakeRes()
+    await lanUpload.handler(fakeReq({
+      method: 'POST',
+      url: `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv')}&name=x.txt`,
+      remoteAddress: '8.8.8.8',
+      headers: { host: 'panel.lan:4074' },
+    }), res)
+    check('allowLan upload still refuses a public origin', state.status === 403, String(state.status))
+  }
+
+  // Default mode: the wording the loopback fence has always answered with.
+  const plainRoutes = makeRoutes(doubles())
+  const plainStatus = plainRoutes.find(route => route.path === ROUTES.status)
+  const plainDownload = plainRoutes.find(route => route.path === ROUTES.download)
+  {
+    const { res, state } = fakeRes()
+    await plainStatus.handler(fakeReq({ remoteAddress: '192.168.1.244', headers: { host: 'panel.lan:4074' } }), res)
+    check('default mode refuses a LAN origin with the historical wording',
+      state.status === 403 && state.body === '{"error":"forbidden: loopback-only"}', `${state.status} ${state.body}`)
+  }
+  {
+    const { res, state } = fakeRes()
+    await plainStatus.handler(fakeReq({ remoteAddress: '127.0.0.1', headers: { host: 'evil.example:4074' } }), res)
+    check('default mode refuses a rebinding Host with the historical wording',
+      state.status === 403 && state.body === `{"error":"forbidden: unexpected Host header \\"evil.example:4074\\""}`,
+      `${state.status} ${state.body}`)
+  }
+  {
+    const { res, state } = fakeRes()
+    await plainStatus.handler(fakeReq({ url: ROUTES.status, headers: { host: 'localhost:4074' } }), res)
+    check('default mode still serves a loopback request', state.status === 200, `${state.status} ${state.body}`)
+  }
+  {
+    const { res, state } = fakeRes()
+    await plainDownload.handler(fakeReq({ remoteAddress: '192.168.1.244', headers: { host: 'panel.lan:4074' } }), res)
+    check('default download keeps its terse refusal for a LAN origin',
+      state.status === 403 && state.body === '{"error":"forbidden"}', `${state.status} ${state.body}`)
+  }
+}
+
+// --- the error contract: a failure is a status, not a 200 with ok:false ---
+//
+// The route family used to answer almost every business failure with
+// `200 + { ok: false, error }`, while parameter errors used 4xx. Two
+// conventions in one file meant a caller had to read `response.ok`, parse the
+// body, AND check `body.ok` — because either half could be the failure — and
+// a monitor saw a wall of 200s. This block pins the contract from the route
+// side, which is where the browser half's branches come from.
+{
+  const { mkdtempSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
+
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsh-routes-contract-'))
+  try {
+    const store = new HostConfigStore(path.join(dir, 'dsh-ssh.json'))
+    const contractEngine = {
+      pool: new Map(),
+      store: { entryStore: store, sshConfigAliases: () => [] },
+      capabilities: new Map(),
+      forget () {},
+      assertNotDisabled () {},
+      async acquire () { throw Object.assign(new Error('host unreachable'), { code: 'EHOSTUNREACH' }) },
+      async withSftp () { throw Object.assign(new Error('no such file'), { code: 'FS_NOT_FOUND' }) },
+    }
+    const contractRoutes = makeRoutes({
+      engine: contractEngine,
+      router: { assertEnabled () {}, roots: new Set(['ssh://a/srv']) },
+      forwards: { list: () => [], open: async () => { throw new Error('cannot bind') }, close: () => false },
+      shells,
+      ctx: { get: () => undefined },
+    })
+    const findRoute = (routePath) => contractRoutes.find(route => route.path === routePath)
+
+    // A duplicate alias is the caller's to fix: 409, not 200.
+    {
+      const { res, state } = fakeRes()
+      await findRoute(ROUTES.hostSave).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { alias: 'alpha', host: '10.0.0.1', user: 'dev', auth: { kind: 'agent' } },
+      }), res)
+      const body = JSON.parse(state.body)
+      check('saving a new host succeeds with 200', state.status === 200 && body.ok === true, `${state.status} ${state.body}`)
+      const { res: res2, state: state2 } = fakeRes()
+      await findRoute(ROUTES.hostSave).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { alias: 'alpha', host: '10.0.0.2', user: 'dev', auth: { kind: 'agent' } },
+      }), res2)
+      check('saving a duplicate alias answers 409, not 200',
+        state2.status === 409, `${state2.status} ${state2.body}`)
+      check('the duplicate is still explained in the body',
+        JSON.parse(state2.body).error.includes('already exists'), state2.body)
+    }
+
+    // A form the store rejects is the caller's to fix too: 400.
+    {
+      const { res, state } = fakeRes()
+      await findRoute(ROUTES.hostSave).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { alias: 'beta', host: '', user: 'dev', auth: { kind: 'agent' } },
+      }), res)
+      check('an invalid host form answers 400, not 200', state.status === 400, `${state.status} ${state.body}`)
+      check('...and says what was wrong', typeof JSON.parse(state.body).error === 'string', state.body)
+    }
+
+    // A transport failure is not the caller's fault: 502.
+    {
+      const { res, state } = fakeRes()
+      await findRoute(ROUTES.forward).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { alias: 'alpha', remotePort: 8080 },
+      }), res)
+      check('a host that cannot be reached answers 502, not 200',
+        state.status === 502, `${state.status} ${state.body}`)
+      check('...and still explains itself', typeof JSON.parse(state.body).error === 'string', state.body)
+    }
+
+    // A transfer that cannot read the file is a 404 (the file is absent).
+    {
+      const { res, state } = fakeRes()
+      await findRoute(ROUTES.transfer).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { alias: 'alpha', direction: 'download', localPath: '/tmp/x', remotePath: '/srv/x' },
+      }), res)
+      check('a missing remote file in a transfer answers 404, not 200',
+        state.status === 404, `${state.status} ${state.body}`)
+    }
+
+    // A success keeps its shape: 200 plus ok:true, so a caller that checks
+    // either half agrees with a caller that checks the status.
+    {
+      const { res, state } = fakeRes()
+      await findRoute(ROUTES.hostDisconnect).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { alias: 'alpha' },
+      }), res)
+      check('a successful disconnect is 200 + ok:true',
+        state.status === 200 && JSON.parse(state.body).ok === true, `${state.status} ${state.body}`)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)

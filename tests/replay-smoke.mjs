@@ -173,7 +173,12 @@ function execEngine (output) {
   engine.acquire = async () => {
     state.attempts += 1
     const record = recordOf('h', {
-      exec: (_command, callback) => callback(undefined, dyingChannel(output)),
+      // Real ssh2's exec is `exec(command[, options], callback)`; the engine
+      // passes the channel-options bag, so the double honours both arities.
+      exec: (_command, optionsOrCallback, maybeCallback) => {
+        const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
+        callback(undefined, dyingChannel(output))
+      },
       end: () => {},
     })
     // ssh2 marks the record broken before the channel's close settles the run.
@@ -211,7 +216,8 @@ function execEngine (output) {
       stream.signal = () => {}
       stream.close = () => {}
       const record = recordOf('h', {
-        exec: (_command, callback) => {
+        exec: (_command, optionsOrCallback, maybeCallback) => {
+          const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
           if (state.attempts === 1) return callback(undefined, dyingChannel(undefined))
           setImmediate(() => {
             stream.emit('data', Buffer.from('rg\n', 'utf8'))
@@ -253,7 +259,10 @@ console.log('\n[5] a timeout is never reported as an unknown outcome')
     stream.signal = () => {}
     stream.close = () => {}
     const record = recordOf('h', {
-      exec: (_command, callback) => callback(undefined, stream),
+      exec: (_command, optionsOrCallback, maybeCallback) => {
+        const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
+        callback(undefined, stream)
+      },
       end: () => {},
     })
     return record
@@ -262,6 +271,73 @@ console.log('\n[5] a timeout is never reported as an unknown outcome')
   check('a timeout is reported as timedOut', outcome.timedOut === true, JSON.stringify(outcome))
   check('a timeout is not marked unknown', outcome.outcome === undefined, JSON.stringify(outcome.outcome))
   check('a timeout is not retried', attempts === 1, `attempts=${attempts}`)
+}
+
+// ---------------------------------------------------------------------------
+// 6. The second SFTP channel is opened once, not once per reader
+// ---------------------------------------------------------------------------
+//
+// `streamChannel` exists so a long sequential read does not queue every other
+// operation on the shared channel behind it. Two concurrent first readers used
+// to open a second channel EACH and record only the last, so the other stayed
+// open for the life of the connection with nothing able to close it. The
+// in-flight promise is shared instead; a failed open is not cached, so the
+// next reader retries rather than awaiting the same rejection forever.
+console.log('\n[6] concurrent first readers open exactly one second channel')
+{
+  /** A record whose `client.sftp` answers on a later tick, like a real open. */
+  const record = recordOf('h', {
+    exec: () => {},
+    end: () => {},
+    sftp: (callback) => { setTimeout(() => callback(undefined, { kind: 'stream', on: () => {}, end: () => {} }), 5) },
+  })
+  const engine = new SshWorkspaceEngine({ reconnect: false })
+  engine.acquire = async () => record
+  const state = { opens: 0 }
+  const counting = {
+    ...record,
+    client: { ...record.client, sftp: (callback) => { state.opens += 1; record.client.sftp(callback) } },
+  }
+  engine.acquire = async () => counting
+  const channels = await Promise.all([engine.streamChannel(counting), engine.streamChannel(counting), engine.streamChannel(counting)])
+  check('three concurrent first readers open one second channel', state.opens === 1, `opens=${state.opens}`)
+  check('all three readers get the same channel', channels.every(channel => channel === channels[0]),
+    JSON.stringify(channels.map(channel => channel?.kind)))
+  check('the channel is recorded for later readers', counting.streamSftp === channels[0],
+    String(counting.streamSftp?.kind))
+  check('the in-flight slot is cleared', counting.streamOpening === undefined, 'still set')
+  const later = await engine.streamChannel(counting)
+  check('a later reader reuses the channel without opening another', state.opens === 1 && later === channels[0],
+    `opens=${state.opens}`)
+}
+
+// --- a failed second channel degrades AND is not cached ---------------------
+//
+// Degrading to the shared channel is deliberate: a stream must never fail for
+// want of a second channel. What must not happen is caching the rejection —
+// every later reader would await the same failure instead of retrying.
+{
+  let attempts = 0
+  const record = recordOf('h', {
+    exec: () => {},
+    end: () => {},
+    sftp: (callback) => {
+      attempts += 1
+      if (attempts === 1) { setTimeout(() => callback(new Error('channel refused')), 5); return }
+      setTimeout(() => callback(undefined, { kind: 'stream', on: () => {}, end: () => {} }), 5)
+    },
+  })
+  const engine = new SshWorkspaceEngine({ reconnect: false })
+  engine.acquire = async () => record
+  const degraded = await engine.streamChannel(record)
+  check('a refused second channel degrades to the shared one', degraded === record.sftp, 'not the shared channel')
+  check('the degradation is recorded, not silent',
+    engine.diagnostics.list().some(entry => entry.kind === 'degraded' && /stream channel/u.test(entry.message)),
+    JSON.stringify(engine.diagnostics.list()))
+  const retried = await engine.streamChannel(record).catch(error => error)
+  check('the next reader retries instead of replaying the rejection', attempts === 2, `attempts=${attempts}`)
+  check('the retry produced a second channel', retried !== record.sftp && retried?.kind === 'stream',
+    String(retried?.kind ?? retried?.message))
 }
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)

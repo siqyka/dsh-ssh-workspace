@@ -14,9 +14,9 @@
 | HTTP routes | 25 | `lib/routes.js` |
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 29 | directory listing |
-| test suites | 43 | `tests/run.mjs` |
-| passing assertions (sampled) | — | run `node tests/run.mjs` and pass `--assertions N` |
+| modules under `lib/` | 30 | directory listing |
+| test suites | 44 | `tests/run.mjs` |
+| passing assertions (sampled) | 1726 | measured 2026-10-31 |
 
 <!-- doc-numbers:end -->
 
@@ -46,6 +46,7 @@
 | `lib/tools.js` | 10 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → 各 profile → 部署自带树 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现 |
+| `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
 | `lib/client.js` | 浏览器半边：面板、添加工作区流程、标记装饰、全部样式与中英文案 |
 | `lib/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) |
 
@@ -152,8 +153,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `diagnostics-smoke` | 无 | 36 | 面向用户的诊断环形缓冲：条目字段与毫秒时间戳、无别名时不写空字段、**容量上限丢最旧留最新**（含"恰好等于容量"的边界）、`list()` 交出副本因而调用方改不动历史、`list(n)` 取最新 n 条、`clear()`、记录永不抛（循环引用 / Symbol / 非法 kind / 坏容量都不得让被观测的操作失败）、kind 词表封闭且覆盖连接 / 断连 / 重连 / 降级 / 转发。还钉住上游补丁结论必须一路送到状态面（引擎字段 + 事件 + 两个 status 出口 + `index.js` 的接线），因为"算出来了但没人接手"正是这轮修掉的缺陷形态。最后三条钉住"为什么要这个模块"：引擎必须往这里记连接事件，且不得改用 `logger.debug`——本宿主没有 console exporter、`debug` 级别低于所有 exporter 默认级别，写进去等于没写 |
 | `reconnect-smoke` | 无 | 63 | 断线后的后台重连策略（`lib/reconnect.js`，纯逻辑、注入时钟）：退避从 1s 倍增到 60s 封顶、抖动只向下因此上限是真上限、只对「还有人要」的主机启动（没人要时不武装、不拨号）、消费者全没了就停并在状态里报 `gave-up`、成功即清条目并触发恢复钩子、`maxAttempts` 有界阶梯、`fatal` 错误第一次就停、手动重试跳过等待且失败后重新武装、`cancel` 之后永不拨号（「断开」必须是终态）、暴露的条目不带定时器句柄且改它不影响调度器、`isWanted` 抛错不得被当成「要」、`dispose` 停掉一切。最后钉住引擎与路由的接线：close 事件武装、摘池后的主动关闭不得武装、`forget` 取消、前台失败也交给后台、`background: true` 不递归、已保存转发让主机保持「要」 |
 | `fake-transport-smoke` | 真实 `ssh2`（peer stub 根不够） | 32 | **触发，而不是分支**。`reconnect-smoke` 驱动注入时钟的调度器、`replay-smoke` 与 `host-key-smoke` 手工置 `record.broken`——三者都只证明「代码知道连接死了之后做什么」，没有一个证明「连接会被报告为死了」。本套件对着 `tests/support/fake-ssh-server.mjs`（ssh2 自带 `Server`，真实 TCP）跑引擎：①无人操作时 socket 被硬断 → 后台循环自行启动 → 自动连回，日志顺序 `disconnect → 后台重试 → connect → reconnected`，服务器连接数 1→2；②前台先把主机治好、后台 attempt 命中健康记录时恢复钩子**仍然执行**（接在「本次调用建了 socket」上就会漏，这正是 O-05 的原始 bug）；③`forget` 与空闲回收都**不**触发重连（「断开」不能被写成「一直拨号」）；④服务器换密钥 → 拒绝、阶梯终止于 `gave-up`、记录指纹与出示指纹**双双**写进诊断、且此后不再拨号；⑤**命令通道的参数袋**：`runRemoteCommand` 曾对未勾选转发的主机（即所有主机的默认）把 `undefined` 当 ssh2 第二个参数，而 ssh2 只在该参数是**函数**时才替换成 `{}`，于是 `opts.allowHalfOpen` 被同步读崩，抛出发生在 promise executor 里 → 每条命令都 reject、能力探测吞掉后报全 unknown、审计一条不写；这条只有真 socket 能区分「通道开了」与「忽略参数的替身什么都收」。三个实现细节：硬断必须 `destroy()` 而非 `end()`（合盖不发 FIN；ssh2 的 `Connection` 只暴露 `end()`，真实 socket 经 `_sock` 取）；换密钥必须重建监听器（ssh2 在构造时把 `hostKeys` 解析进闭包，无法原地替换，重建恰好也是「主机重装后同地址回来」的真实序列）；转发重试用假 client 钉住时序（真服务器要同时满足「连接上有 agent」与 `AllowAgentForwarding no`，本机无 agent 时那条路径不可达） |
-| `client-shape-smoke` | 无 | 57 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案 |
-| `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、三个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
+| `client-shape-smoke` | 无 | 113 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。新增**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」 |
+| `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 66 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 40 | 目录树上传、原子发布、递归与失败路径 |
 | `insert-once-smoke` | 无 | 18 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
@@ -173,6 +174,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `capabilities-report-smoke` | 无 | 48 | 远程环境自检（`lib/capabilities.js`）：**三态不可合并**（`unknown` 不是 `absent`，只有 `absent` 带安装提示，缺键读作 `unknown`）、工具表与探测脚本的询问列表同源、四项环境警告各自写清后果、`unknown` 不被计成缺失。引擎侧：一次往返问完全部工具与环境事实、`dsh-env:` 前缀解析、失败探针既不缓存判定也不缓存环境 |
 | `config-audit-smoke` | 无 | 37 | `~/.ssh/config` 审计（`lib/config-audit.js`）：`ignored` / `lost` / `refused` 三种判定不可合并（`LocalForward` 是 `lost`，`ProxyJump` 走 `skipped` 而不是审计）、未列出的关键字也有判定、匹配跟随 resolver（`Host *` 生效、`!name` 排除、别的块不串味）、first-wins 且重复只报一次、长值截断、`listing()` 每行带 `unsupported` |
 | `audit-smoke` | 无 | 56 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
+| `diagnosis-smoke` | 无 | 63 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、缺工具、环境告警、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**（探测不到的主机不得报成「缺所有工具」），以及聚合规则（确定的坏压过不确定）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
 | `routes-smoke` | 无 | 128 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |

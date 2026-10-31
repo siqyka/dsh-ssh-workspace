@@ -1,5 +1,5 @@
 /**
- * The support bundle and the connection generation.
+ * The diagnostic report and the connection generation.
  *
  * Two Future items share this suite because they are the same claim from two
  * angles: **say what is actually true about the connection, and say it in a form
@@ -45,7 +45,7 @@ function check (label, ok, detail) {
   }
 }
 
-console.log('\n=== support bundle smoke ===\n')
+console.log('\n=== diagnostic report smoke ===\n')
 
 // ---------------------------------------------------------------------------
 console.log('[masking: consistent, and the shape survives]')
