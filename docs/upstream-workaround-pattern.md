@@ -77,6 +77,35 @@ schema.parse('ssh://upstream-probe/absolute/path')
 
 一句话记法：**探测版本是在预测一个尚未发生的发布，探测行为是在观察一个已经存在的对象。前者是赌博，后者是测量。**
 
+#### 3b. 但「行为变了」未必是上游改的
+
+上面那段有个前提：**中间没有别人动过被探测的那个谓词**。一旦补丁自己也改了这个谓词（本插件的内建桥接就替换了 `node:path.isAbsolute`），接受就不再是干净证据：
+
+| 谁改了 `isAbsolute` | schema 何时构造 | schema 接受 `ssh://` 吗 | 这说明上游修好了吗 |
+| --- | --- | --- | --- |
+| 没人 | — | 否 | — |
+| 上游已修（读绑定） | 任意 | 是 | **是** |
+| 我们的补丁 | 补丁**之后** | 是 | **否**——它捕获的是我们的函数 |
+
+第三行在真实部署里不是边角情况：桥接在插件自己的 `apply()` 里装，`workingDirectory` 单元在服务首次被访问时才构造。于是 schema 捕获的**正好是补丁后的谓词**，探测报告 `fixed`，而源码里 `refine(isAbsolute)` 一个字没改。
+
+**后果比误报本身严重**：`fixed` 打印的建议是「删掉它」，于是一个仍然承重的补丁被自己的探测器劝退。真实形态是：面板亮红灯、报告说「上游已修复，删掉这个 workaround」、而宿主源码仍是缺陷版本。
+
+**判别式不是「接受了吗」，而是「它读了吗」**：探测期间把谓词换成一个一次性的记账包装，看 schema 是否**调用**了它。捕获了函数值的 schema 永远不碰这个属性。
+
+```js
+let read = false
+const current = path.isAbsolute
+path.isAbsolute = (v) => { read = true; return current(v) }   // 语义不变，只记账
+const accepted = schema.parse(remote)
+path.isAbsolute = current
+// accepted && read  → 上游读绑定，真修好了
+// accepted && !read → 捕获了我们的补丁，缺陷仍在
+```
+
+这条规则适用于**任何**自我退役探测：先问「探测值和我的补丁是否共享同一个可被替换的符号」，共享就必须用「读没读」而不是「变没变」。正负对照（下一节）挡不住这个错误——两个对照都不涉及「补丁先于构造」这一种顺序。
+
+
 ### 4. 探测要有正负对照
 
 只断言「探测在坏 schema 上返回 false」是不够的：一个**恒假**的探测（比如 `typeof schema.parse !== 'function'` 写错成别的）也会通过这条断言，而它永远不会报告「已修复」。
@@ -84,9 +113,13 @@ schema.parse('ssh://upstream-probe/absolute/path')
 必须同时断言：
 
 - 负对照：**已知有缺陷**的对象上，探测返回 false（证明它真的能看出坏）；
-- 正对照：**已知已修复**的对象上，探测返回 true（证明它真的能看出好）。
+- 正对照：**已知已修复**的对象上，探测返回 true（证明它真的能看出好）；
+- **顺序对照**：补丁**先于**缺陷对象构造时，探测仍必须返回 false（第 3b 节那一行）。
 
-`tests/projection-relax-smoke.mjs` 两个方向都有：`capturedSchema(...)` 是负对照，`fixed` 那个 schema 是正对照。
+第三条是 0.2.8 补上的。前两条都成立时，探测照样可能把「捕获了我们的补丁」误判成「上游修好了」，因为两个对照都不涉及桥接已经装好的那种顺序——而那正是生产的顺序。
+
+`tests/projection-relax-smoke.mjs` 三个方向都有：`capturedSchema(originalIsAbsolute)` 是负对照，
+`fixed` 那个 schema 是正对照，第 10 节的 `withBridge(...)` 是顺序对照。
 
 ### 5. 三态结论，不要布尔
 
@@ -185,6 +218,7 @@ upstream workaround OBSOLETE: UPSTREAM-1-working-directory-isAbsolute — ...
 | --- | --- |
 | 登记的补丁数 | **1**（`UPSTREAM-1-working-directory-isAbsolute`） |
 | 探测状态 | 六态（`PROBE`），见 `lib/patch-projection.js` |
+| 退役判据 | 接受 **且** 证明读了 `isAbsolute` 绑定（`lib/path-binding.js`） |
 | 退役信号通道 | `ssh_workspace_status` 的 `upstreamWorkarounds` 字段 + `upstream` 事件 |
 | 反向测试 | `tests/projection-real-smoke.mjs` 第一节（真实宿主 schema，红 = 删补丁） |
 | 手工验证开关 | `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS=1` |

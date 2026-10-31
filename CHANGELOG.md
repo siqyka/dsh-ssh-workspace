@@ -2,96 +2,65 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
-## [未发布]
+## [0.2.8] - 2026-10-31
 
 ### 新增
 
-- **诊断判定与状态灯**：新增 `lib/diagnosis.js`——报告是事实汇总，从不给结论，用户不该需要
-  知道阈值才能判断 `probe: 'fixed'` 意味着"该删了"。判定只读报告已在打印的字段（不探测、
-  不连接、不读文件），三态 `ok` / `warn` / `unknown` 且**不折叠成两色**；聚合时确定的坏压过
-  不确定。面板在「诊断报告」标题后画一个圆点（绿 / 红 / 琥珀），findings 直接列在下方——
-  一个只说"有问题"却不说是什么的圆点是个谜题。`/status` 新增 `diagnosis` 字段，
-  `ssh_workspace_status` 也输出它（含可直接读的 `text`），三处同一个模块。
-- **报告补上三处它原本漏掉的事实**：新增 `## host keys`（被接受却没能固定的密钥——"报告
-  什么都没说"与"报告说一切正常"曾是同一个画面）、被跳过的主机（`~/.ssh/config` 里存在但
-  无法使用的条目以前根本不出现，于是"我明明配了却用不了"没有任何线索）、连接代次
-  （`generation > 1` 说明重连前启动的远端进程可能仍在运行）。全部来自已有数据，无新增采集。
-- **`/support-bundle` 与状态工具共用一份输入**：`routes.js` 的 `diagnosisInput()` 与
-  `tools.js` 的 `statusBundleInput()` 各自组装一次，报告与判定都从它读——两处推导同一套
-  规则，是"圆点与报告说法不一致"的开始。
-- **断线后自动重连**：连接意外断开后由后台循环按指数退避重连（1 秒起、60 秒封顶、默认不限次数），不再等下一次操作才恢复。面板主机卡片显示「重连中（第 N 次，M 秒后）」/「重连已停止」+ 原因，`ssh_workspace_status` 新增 `reconnecting` 字段，`POST /hosts/reconnect`（「立即重连」按钮）跳过等待。
-- **重连后恢复已存隧道**：该主机 `enabled` 的保存转发自动重开；只由后台重连触发，普通首次连接不会把用户关掉的隧道重新打开。
-- **`engine.reconnect` 配置**：可调 `baseDelayMs` / `maxDelayMs` / `maxAttempts` / `jitter`，传 `false` 退回旧行为。
-- **菜单可用键盘操作**：「添加工作区」菜单打开时聚焦第一项，`ArrowDown` / `ArrowUp` 环绕移动，`Home` / `End` 跳到首尾，跳过禁用项，`Tab` 关闭菜单而不是把焦点走丢到背后的页面。
-- **诊断文本可导出**：`ssh_workspace_status` 新增 `diagnosticsSchemaVersion` 与 `diagnosticsText`——纯文本、带序号与时间戳、默认脱敏（家目录用户名、私钥路径、显式口令值），可直接贴进 issue。
-- **主机列表能区分「空」与「读不出来」**：`ssh_workspace_hosts` 与状态接口返回 `skipped` / `storeError`，被跳过的条目带原因。
-- **文档数字从源码生成**：新增 `scripts/doc-numbers.mjs`，路由 / 工具 / 补丁 / 模块 / 套件数由源码统计并就地替换；`--check` 在过期时指出具体哪一行，已接入 `npm run check:docs`。
-- **远程环境自检**（F-06）：探测从 `rg / git / inotifywait` 扩到 7 项工具（增加 `sha256sum`、`tar`、`rsync`、`tput`）与 4 项环境事实（登录 shell、locale、可用磁盘、inotify 上限），全部在**一次往返**内问完。报告是三态的——`present` / `absent` / `unknown`——只有 `absent` 带安装提示，`unknown` 既不省略也不装成"没问题"。面板新增「远程环境自检」一节，新增 `GET /self-check` 与状态工具的 `selfCheck` 字段。工具清单在 `lib/capabilities.js` 一张表里，探测脚本的询问列表由它派生。
-- **`~/.ssh/config` 审计**（F-04）：新增 `lib/config-audit.js`，把"支持什么"从注释变成被检查的表。三种判定不允许合并：`ignored`（不读、无损失）、`lost`（不读、用户预期落空，如 `LocalForward` / `Include` / `Match`）、`refused`（无法履行故拒绝该主机，如 `ProxyJump`）。审计挂在 `HostStore.listing()` 每一行的 `unsupported` 字段上，面板、`ssh_workspace_hosts` 与支持包同源。
-- **远端命令审计**（F-07 的可审计部分）：新增 `lib/audit.js`，与诊断环**并列**的有界环（容量 200，`seq` 在环外单调递增）。记录脱敏后的命令行、cwd（独立字段）、通道、时长、退出码、超时、`outcome: 'unknown'`、以及是否被模式门禁拒绝。**脱敏在写入时发生**，覆盖 `Authorization` 头、`DB_PASSWORD=` 这类带前缀赋值、`--password` 旗标、URL 里的 `token=` / `sig=`、家目录。
-- **一键支持包**（F-09）：新增 `lib/support-bundle.js` + `GET /support-bundle`（`text/plain`，可直接在浏览器打开）+ 面板「复制支持包」。它是**组装**而非采集——每个字段都来自已有表面，所以不可能报告面板会否认的事实。含版本、补丁判定、主机（含配置审计）、工作区、连接（含代次）、转发、每主机自检、最近命令与事件。不做自动上传。
-- **连接分代**（F-01 的可解释部分）：`engine.generations` 记录每个 alias 的成功连接次数（**存在 record 之外**，因为 record 每次重连都被替换）。`generationOf()` / `describeGeneration()` 让第 2 代起的连接说明「重连前启动的远端进程可能仍在运行」，第 1 代保持安静。状态工具新增 `generation` / `generationNote`，`/status` 新增 `generations`。
+- **上游补丁的探测能区分「读的是绑定」与「读的是快照」**：新增 `lib/path-binding.js`，探测期间把 `path.isAbsolute` 换成记账包装，捕获了函数值的 schema 永远不碰它。
+- **诊断判定与状态灯**：新增 `lib/diagnosis.js`，只读报告已打印的字段给出 `ok` / `warn` / `unknown` 三态（不探测、不连接、不读文件）。`/status` 与 `ssh_workspace_status` 新增 `diagnosis`。
+- **报告补上三处漏掉的事实**：`## host keys`、被跳过的主机、连接代次。
+- **断线后自动重连**：后台指数退避（1 秒起、60 秒封顶），面板卡片显示重连状态，`POST /hosts/reconnect` 跳过等待。
+- **重连后恢复已存隧道**：该主机 `enabled` 的保存转发自动重开，普通首次连接不会重开用户关掉的隧道。
+- **`engine.reconnect` 配置**：`baseDelayMs` / `maxDelayMs` / `maxAttempts` / `jitter`，传 `false` 退回旧行为。
+- **菜单可用键盘操作**：方向键环绕移动、`Home` / `End` 跳首尾并跳过禁用项、`Tab` 关闭菜单。
+- **诊断文本可导出**：`ssh_workspace_status` 新增 `diagnosticsSchemaVersion` 与 `diagnosticsText`，纯文本、默认脱敏，可直接贴进 issue。
+- **主机列表能区分「空」与「读不出来」**：`ssh_workspace_hosts` 与状态接口返回 `skipped` / `storeError`。
+- **文档数字从源码生成**：新增 `scripts/doc-numbers.mjs`，已接入 `npm run check:docs`。
+- **远程环境自检**（F-06）：7 项工具与 4 项环境事实在一次往返内问完，三态 `present` / `absent` / `unknown`。新增 `GET /self-check` 与 `selfCheck` 字段。
+- **`~/.ssh/config` 审计**（F-04）：新增 `lib/config-audit.js`，`ignored` / `lost` / `refused` 三种判定不合并，结果挂在 `HostStore.listing()` 每行的 `unsupported` 上。
+- **远端命令审计**（F-07）：新增 `lib/audit.js`，容量 200 的有界环，脱敏在写入时发生。
+- **一键支持包**（F-09）：新增 `lib/support-bundle.js` + `GET /support-bundle` + 面板「复制支持包」，组装而非采集，不做自动上传。
+- **连接分代**（F-01）：`engine.generations` 记录每个 alias 的成功连接次数，第 2 代起说明「重连前启动的远端进程可能仍在运行」。
+- **补丁的宿主契约成表**（O-15）：新增 `lib/upstream-contract.js`，每个 `patch-*.js` 声明它碰的宿主符号与退役判据。
 
 ### 修复
 
-- **面板提示与报告重复声明"不上传"**：工具栏下面那行提示也带着"不会上传到任何地方"，与报告收尾句重复，让一句陈述读起来像免责声明。提示现在只说报告包含什么、已经脱敏；"不上传"留在报告自己的收尾句——那是唯一真正需要读者知道这件事的地方（他正要把它贴出去）。
-- **空补丁列表把两种情况写成一句**：`none installed (or the projection seam was unavailable at startup)` 里"补丁不需要装"和"我不知道补丁装没装"无法区分，后者才是需要行动的那一种。
-- **「打开诊断报告」点了没反应（桌面端）**：那一节曾是一个 `<a href="…" target="_blank">`，而路由本身返回 200——坏的是新窗口路径。桌面端的文档来源是 `dsh-app://app/`，相对 `href` 因此解析到该协议，主窗口的 `setWindowOpenHandler` 只放行 `http:` / `https:`，其余一律 `deny`，点击被静默吞掉；即便放行，`shell.openExternal` 交给的系统浏览器没有 Host 的鉴权 cookie，只会拿到 401。现在「打开」取 `fetchReportText()` 的字节，渲染进面板内的只读对话框，复制在该窗口内完成。
-- **诊断报告读起来别扭**：报告窗口曾用 `wrap="off"` + 横向滚动（为的是让一条被脱敏的长路径留在一行），但报告是逐行读的，横向滚动逼读者一边读一边拖。现在 `wrap="soft"` + `white-space: pre-wrap` 自动换行；等宽字体下对齐照旧，报告的换行与缩进都保留。
-- **打开诊断报告时整篇被全选**：`area.select()` 挂在挂载时，用户还在读的时候整份报告闪成高亮，之后任何一次按键都替换选区。现在打开不选中；只有在**复制失败**（无剪贴板权限）时才选中全文，作为用户按了「复制」之后的补救。
-- **面板工具栏上的「复制」名不副实**：它取一次报告再写剪贴板，而在无剪贴板权限时会悄悄改成弹出窗口——按钮承诺了另一件事。复制移进报告窗口（标签为「复制 / Copy」），复制的是**屏幕上这一份**文本而不是重新请求：再取一次可能拿到另一份（另一台主机连上了、命令跑完了）。
-- **断线后必须有人先操作才能恢复**：合盖、Wi-Fi 切换、VPN 重连之后，界面停在「已断开」直到用户点开文件或工作区。现在 socket 一断就进后台重试。
-- **重连状态在界面上不可见**：原来只有「已连接 / 已断开」两态，重连中与放弃重连无法区分。现在两者各有文案，且带尝试次数与倒计时。
-- **空闲连接关闭会误触发重连**：`forget` / 空闲回收 / 被替换的记录在关闭时不会武装后台循环（先摘池再 `end()`），避免「点了断开又自己连上」。
-- **面板状态文案显示原始键名**：`connections.connected` / `connections.broken` 从未在词典里定义，连接状态一直渲染成 `connections.connected`；已补齐中英文案。
-- **失败重放会重复执行写操作**：传输断开时原先「没有输出 = 没执行」的判断对 `rm -f`、`touch`、`git commit -q` 这类静默命令是错的。写类 SFTP 操作不再重放，改为标记 `outcome: 'unknown'` 并提示「可能已在主机上完成，重跑前请先确认」；命令重放改为显式 `replay: 'safe'`，只有插件自己的只读探针声明它。
-- **推送式监视降级后轮询句柄泄漏**：`watch()` 改用单一可变句柄，降级接替的轮询不再无人关闭；轮询初始化失败也不再被静默吞掉。
-- **原始字节上传绕开了 CSRF 前提**：`/upload` 现在要求 `application/octet-stream`（其余 POST 靠 `Content-Type: application/json` 挡跨站表单），`/download` 走同一守卫。跨站表单无法构造该类型，`fetch` 设置它会触发服务器从不批准的预检。
-- **跳板机主机被直连**：`ProxyJump` 在 ssh-config 块里是字符串，而判定只接受数组，于是 `ProxyJump bastion` 被判为「没有跳板机」，主机被列出并**直连目标**。现在两种形状都接受，并按 OpenSSH 的 first-wins 规则处理 `Host *` 通配块（支持 `!name` 排除），`ProxyJump none` 视为「不用代理」。
-- **持久 shell 超时后下一条命令读到上一条的输出**：超时或取消把会话标记为需重新同步，下一条 `run` 先发隔断屏障并丢弃屏障之前的全部输出；多字节解码改用 `StringDecoder`，被切在 chunk 边界的中文不再变成替换字符。
-- **传输暂存名可能碰撞**：暂存名在 `pid + 时间戳` 后加 16 位随机十六进制并用 `wx`（O_EXCL）打开——随机避免碰撞，独占把罕见碰撞变成重试而不是相互覆盖。下载侧等待改为与 `error` 竞速，写流出错不再永久挂起；`/download` 补上背压与取消。
-- **首次主机密钥落盘失败仍静默连**：不再只写无人读取的日志，而是记录一条 `degraded` 诊断并在状态输出 `unpinnedHostKeys` 警告行；后来成功固定时警告自动清除。
-- **并发首读开两条第二通道**：`streamChannel` 加 single-flight，并发只开一条，失败时清空槽位以便重试；元数据缓存改为缓存**进行中的 Promise**，并发同目标 stat 只发一次远端请求，失败不缓存。
-- **对话框缺键盘与读屏契约**：抽出共享的 `useDialogA11y`——`role="dialog"` + `aria-modal` + `aria-labelledby`、打开移入焦点、关闭归还触发元素、Tab 环绕、请求进行中 Esc 不生效。
-- **能力探测用子串匹配判断工具存在**：原实现是 `stdout.includes('rg')`，路径或 locale 值里出现工具名就误报为已安装。环境事实与工具判定共享同一路输出后，这会从理论缺陷变成日常误报；现在每条事实走独立前缀行（`dsh-tool:rg`）并整行匹配。
-- **支持包把未打码的 alias 嵌进报告**：第一版直接嵌入审计的 `exportText()` 输出，而那段文本带着明文 alias（它是写给本地读者看的）。改为从 rows 自己渲染——脱敏必须发生在字符串**形成**的地方，导出时再脱敏救不了别的读者。
-- **勾选「转发 ssh-agent」后目录浏览不可用**：引擎此前把 `agentForward` 塞进 ssh2 的连接级 config，而 ssh2 会把连接级该字段当成整条连接的转发许可——连接上没有配置 agent（key / password 认证正是如此）时 `connect()` 直接抛 `You must set a valid agent path to allow agent forwarding`，连接建不起来，SFTP 浏览随之全挂；即便有 agent 也会把转发请求加到包括只读 SFTP 在内的所有通道上。现在连接级不再携带该字段：转发意图记在连接记录上，由统一的 `channelExecOptions` 只在 exec / shell 命令通道上表达（快照 exec、`openChannel` 的监视器 / 终端 / 持久 shell、shell 与 subprocess 路由全部走它），SFTP 路径不受影响；需要转发而连接上没有 agent 时（key / password 认证）会探测本机 ssh-agent 并挂上（配置的密钥 / 密码仍是第一认证方式，认证类型不变），本机没有 agent 时转发空转、连接照常；agent 认证且无 ssh-agent 的明确报错保持不变。
-- **每条远端命令都失败，能力探测全报「未确定」**：上面那处改动的收尾把 ssh2 的第二个参数写成了 `agentForward === true ? {…} : undefined`，而 ssh2 的 `exec(cmd, opts, cb)` 只在 `opts` 是**函数**时才替换成 `{}`——显式 `undefined` 会一路走到 `opts.allowHalfOpen` 并**同步抛出**。抛出发生在 promise executor 里，于是 `runRemoteCommand` 变成 reject；`probeCapabilities` 的 catch 把它读成「探不出来」，七项工具与四项环境事实全部渲染成 `unknown`，审计一条不写。未勾选转发的主机（即所有主机的默认路径）受影响。现在恒传对象，并把同步抛出收敛成普通 outcome——否则调用方会把「命令被拒」误判成「连接已断」，进而触发一次重连。
-- **本机没有 ssh-agent 时，认证失败被报成「取不到 agent 身份」**：`resolveAgentPath` 是名字解析器而不是存活检查（Windows 上无条件返回 `pageant`），ssh2 又不在连接时校验端点，于是挂一个没在跑的 agent 会让认证阶段报 `Failed to retrieve identities from agent`，把真正的原因（密码错 / 密钥被拒）盖掉。现在连接前先用 `getIdentities` 问一次（2 秒超时），答不上来就当没有 agent，转发随之空转；`agent` 认证路径不变，它本来就该报「没有 ssh-agent」。
-- **服务器禁止转发时，勾选该选项会让整条命令失败**：`AllowAgentForwarding no` 是标准加固项，sshd 会拒绝每通道的 `auth-agent-req`，ssh2 把它变成通道打开错误。现在识别出这一种拒绝（`isAgentForwardingRefusal`，只认转发相关措辞，`Not connected` / `administratively prohibited` 都不算）后重试一次不带该标志，命令照常执行，结果里带 `forwardingRefused` 说明转发没生效——转发是便利，命令才是目的。
-
-- **同一会话并发打开会泄漏一个 PTY**（O-06）：`ShellManager.open` 先查表再建通道，两个调用方都查到"没有"时各建一条 PTY，后写覆盖先写，前一条既没人关闭也没人引用——连接 hold 跟着泄漏到进程结束。现在按会话名做 single-flight，在打开中途共享同一个 Promise；失败不缓存（否则一次瞬时拒绝会毒化该会话）；`dispose` 期间到达的会话自行关闭并拒绝，因为 hold 不能比插件活得更久。
-- **超过 30 分钟的下载会被空闲回收器摘掉连接**（O-07）：`withSftp` 的 `inFlight` 在回调**返回**时减一，而下载的回调返回的是一个生成器——真正读文件发生在之后，那段时间里记录看起来是空闲的。现在流一开就 `holds += 1`（与端口转发、持久 shell 同一个计数），`close()` 释放且幂等，路由的 `finally` 也调一次，覆盖"生成器根本没被进入"的中断路径。
-- **失败被答成 200**（O-10）：路由族几乎每个业务失败都用 `200 + { ok: false }`，而参数错误用 4xx——同一文件两套约定，调用方必须同时看 `response.ok`、状态和 `body.ok`，监控只看见一堵 200。现在失败一律非 2xx：参数 / 表单问题 4xx、冲突 409、传输与主机故障 502、存储不可读 500。`store.js` 的抛错带上 `STORE_INVALID` / `STORE_CONFLICT` / `STORE_UNREADABLE`，状态码由它决定而不是靠匹配文案。**不是失败的业务结局仍是 200**："隧道没绑上但行已保存"、"端口被占用"各自带自己的字段。
-- **面板把"读不出主机列表"显示成"暂无主机"**（O-10 的另一半）：路由一直返回 `skipped` / `storeError`，工具与报告都渲染了，面板没有——而"没有主机"正是用户无法行动的那一句。现在空态按事实分句，且这些缺口在**列表非空时也显示**：一条存在却用不了的主机，正是用户在找的那一条。
+- **上游补丁把自己误判成「可以删除」**：探测曾报 `fixed` 并建议删掉 workaround，而宿主源码仍是 `refine(isAbsolute)`。现在要求证明 schema 读的是绑定，否则如实报 `broken`。
+- **面板状态文案显示原始键名**：`connections.connected` / `connections.broken` 从未定义，已补齐中英文案。
+- **失败重放会重复执行写操作**：写类 SFTP 操作不再重放，改标 `outcome: 'unknown'`；命令重放改为显式 `replay: 'safe'`。
+- **推送式监视降级后轮询句柄泄漏**：`watch()` 改用单一可变句柄，轮询初始化失败也不再被静默吞掉。
+- **原始字节上传绕开了 CSRF 前提**：`/upload` 要求 `application/octet-stream`，`/download` 走同一守卫。
+- **跳板机主机被直连**：`ProxyJump bastion` 曾被判为「没有跳板机」并直连目标；现在字符串与数组都接受，按 first-wins 处理 `Host *` 与 `!name` 排除。
+- **持久 shell 超时后下一条命令读到上一条的输出**：下一条 `run` 先发隔断屏障并丢弃之前输出；解码改用 `StringDecoder`。
+- **传输暂存名可能碰撞**：加 16 位随机十六进制并用 `wx` 打开；下载侧改为与 `error` 竞速，写流出错不再永久挂起。
+- **首次主机密钥落盘失败仍静默连**：现在记 `degraded` 诊断并在状态输出 `unpinnedHostKeys`，后来固定成功时自动清除。
+- **并发首读开两条第二通道**：`streamChannel` 加 single-flight，元数据缓存改为缓存进行中的 Promise。
+- **对话框缺键盘与读屏契约**：抽出共享的 `useDialogA11y`。
+- **能力探测用子串匹配判断工具存在**：`stdout.includes('rg')` 会把路径里含工具名的情况误报为已装，现在走独立前缀行并整行匹配。
+- **勾选「转发 ssh-agent」后目录浏览不可用**：该字段曾被塞进连接级 config，没有 agent 时 `connect()` 直接抛错；现在只在 exec / shell 通道表达。
+- **本机没有 ssh-agent 时，认证失败被报成「取不到 agent 身份」**：现在连接前先用 `getIdentities` 问一次（2 秒超时）。
+- **服务器禁止转发时，勾选该选项会让整条命令失败**：识别出这一种拒绝后重试一次不带该标志，结果带 `forwardingRefused`。
+- **同一会话并发打开会泄漏一个 PTY**（O-06）：按会话名做 single-flight，失败不缓存，`dispose` 期间到达的会话自行关闭。
+- **超过 30 分钟的下载会被空闲回收器摘掉连接**（O-07）：`inFlight` 在回调返回时减一，而下载的真正读取发生在之后；现在流一开就 `holds += 1`。
+- **失败被答成 200**（O-10）：失败一律非 2xx，状态码由 `STORE_INVALID` / `STORE_CONFLICT` / `STORE_UNREADABLE` 决定。不是失败的业务结局仍是 200。
+- **面板把「读不出主机列表」显示成「暂无主机」**（O-10 的另一半）：空态按事实分句，且缺口在列表非空时也显示。
 
 ### 测试
 
-- 新增 `tests/reconnect-smoke.mjs`（63 项）：用注入时钟驱动退避阶梯、停止规则、fatal 错误、手动重试与取消，并钉住引擎 / 路由 / 转发的接线。反向验证：去掉 close 事件的武装后 1 条变红；把「没人要就停」改成恒真后 3 条变红。
-- 新增 **假 SSH 服务器** `tests/support/fake-ssh-server.mjs`（用 `ssh2` 自带的 `Server` 在进程内起真实 SSH 服务）与 `tests/fake-transport-smoke.mjs`（23 项）：断言硬断后后台循环自行启动并连回、前台已恢复时后台仍执行恢复钩子、`forget` 与空闲回收**不**触发重连、服务器换密钥后拒绝并写进诊断。它取代了「手工把 `record.broken` 置为 true」——那证明分支，证明不了触发。
-- 新增 `replay-smoke`、`watch-lifecycle-smoke`、`scratch-safety-smoke`、`host-key-smoke`、`host-listing-smoke`、`upstream-contract-smoke`、`doc-numbers-smoke` 七个套件；`client-shape-smoke` 新增 27 项（对话框 10 + 菜单 17）。
-- **菜单方向键的算术抽成纯函数 `nextMenuIndex` 并在测试里真实执行**（12 个用例覆盖环绕、`current = -1` 入口、空列表、非导航键），而不是 grep 源码里有没有 `'ArrowDown'` 字样。
-- `client-shape-smoke` 新增 15 项「诊断报告在面板内打开」：断言的是**形状**——报告那一节里不得出现 `window.open` / `target: '_blank'` / 指向该路由的锚点，且只剩**一个** `button`（复制已移进窗口）；并钉住报告窗口存在、由取回的文本挂载、只读可选中、`wrap: 'soft'` 与 `white-space: pre-wrap`（不再横向滚动）、复制按钮在窗口内且复制的是屏幕上这份文本、**打开时不选中**而复制失败时才选中。反向验证：换行改回 `wrap="off"` → 1 条变红；把复制按钮移回工具栏 → 1 条变红；从窗口删掉复制按钮 → 1 条变红；在挂载时加 `areaRef.current?.select()` → 1 条变红（该写法曾绕过更窄的断言，所以选中次数改为**计数**）。
-- 汇总输出改为 PASS / SKIP / FAIL 三态并按名字列出跳过项，不再把 SKIP 当 PASS。
-- `shell-smoke` 新增 13 项：并发 `open` 只建一条通道、三个调用方拿到同一个会话对象、in-flight 槽位清空、失败的打开不入缓存且下一次会重试、`dispose` 期间到货的通道被关闭并释放 hold、被 dispose 之后不再新建。反向验证：去掉 single-flight → 2 条变红（`opened=3`）；去掉到货守卫 → 3 条变红。
-- `replay-smoke` 新增 9 项：三并发首读只开一条第二通道、三个读者拿到同一条、`streamOpening` 槽位清空、后来的读者复用而不重开、被拒绝的第二通道降级到共享通道且记 `degraded`、下一次读者重试而不是重放同一个拒绝。反向验证：去掉 single-flight → 4 条变红（`opens=3`）；保留槽位不清 → 3 条变红。
-- `routes-smoke` 新增 12 项：下载期间连接被 pin 住（`holds >= 1`）且流结束即释放；失败契约——重复 alias 是 409、非法表单是 400、主机不可达是 502、传输缺文件是 404、成功仍是 200 + `ok: true`；另外 `allowLan upload passes the fence` 这条此前用没有 body 迭代器的请求替身，处理函数在越过围栏后以 `req is not async iterable` 失败却仍答 200，于是"路由通过"为错误的理由成立——现在替身带真实字节，200 意味着上传真的跑了。反向验证：把 `hostSave` 的失败改回 200 → 2 条变红；去掉 hold 自增 → 1 条变红；去掉 hold 释放 → 1 条变红。
-- `client-shape-smoke` 新增 9 项：菜单项声明 `aria-setsize` / `aria-posinset` 且位置取自 map 下标；面板保留列表缺口、存储失败有自己的措辞、错误原文可见、跳过条目被计数、缺口在列表非空时也渲染。反向验证：删掉 `aria-posinset` → 1 条变红；丢弃 `setListingGaps` → 1 条变红；把存储失败改回空态措辞 → 1 条变红。
-
-- 新增四个 Future 套件：`capabilities-report-smoke`（48 项，三态报告、环境警告、探测契约）、`config-audit-smoke`（37 项，三种判定不可合并、通配匹配、first-wins）、`audit-smoke`（56 项，脱敏双向、拒绝记录、有界与 `seq`、不可抛）、`support-bundle-smoke`（61 项，脱敏泄漏检查、缺失字段、代次单调）。
-- 新增 `scripts/reverse-verify-future.mjs`：对上述每一处做破坏性检验，14 个变异全部使对应套件变红。它会临时改写源文件，因此**不是 CI 的一部分**——跑它是审阅动作。
+- 新增 `replay-smoke`、`watch-lifecycle-smoke`、`scratch-safety-smoke`、`host-key-smoke`、`host-listing-smoke` 五个套件。
+- `shell-smoke` 新增 13 项：并发 `open` 只建一条通道、失败不入缓存、`dispose` 期间到货的通道被关闭。
+- `routes-smoke` 新增 12 项：下载期间连接被 pin 住且流结束即释放；失败契约（409 / 400 / 502 / 404 / 200）。
+- `client-shape-smoke` 新增 19 项：列表缺口与存储失败各自的措辞、对话框键盘契约。
+- 汇总输出改为 PASS / SKIP / FAIL 三态，不再把 SKIP 当 PASS。
 
 ### 文档
 
-- `architecture.md` 新增「后台重连」一节；`troubleshooting.md` 新增「断线之后没有反应？」排查表。
-- `features.md` 新增「断线与重连」能力表，`ui.md` 记录卡片状态与「立即重连」按钮。
-- 两个 README 的配置表补上 `engine.reconnect`；路由 / 套件 / 断言计数按实测更新。
-- 新增 `docs/optimization-and-future.md`：16 项优化的完整审阅、每项的推进结果与反向验证、明确不做的事、9 个能力方向；已登记进 `docs/README.md` 索引与两个根 README。
-- `ui.md` 补上「面板：诊断报告」一节：三个入口、标题与标识符的分离、脱敏规则、没有 raw 模式的原因，以及「打开」为何不能是新窗口（`dsh-app://` 协议 + 401 两层原因）。
-- `optimization-and-future.md` 修正三处与实现不符的记录：套件与断言改为实测的 44 套件 / 1725 项；`六个补丁模块` 改为实数五个；O-02 验收里"连续 100 次"改为实际断言的 20 次（并说明为何不取 100）；`host-listing-smoke` 的"chmodSync 已 import 但未使用"已经过期——它现在根本没被 import，不可读存储用的是 `loadFails` 桩、ssh-config 用的才是真实 `EISDIR`；Future 推进表补上此前整条缺席的 F-08。
-- `features.md` 的套件行改为实测值。
-- `scripts/doc-numbers.mjs` 现在会**回读**文档里的断言采样并原样重放：断言总数无法从源码算出（要跑全套），所以它是被"盖章"写进去的，而 `--check` 若拿占位符去比，一旦有人填了真实数字就会永远报 STALE。`--assertions` 的指引也写对了——它属于这个脚本，不属于 `tests/run.mjs`（后者把任何参数当套件名，传进去会以 "no suite matches" 退出 2）。
-
+- `architecture.md` 新增「后台重连」；`troubleshooting.md` 新增排查表；`features.md` 新增能力表；`ui.md` 记录卡片状态与诊断报告一节。
+- 新增 [docs/optimization-and-future.md](docs/optimization-and-future.md)：16 项优化的审阅、推进结果与反向验证、9 个能力方向。
+- 两个 README 的配置表补上 `engine.reconnect`，版本示例更新为 npm 上的 `latest`。
+- 全量文档审阅：路由清单补齐 `hosts/reconnect` / `self-check` / `support-bundle`，源码结构表补上 8 个模块，套件表补上 7 个缺行，各处套件与断言计数统一为实测值（裸检出 44 套件 / 1733 项、真实装配树 1956 项）。
+- 诊断环的容量与各导出面的条数分开写清（容量 40，`events` 取 10，`/status`、`diagnosticsText` 与诊断报告取 20）。
+- 两篇既有文档补登索引：[trigger-gates.md](docs/trigger-gates.md)、[acceptance-prompts.md](docs/acceptance-prompts.md)。
 
 ## [0.2.7] - 2026-10-24
 
@@ -159,7 +128,6 @@
 - **`ssh_workspace_transfer` 的上传不受模式约束**：`read-only` 会话能上传而同一会话的 `write` 已被拒。现在上传同样受模式门禁约束，下载不受影响。
 - **命令执行完全不看模式**：`ssh_workspace_exec`、`ssh_workspace_shell` 与 `workdir` 为 `ssh://` 的 `bash` / `pwsh` 在 `read-only` 会话下照常执行（含 `rm`）。现在统一拒绝；`close` 与读取类操作不受影响。
 - **终端同样不受模式约束**：`terminal_open` 与内建侧边栏终端在 `read-only` 下照常开 shell；会话在运行中被切成 `read-only` 后仍继续接受命令。现在开 PTY 与逐次写入都要判定，控制字节（SIGINT、关闭）保留例外。
-- **下载失败被浏览器存成文件**：`GET /download` 出错时回答 200 + JSON，被当作文件内容保存。现在按错误码返回 404 / 403 / 400 / 500。
 - **`workspace-write` 没有收窄到会话自己的工作区**：可以写同一主机的兄弟根，也能写另一台主机的已挂载根。现在与本地一致。
 - **策略解析失败被说成「用户选了仅可查看」**：文案改为说明这是接线问题、切换模式无用。
 - **拒绝文案不再假装能升权**：这一族工具没有 `sandbox_permissions` 参数，改为给出「切换模式」这条真实出路。
@@ -179,15 +147,10 @@
 ### 修复
 
 - **CI 在 Node 20 上崩溃**：代码用了 Node 22 才有的 `Promise.withResolvers()`，而 `engines.node` 声明 `>= 20`、CI 也按 Node 20 跑。0.2.3 因此完全没有发布出去。现在改为自带的等价实现。
-- **停用工作区的会话没有置灰、仍然可用**：标题变灰而下面的会话照常可点。现在会话行一并置灰且不可点。
 - **客户端 bundle 语法错误也能全绿通过**：测试把 bundle 当文本读，一个解析不过的文件照样满足全部断言。现在增加语法解析检查。
 - **向输入框拖入一个文件会生成约 22 个同样的 chip**：模块重复加载时监听器叠加。现在一次派发只消费一次。
-- **本地化词典未更新**：新键渲染成原始键名。
 - **空态 / 加载中 / 错误占位符失去内边距与居中**：一条样式规则被误删，已恢复。
-- **`ssh_workspace_enable` 会被自己的围栏挡住**：改用原始连接探测，`ssh_workspace_mount` 同一处问题一并修复。
 - **`forget` 模式只清清单、不清围栏**：留下「面板里已无这一行、运行时却仍拒绝一切操作」的工作区，用户无从恢复。
-- **启动 DSH 会把所有已挂载工作区的主机连上**：侧边栏渲染时的状态查询会真的建立连接。
-- **`detach` 会把会话藏起来**：保留工作区记录却归档了它的会话。
 
 ### 新功能
 
@@ -232,10 +195,6 @@
 - **推送式变更监视**：远端有 `inotifywait` 时改用事件推送，变更即时上报；否则回落到自适应退避的轮询。
 - **能力探测**：挂载时一次性探测 `rg` / `git` / `inotifywait`，缺失项提前给出提示。
 - **每主机传输选项**：新增 `agentForward`（私钥不落到远端）与 `compress`，`~/.ssh/config` 中的对应项同样被识别。
-
-### 修复
-
-- 端口转发的状态查询链路此前仍在运行但入口被注释，导致「功能已屏蔽」的判断与实际不符。
 
 ## [0.2.1] - 2026-10-16
 

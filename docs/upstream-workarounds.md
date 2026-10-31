@@ -21,7 +21,7 @@
 
 | id | 宿主包 | 症状 | 上游修法 | 退役判据 |
 | --- | --- | --- | --- | --- |
-| `UPSTREAM-1-working-directory-isAbsolute` | `@deepseek-ai/dsh-working-directory` | `cwd` 为 `ssh://` 的会话打开时报「历史加载失败 … Invalid input」 | `refine(isAbsolute)` → `refine((value) => isAbsolute(value))` | 已注册的 schema 自己就能接受 `ssh://` 值 |
+| `UPSTREAM-1-working-directory-isAbsolute` | `@deepseek-ai/dsh-working-directory` | `cwd` 为 `ssh://` 的会话打开时报「历史加载失败 … Invalid input」 | `refine(isAbsolute)` → `refine((value) => isAbsolute(value))` | 已注册的 schema 接受的**同时**证明在读 `isAbsolute` 绑定（见「怎么判断可以删」） |
 
 ## UPSTREAM-1-working-directory-isAbsolute
 
@@ -69,8 +69,21 @@ const directorySchema = z$1.string().min(1).refine((value) => isAbsolute(value))
 ### 怎么判断可以删
 
 **自动信号（首选）**：上游修好后，`installProjectionRelaxation` 会先用一个
-`ssh://` 值探测已注册的 schema；能通过就**什么都不打**，返回
+`ssh://` 值探测已注册的 schema；能通过**并且证明它读的是绑定**，就**什么都不打**，返回
 `upstreamFixed: true` 与 `probe: 'fixed'`。
+
+> **为什么「能通过」不够。** 本插件的内建桥接是在自己的 `apply()` 里装的，而
+> `workingDirectory` 单元是在它的服务第一次被访问时才构造——所以在真实部署里，
+> schema 捕获到的是**已经被我们替换过的** `isAbsolute`。它当然接受 `ssh://`，
+> 但源码里那行 `refine(isAbsolute)` 一个字都没变，缺陷原封不动。
+>
+> 只看「接受」就会把它报成 `fixed`，而 `fixed` 打印出的建议是「删掉它」——
+> 于是一个**仍然承重**的补丁被这个误报劝退了。v0.2.8 之前的探测就有这个问题，
+> 面板上的红灯（诊断判定把 `fixed` 报成「需处理」）正是它。
+>
+> 判别式因此是：探测时把 `node:path.isAbsolute` 换成一次性的记账包装，
+> 看 schema 是否**调用了它**。捕获了函数值的 schema 永远不会碰这个属性；
+> 真正读了绑定的才会。见 `lib/path-binding.js` 的 `acceptsByReadingBinding`。
 
 这个结论**不走 `ctx.logger`**——本部署没有 console exporter，`info` 进一个无人读取的环形缓冲，
 `debug` 更是低于所有默认级别。所以它落在两个真正能到达的地方：
@@ -87,8 +100,9 @@ ssh_workspace_status → events[]                # 其中 kind: 'upstream' 的�
 upstream workaround OBSOLETE: UPSTREAM-1-working-directory-isAbsolute — 上游 schema 已接受 ssh://，删掉它
 ```
 
-看到这行就可以删了。注意它**不会**误判成自己的补丁：本模块放宽过的 schema 带
-`Symbol.for('dsh-ssh-workspace.projection.schema')` 标记，探测时被排除。
+看到这行就可以删了。本模块自己放宽过的 schema 带
+`Symbol.for('dsh-ssh-workspace.projection.schema')` 标记，探测时先被排除（`already`）；
+「捕获了我们的补丁」是另一回事，它由绑定读取来排除（`broken`）。
 
 **"探不动"是独立的一种状态，不是"没修"**。如果宿主改了内部形状（例如
 `registry.registrations` 不再是 `Map`），探测会返回 `probe: 'unprobeable'` 而不是静默当作缺陷仍在；

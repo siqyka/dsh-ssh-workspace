@@ -97,8 +97,10 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 
 ## 连接问题
 
-**先看诊断历史**：`ssh_workspace_status` 的 `events` 字段记录最近 40 条状态转换（连接、
-断连、重连、降级），最新的在最后。它通常是「刚才发生了什么」最快的答案：一条 `disconnect`
+**先看诊断历史**：环形缓冲的**容量是 40 条**（`lib/diagnostics.js` 的 `CAPACITY`），
+但每个导出面只取最新的一部分：`ssh_workspace_status` 的 `events` 字段是 10 条，
+面板 `/status` 路由、`diagnosticsText` 与「诊断报告」都是 20 条。容量与导出条数是两回事，
+别把它们当成同一个数。它通常是「刚才发生了什么」最快的答案：一条 `disconnect`
 带时间戳，比读日志快得多——何况这个部署里 `ctx.logger` 根本没有出口（宿主不装 console
 exporter，`debug` 又被默认级别丢弃），见 [development.md](./development.md#日志与诊断)。
 

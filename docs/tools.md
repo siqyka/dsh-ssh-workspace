@@ -105,7 +105,7 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 `mounted` 与 `disabled` 是互斥的两个集合：停用会把路径从前者移到后者。
 
 `events` 是最多 10 条、最新的在后的状态转换记录（`kind` 为 `connect` / `disconnect` /
-`reconnect` / `degraded` / `forward`）。它存在的理由是这个部署里 `ctx.logger` 没有出口：
+`reconnect` / `degraded` / `forward` / `upstream`）。它存在的理由是这个部署里 `ctx.logger` 没有出口：
 宿主不装 console exporter，`debug` 级别又低于所有 exporter 的默认级别，所以**这是唯一
 能被用户读到的连接历史**。排查「为什么刚才断了」「为什么文件树不刷新」先看这里——
 `degraded` 表示 `inotifywait` 推送失效退回轮询，或大文件读取退回了共享 SFTP 通道。

@@ -14,9 +14,9 @@
 | HTTP routes | 25 | `lib/routes.js` |
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 30 | directory listing |
+| modules under `lib/` | 31 | directory listing |
 | test suites | 44 | `tests/run.mjs` |
-| passing assertions (sampled) | 1726 | measured 2026-10-31 |
+| passing assertions (sampled) | 1733 | measured 2026-10-31 |
 
 <!-- doc-numbers:end -->
 
@@ -36,6 +36,14 @@
 | `lib/patch-terminal.js` | 终端接管：会话工作区是 `ssh://` 时把 PTY 开在远端；受停用围栏约束 |
 | `lib/fs-shim.js` | 内建桥接：`node:fs/promises` 的 `mkdir`/`stat`/`lstat`/`realpath`/`readdir`/`copyFile`/`open`/`rm` 与 `node:path` 的 `isAbsolute`/`resolve`/`join`/`relative` 对 `ssh://` 拼写单独处理（含 `syncBuiltinESMExports`）；变更追踪的 SFTP 读句柄与 scratch 镜像落盘/联动，`readdir` 服务 `@` 补全 |
 | `lib/hosts.js` | 主机解析：存储优先、`~/.ssh/config` 回退、行渲染 |
+| `lib/mode-gate.js` | 远端写入的统一门禁：`read-only` / `workspace-write` / `danger-full-access` 三态，加上「未挂载」「超出会话工作区」两类范围拒绝，被六条可写路径共用（工具 / shell / subprocess / 终端 / 传输路由）；判定失败时 fail-closed 且文案不谎称“仅可查看”；嵌套的链接不归它管 |
+| `lib/path-binding.js` | 探测 `node:path.isAbsolute` 是不是**通过模块绑定被读的**：探测期间换成记账包装，函数值形式被捕获下来的 schema 永远碰不到它。只有 `patch-projection.js` 的退役探测一个调用方：「宿主接受 `ssh://`」有两种成因，只有其中一种意味着补丁可以删 |
+| `lib/capabilities.js` | 远端环境自检：7 项工具与 4 项环境事实一次往返问完，三态 `present` / `absent` / `unknown` 不能合并——`unknown` 不带安装提示 |
+| `lib/config-audit.js` | `~/.ssh/config` 审计：本插件读了什么、故意不支持什么，`ignored` / `lost` / `refused` 三种判定不合并，挂在 `HostStore.listing()` 每行的 `unsupported` 上 |
+| `lib/audit.js` | 远端命令审计：容量 200 的有界环，脱敏**在写入时**发生而不是导出时补第二次。它不是沙箱：远端命令以登录用户权限运行，这里只能记录 |
+| `lib/reconnect.js` | 断线后的后台重连策略（纯逻辑、注入时钟）：指数退避 1s → 60s 封顶、抖动只向下、`cancel` 之后永不拨号（「断开」是终态） |
+| `lib/support-bundle.js` | 诊断报告：自包含、已脱敏的一份可贴文本，**组装而非采集**、不做任何上传。标识符保留 `support-bundle` 拼写（路由 / 字段 / 模块名都是契约面） |
+| `lib/upstream-contract.js` | 补丁的宿主契约成表：每个 `patch-*.js` 声明它碰的宿主符号与退役判据，由 `upstream-contract-smoke` 双向校验。它回答的是「我挂的形状还在吗」，不是「上游修好了吗」 |
 | `lib/secrets.js` | 凭据存储：密码 / 私钥口令的读写与清除，与 `hosts` 分区分离 |
 | `lib/forward.js` | 端口转发引擎：listener 与 `forwardOut` 隧道的建立 / 拆除、按主机拆除（`closeForAlias`）、`holds` 引用计数 |
 | `lib/forward-persist.js` | 已存映射：**意图**（`enabled`）与**事实**（`live`）分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径（后者逐条走前者） |
@@ -140,32 +148,41 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 
 断言数按裸检出实测：`DSH_CORE_ROOT` / `DSH_WS_TEST_ALIAS` 未设置时，需要真实装配树或真实主机的
 套件整体 SKIP；`DSH_CORE_ROOT` 指向真实装配树时，`projection-real` / `lifecycle` /
-`tool-schemas` / `boot` 四个跑起来，只剩 `live` 与 `acceptance` 整体跳过，加上 `boot-smoke` 内部
-那段需要真实主机的远端检查——`boot-smoke` 本身仍在运行，所以「跳过套件数」与「SKIP 行数」
-是两个不同的量，不要混用。下表的项数是数每个套件打印的 `PASS` 行得到的，
-不要与末尾 `=== N passed` 那行相加——`locale-register` 与 `secrets` 的收尾格式不同。
+`tool-schemas` / `boot` 四个跑起来，只剩 `live` 与 `acceptance` 真正未跑，合计 **1956** 项。
+
+但尾行会写成 `41 passed, 3 skipped`，而不是 `42 passed, 2 skipped`：`boot-smoke` 本身跑了
+29 项，却会为自己那段需要真实主机的远端检查打一行 `SKIP`，而 runner 判定套件状态的唯一依据
+就是「输出里有没有 SKIP 行」。所以**「跳过套件数」与「SKIP 行数」是两个不同的量**，不要混用；
+要看某个套件究竟跑没跑，读它自己那行 `=== N passed`，不要读汇总。
+
+下表的项数是数每个套件打印的 `PASS` 行得到的，也不要与末尾 `=== N passed` 那行相加——
+`locale-register` 与 `secrets` 的收尾格式不同。
 
 | 套件 | 前置 | 项数 | 覆盖 |
 | --- | --- | --- | --- |
 | `protocol-smoke` | 无 | 27 | `ssh://` 语法、规范化、前缀判定、basename / dirname、`file:` URI |
 | `peers-smoke` | 无 | 15 | 依赖声明本身：宿主包必须是 `peerDependencies`（不能是普通依赖），且每个都标 `peerDependenciesMeta.<name>.optional`——否则 npm 7+ 会把它们装成一份私有宿主副本，正是「服务实例分裂」的来源；meta 表不得出现非 peer 项；`ssh2` 必须留在 `dependencies`；真实解析路径可用且按名记忆化，缺失时错误信息点名 specifier 并列出搜过的根。**失败文案按角色分流**：缺宿主 peer 与缺本包自己的依赖是两种不同的修复，前者归宿主、后者归装本包的包管理器，因此 `requirePeer` 收 `kind` 参数，且 `engine.js` 加载 `ssh2` 时必须传 `'dependency'`——否则用户会被引去查 `peerDependencies`，那里没有错也没有修法。peer 声明也是宿主读取的数据：`app-boot` 的 `unmetRequirements` 在缺 `engines.dsh` 时用它做版本门禁，`routeLinked` 用 `readPeerNames` 决定 linked 安装路由到宿主哪一份依赖 |
 | `peer-mode-smoke` | 无 | 24 | 检测器本身。它是所有 peer 套件的信任根，答错时没有别的套件会发现，所以用四态合成树单独驱动：生成根必须整棵报 `stub` 且每个包都带 `__dshStub`（漏标的 stub 会被当成 REAL，比没有 stub 更糟）；真包与替身并存必须报 `mixed` 而非 `real`（旧检测器只看 `dsh-fs`，随后套件在没看过的那个 stub 上崩）；**解析到但加载抛错必须是 `broken` 并保留解析路径与错误**（旧代码把它报成「没装」，把人引向一次改变不了任何东西的安装）；`absent` 真的缺席；只查套件声明的包（缺无关 peer 不得连带跳过）；端到端两种结局——装坏的树让套件 **FAIL(1)** 且打印真实原因、stub 树 SKIP(0)，两者都不得执行到断言；未设置 `DSH_CORE_ROOT` 报 `absent` |
-| `diagnostics-smoke` | 无 | 36 | 面向用户的诊断环形缓冲：条目字段与毫秒时间戳、无别名时不写空字段、**容量上限丢最旧留最新**（含"恰好等于容量"的边界）、`list()` 交出副本因而调用方改不动历史、`list(n)` 取最新 n 条、`clear()`、记录永不抛（循环引用 / Symbol / 非法 kind / 坏容量都不得让被观测的操作失败）、kind 词表封闭且覆盖连接 / 断连 / 重连 / 降级 / 转发。还钉住上游补丁结论必须一路送到状态面（引擎字段 + 事件 + 两个 status 出口 + `index.js` 的接线），因为"算出来了但没人接手"正是这轮修掉的缺陷形态。最后三条钉住"为什么要这个模块"：引擎必须往这里记连接事件，且不得改用 `logger.debug`——本宿主没有 console exporter、`debug` 级别低于所有 exporter 默认级别，写进去等于没写 |
-| `reconnect-smoke` | 无 | 63 | 断线后的后台重连策略（`lib/reconnect.js`，纯逻辑、注入时钟）：退避从 1s 倍增到 60s 封顶、抖动只向下因此上限是真上限、只对「还有人要」的主机启动（没人要时不武装、不拨号）、消费者全没了就停并在状态里报 `gave-up`、成功即清条目并触发恢复钩子、`maxAttempts` 有界阶梯、`fatal` 错误第一次就停、手动重试跳过等待且失败后重新武装、`cancel` 之后永不拨号（「断开」必须是终态）、暴露的条目不带定时器句柄且改它不影响调度器、`isWanted` 抛错不得被当成「要」、`dispose` 停掉一切。最后钉住引擎与路由的接线：close 事件武装、摘池后的主动关闭不得武装、`forget` 取消、前台失败也交给后台、`background: true` 不递归、已保存转发让主机保持「要」 |
+| `diagnostics-smoke` | 无 | 49 | 面向用户的诊断环形缓冲：条目字段与毫秒时间戳、无别名时不写空字段、**容量上限丢最旧留最新**（含"恰好等于容量"的边界）、`list()` 交出副本因而调用方改不动历史、`list(n)` 取最新 n 条、`clear()`、记录永不抛（循环引用 / Symbol / 非法 kind / 坏容量都不得让被观测的操作失败）、kind 词表封闭且覆盖连接 / 断连 / 重连 / 降级 / 转发。还钉住上游补丁结论必须一路送到状态面（引擎字段 + 事件 + 两个 status 出口 + `index.js` 的接线），因为"算出来了但没人接手"正是这轮修掉的缺陷形态。最后三条钉住"为什么要这个模块"：引擎必须往这里记连接事件，且不得改用 `logger.debug`——本宿主没有 console exporter、`debug` 级别低于所有 exporter 默认级别，写进去等于没写 |
+| `reconnect-smoke` | 无 | 70 | 断线后的后台重连策略（`lib/reconnect.js`，纯逻辑、注入时钟）：退避从 1s 倍增到 60s 封顶、抖动只向下因此上限是真上限、只对「还有人要」的主机启动（没人要时不武装、不拨号）、消费者全没了就停并在状态里报 `gave-up`、成功即清条目并触发恢复钩子、`maxAttempts` 有界阶梯、`fatal` 错误第一次就停、手动重试跳过等待且失败后重新武装、`cancel` 之后永不拨号（「断开」必须是终态）、暴露的条目不带定时器句柄且改它不影响调度器、`isWanted` 抛错不得被当成「要」、`dispose` 停掉一切。最后钉住引擎与路由的接线：close 事件武装、摘池后的主动关闭不得武装、`forget` 取消、前台失败也交给后台、`background: true` 不递归、已保存转发让主机保持「要」 |
 | `fake-transport-smoke` | 真实 `ssh2`（peer stub 根不够） | 32 | **触发，而不是分支**。`reconnect-smoke` 驱动注入时钟的调度器、`replay-smoke` 与 `host-key-smoke` 手工置 `record.broken`——三者都只证明「代码知道连接死了之后做什么」，没有一个证明「连接会被报告为死了」。本套件对着 `tests/support/fake-ssh-server.mjs`（ssh2 自带 `Server`，真实 TCP）跑引擎：①无人操作时 socket 被硬断 → 后台循环自行启动 → 自动连回，日志顺序 `disconnect → 后台重试 → connect → reconnected`，服务器连接数 1→2；②前台先把主机治好、后台 attempt 命中健康记录时恢复钩子**仍然执行**（接在「本次调用建了 socket」上就会漏，这正是 O-05 的原始 bug）；③`forget` 与空闲回收都**不**触发重连（「断开」不能被写成「一直拨号」）；④服务器换密钥 → 拒绝、阶梯终止于 `gave-up`、记录指纹与出示指纹**双双**写进诊断、且此后不再拨号；⑤**命令通道的参数袋**：`runRemoteCommand` 曾对未勾选转发的主机（即所有主机的默认）把 `undefined` 当 ssh2 第二个参数，而 ssh2 只在该参数是**函数**时才替换成 `{}`，于是 `opts.allowHalfOpen` 被同步读崩，抛出发生在 promise executor 里 → 每条命令都 reject、能力探测吞掉后报全 unknown、审计一条不写；这条只有真 socket 能区分「通道开了」与「忽略参数的替身什么都收」。三个实现细节：硬断必须 `destroy()` 而非 `end()`（合盖不发 FIN；ssh2 的 `Connection` 只暴露 `end()`，真实 socket 经 `_sock` 取）；换密钥必须重建监听器（ssh2 在构造时把 `hostKeys` 解析进闭包，无法原地替换，重建恰好也是「主机重装后同地址回来」的真实序列）；转发重试用假 client 钉住时序（真服务器要同时满足「连接上有 agent」与 `AllowAgentForwarding no`，本机无 agent 时那条路径不可达） |
-| `client-shape-smoke` | 无 | 113 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。新增**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」 |
+| `replay-smoke` | 无 | 34 | 失败重放策略：写类 SFTP 操作失败后**不重放**（第一次可能已经在服务器上落地，重放就是执行两次），改标 `outcome: 'unknown'`并保留原始报错文本；远端命令走显式 `replay: 'safe'` 才重试；连接中断记成 `disconnect` 而不是 `reconnect` |
+| `host-key-smoke` | 无 | 18 | 主机密钥固定与**落盘失败的区分**：首次连接记下指纹；不一致直接拒绝；写不进 `knownHosts` 时连接仍成功，但必须记 `degraded` 诊断并在状态里列 `unpinnedHostKeys`，后来固定成功时自动清除——「警告写进无人读的日志」等于用户以为密钥已固定 |
+| `host-listing-smoke` | 无 | 32 | 主机列表把「真的空」与「读不出来」分开：空配置不带提示，被跳过的 `~/.ssh/config` 块带原因列在 `skipped`，存储读失败带 `storeError`——两种完全不同的问题不能都长成「没有主机」 |
+| `client-shape-smoke` | 无 | 122 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。新增**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」 |
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
-| `projection-relax-smoke` | 无 | 66 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
+| `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 40 | 目录树上传、原子发布、递归与失败路径 |
 | `insert-once-smoke` | 无 | 18 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
 | `locale-register-smoke` | 无 | 21 | 中英词典注册、重复注册不污染、`translate` 回落 |
 | `detach-smoke` | 无 | 73 | 停用清单读写与脏数据退化、路径包含判定、`ctx.fs` 十个方法逐个断言被拒、重新启用两条路径、shell / terminal 拒绝且不拨号、工作区外照常可用、跨分区写入隔离、启用不得经过围栏探测、**沙箱模式围栏（`read-only` 拒写且不拨号）、三个围栏错误码的可分性、`/tmp` 对写围栏可达而对停用 / 探针仍按原始挂载根** |
-| `probe-smoke` | 无 | 15 | 内建桥三条身份探针无活连接时不拨号、挂载根外必须 `ENOENT`、有连接时取真实属性、broken 记录不算连接（直接数 `withSftp` / `acquire` 次数） |
+| `probe-smoke` | 无 | 20 | 内建桥三条身份探针无活连接时不拨号、挂载根外必须 `ENOENT`、有连接时取真实属性、broken 记录不算连接（直接数 `withSftp` / `acquire` 次数） |
 | `phase6-smoke` | 无（有真框架时更全） | 36 | 失败与规模路径的回归：断连 close 不误判完成、rename 回退不误删目标、`listDir` 无 N+1 stat、`StreamTail` join 缓存 |
+| `watch-lifecycle-smoke` | 无 | 8 | 变更监视的降级与销毁：推送死了回退轮询之后，`close()` 必须连轮询那一支一起关掉——只关推送分支会把定时器、SFTP 轮询和连接持有者一直漏到进程结束 |
 | `store-lock-smoke` | 无 | 15 | 主机存储的跨进程写锁：互斥与降级、死锁接管、并发 `mutateHosts` 不丢条目、`save()` 的替换语义 |
-| `transfer-smoke` | 无 | 38 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去） |
+| `transfer-smoke` | 无 | 43 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去） |
 | `mode-gate-smoke` | 无 | 115 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
-| `shell-smoke` | 无 | 18 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
+| `shell-smoke` | 无 | 35 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
 | `terminal-smoke` | 无 | 23 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原 |
 | `transport-smoke` | 无 | 43 | 传输路由与流式通道（第二条 SFTP 通道、退化路径）；**逐主机传输开关**：`agentForward` 与 `compress` 是选择加入，未勾选的主机必须产生与它们出现之前逐字节相同的 ssh2 配置；`agentForward` 还有更硬的一层——ssh2 把**连接级** `agentForward` 读成全连接许可，并在连接没有 agent 时于 `connect()` **同步抛错**，所以引擎绝不能把它写在连接配置里，愿望存在池化 record 上、由每个 exec/shell 通道自己表达（`channelExecOptions`），SFTP 不经过它；**agent 必须先应答才上连接**：`resolveAgentPath` 只是名字解析器（Windows 无条件给 `pageant`），ssh2 不在连接时校验端点，挂一个没在跑的 agent 会让认证阶段报「Failed to retrieve identities from agent」，把真正的失败原因（密码错 / 密钥被拒）替换掉，所以连之前先问一次 `getIdentities`，答不上来就当没有；转发请求被服务器拒绝（`AllowAgentForwarding no` 是标准加固项）时重试一次不带该标志并把 `forwardingRefused` 带到结果里，而不是让整条命令失败 |
 | `forward-smoke` | 无 | 34 | 隧道本身：建立 / 拆除、`closeForAlias` 按主机拆除且**只拆该主机**、`holds` 引用计数、关闭转发不得断开主机 |
@@ -173,14 +190,17 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `capabilities-smoke` | 无 | 19 | 主机能力探测（rg / git / inotifywait）与提示渲染；答案用 `dsh-tool:<name>` 前缀行，因为存在性必须整行匹配（子串匹配会让路径里的工具名算作已安装） |
 | `capabilities-report-smoke` | 无 | 48 | 远程环境自检（`lib/capabilities.js`）：**三态不可合并**（`unknown` 不是 `absent`，只有 `absent` 带安装提示，缺键读作 `unknown`）、工具表与探测脚本的询问列表同源、四项环境警告各自写清后果、`unknown` 不被计成缺失。引擎侧：一次往返问完全部工具与环境事实、`dsh-env:` 前缀解析、失败探针既不缓存判定也不缓存环境 |
 | `config-audit-smoke` | 无 | 37 | `~/.ssh/config` 审计（`lib/config-audit.js`）：`ignored` / `lost` / `refused` 三种判定不可合并（`LocalForward` 是 `lost`，`ProxyJump` 走 `skipped` 而不是审计）、未列出的关键字也有判定、匹配跟随 resolver（`Host *` 生效、`!name` 排除、别的块不串味）、first-wins 且重复只报一次、长值截断、`listing()` 每行带 `unsupported` |
-| `audit-smoke` | 无 | 56 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
+| `scratch-safety-smoke` | 无 | 41 | 测试自己的远端清理围栏：`DSH_WS_TEST_DIR` 为空、含空格、指向 `/etc` 三种输入都必须在任何删除发生**之前**被拒，而不是把 `rm -rf` 带着错误路径发出去 |
+| `doc-numbers-smoke` | 无 | 17 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红） |
+| `upstream-contract-smoke` | 无 | 37 | 每个补丁声明它碰的宿主符号，双向校验：磁盘上每个 `patch-*.js` 都有契约、契约不指向不存在的文件、安装函数确实导出、声明的符号确实出现在模块里，且安装顺序固定——上游改名一个符号而补丁照常安装，就是「命令静默地跑在本机」 |
+| `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
 | `diagnosis-smoke` | 无 | 63 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、缺工具、环境告警、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**（探测不到的主机不得报成「缺所有工具」），以及聚合规则（确定的坏压过不确定）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
-| `routes-smoke` | 无 | 128 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
+| `routes-smoke` | 无 | 176 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |
 | `lifecycle-smoke` | `DSH_CORE_ROOT` | SKIP | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 25 路由 / 10 工具） |
 | `boot-smoke` | `DSH_CORE_ROOT`（远端段另需 `DSH_WS_TEST_ALIAS`） | SKIP | 生产顺序引导、`ctx.fs` 接管与还原、工具端到端、挂载 → 停用 → 读被拒 → 启用往返 |
-| `tool-schemas-smoke` | `DSH_CORE_ROOT` | SKIP | 工具 schema 过真实 `assertSupportedJsonSchema` + render 冒烟（161 项） |
+| `tool-schemas-smoke` | `DSH_CORE_ROOT` | SKIP | 工具 schema 过真实 `assertSupportedJsonSchema` + render 冒烟（160 项） |
 | `projection-real-smoke` | `DSH_CORE_ROOT` | SKIP | `UPSTREAM-1` 补丁对**真实** `SessionProjectionRegistry` + `WorkingDirectoryService` + 真实 zod，按生产顺序装配：复现 `Invalid input` → 打补丁后 `restore` / `viewCheckpoint` 双双通过 → 报告 `probe: 'broken'` → 卸载后已打开的 ssh:// 会话仍可读。第一节断言的是**缺陷仍然存在**，红 = 删补丁（失败信息自带删除清单） |
 | `live-smoke` | `DSH_WS_TEST_ALIAS`（peers 可解析） | SKIP | 远端 SFTP 全量契约、写围栏、错误语义、原子写、symlink |
 | `acceptance-smoke` | `DSH_CORE_ROOT` + `DSH_WS_TEST_ALIAS` | SKIP | 经补丁后 `ctx.fs` 的端到端验收（挂载 → 读写 → 围栏 → 卸载） |
@@ -196,7 +216,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 跳过（跳过的套件无法失败，正是这样一次跳过让一个调用了未导入函数的 upload 处理器
 绿着发了出去）。只有需要**真实框架**的四个套件（`lifecycle` / `boot` / `tool-schemas` /
 `projection-real`）与需要真实主机的两个（`live` / `acceptance`）仍 SKIP 并给出原因。
-这正是 CI 的形态，31/31 报告成功。
+这正是 CI 的形态，44/44 报告成功。
 
 这些套件靠 `tests/support/peer-mode.mjs` 判断手上这棵树能不能证明它们要证明的事。
 它对每个包给出四态，其中两态的差别很关键：

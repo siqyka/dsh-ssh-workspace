@@ -307,7 +307,7 @@ if (detachedSet.has(path)) continue
 
 ## 七、测试
 
-新套件 `tests/detach-smoke.mjs`（**72 项**）覆盖：
+新套件 `tests/detach-smoke.mjs`（**73 项**）覆盖：
 
 | 分组 | 内容 |
 | --- | --- |
@@ -324,7 +324,7 @@ if (detachedSet.has(path)) continue
 **正是那层围栏**，它会拒绝停用工作区内的任何读取，于是「启用」在结构上永远失败。
 两处都改为走原始连接（`engine.withSftp`）直接 `stat`，与 HTTP 路由的做法一致。
 
-`routes-smoke` 现在 **121 项**（本组增加 22 项：模式默认值、`detach` 不归档而
+`routes-smoke` 现在 **176 项**（本组增加 22 项：模式默认值、`detach` 不归档而
 `deregister` 归档、显式 `archiveSessions` 优先于模式、归档成功/失败上报、
 `deregister: true` 兼容、启用流程、两条新路由的回环围栏；此后下载失败的状态码
 修复又加了 3 项），其中 3 项钉住 `/status`
@@ -352,13 +352,11 @@ if (detachedSet.has(path)) continue
 视野里）；且不得在行内另起一行重复同一句话。三条都反向验证过：放回旧文案后 2 条变红，
 把常驻行加回去后「not duplicated」变红。
 
-全套：`node tests/run.mjs` **28/28** 通过。裸检出（无环境变量）下 22 个套件运行、
-合计 911 项断言；`lifecycle` / `boot` / `tool-schemas` / `projection-real` 与
+全套：`node tests/run.mjs` 当前 **44/44** 套件。裸检出（无环境变量）下 38 个套件运行、
+合计 **1733** 项断言（实测 2026-10-31）；`lifecycle` / `boot` / `tool-schemas` / `projection-real` 与
 `live` / `acceptance` 共 6 个套件需要 `DSH_CORE_ROOT` 或真实主机，未提供时明确 SKIP
-（`DSH_CORE_ROOT` 指向真实装配树时这 6 个跑起 4 个，合计 1133 项、只剩 `live` / `acceptance` 2 个 SKIP）。
-（其中 `tool-schemas` 单独是 160 项 schema 断言，`lifecycle` 与 `boot` 是另外两个套件、
-项数各不相同——别把这几个套件当成「合计 160 项」。）本组相关的 `probe-smoke` 15 项、
-`detach-smoke` 73 项。
+（`DSH_CORE_ROOT` 指向真实装配树时这 6 个跑起 4 个，合计 **1956** 项；只剩 `live` / `acceptance` 两个套件真正未跑，但 `boot-smoke` 会为它自己那段需真机的远端检查打一行 SKIP，而 runner 是按“有没有 SKIP 行”判定套件状态的，所以尾行会写成“41 passed, 3 skipped”；「跳过套件数」与「SKIP 行数」是两个不同的量，见 [development.md](./development.md)）。
+（其中 `tool-schemas` 单独是 160 项 schema 断言，`lifecycle` 16 项、`boot` 29 项——别把这几个套件当成「合计 160 项」。）本组相关的 `probe-smoke` 20 项、`detach-smoke` 73 项。
 
 ---
 

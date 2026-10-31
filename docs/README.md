@@ -2,7 +2,7 @@
 
 [根 README](../README.md) 面向「快速了解、安装、能力概览」；本目录存放展开的
 专题文档。内容已从 README 迁移并对照源码展开，**数字与清单均按当前源码核对**
-（路由 25 条、Agent 工具 10 个、冒烟套件 43 个）。如发现与实现不符之处，
+（路由 25 条、Agent 工具 10 个、冒烟套件 44 个）。如发现与实现不符之处，
 以源码为准并欢迎修订。
 
 ## 目录
@@ -17,6 +17,8 @@
 | [ui.md](./ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记、端口转发与持久会话区 | 完成 |
 | [forward-persistence.md](./forward-persistence.md) | 端口转发的持久化：已存映射、开关语义、端口预检、启动自动开启 | 完成 |
 | [unmount-modes.md](./unmount-modes.md) | 工作区卸载：停用、会话归档、全局停机围栏与一键启用 | 完成 |
+| [trigger-gates.md](./trigger-gates.md) | **触发门禁的一行指令**：四道围栏各自该怎么撞、撞出什么错误码，以及怎么用远端实际状态反证 | 完成 |
+| [acceptance-prompts.md](./acceptance-prompts.md) | **验收 Prompt**：权限围栏三项决定的逐条验收脚本（操作 → 必须看到的结果 → 判据），可直接粘给远端会话执行 | 完成 |
 | [development.md](./development.md) | 开发、调试与发布：源码结构、依赖解析、测试套件、打包流程 | 完成 |
 | [upstream-workarounds.md](./upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 | 完成 |
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |

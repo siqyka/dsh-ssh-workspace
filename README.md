@@ -294,6 +294,8 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 | [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记、端口转发与持久会话区 |
 | [forward-persistence.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/forward-persistence.md) | 端口转发持久化：意图与事实的分离、两条断开路径的一致性、自动开启 |
 | [unmount-modes.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/unmount-modes.md) | 卸载的两种模式：`detach`（可逆）与 `deregister`、会话归档、停用围栏 |
+| [trigger-gates.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/trigger-gates.md) | **触发门禁的一行指令**：四道围栏各自该怎么撞、撞出什么错误码，以及怎么用远端实际状态反证 |
+| [acceptance-prompts.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/acceptance-prompts.md) | **验收 Prompt**：权限围栏三项决定的逐条验收脚本（操作 → 必须看到的结果 → 判据），可直接粘给远端会话执行 |
 | [development.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/development.md) | 开发、调试与发布：源码结构、依赖解析、打包流程 |
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 |
 | [upstream-workaround-pattern.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、反模式与成本边界 |
