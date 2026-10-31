@@ -472,7 +472,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   `priority: -100` 遮蔽原生 `directoryFlow` 双入口）与远端目录对话框；
 - 工作区标记是 **DOM 装饰**：不删改 React 节点，隐藏原生文件夹图标、
   插入自有 `svg[data-sshwsp-mark]`，MutationObserver 自愈重扫；
-- 与宿主通信走 23 条路由（前缀 `/api/dsh-ssh-workspace/`）：
+- 与宿主通信走 25 条路由（前缀 `/api/dsh-ssh-workspace/`）：
   `hosts`、`hosts/save`、`hosts/delete`、`hosts/forget-key`、
   `hosts/disconnect`、`test`、`ls`、`status`、`mount`、`unmount`、`enable`、
   `forward`、`unforward`、`forward/save`、`forward/toggle`、`forward/delete`、

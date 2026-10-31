@@ -48,9 +48,18 @@ function engineWith (responder) {
   return { engine, calls }
 }
 
-/** A successful sweep that found the named tools. */
+/**
+ * A successful sweep that found the named tools.
+ *
+ * The answer uses the PREFIXED line format (`dsh-tool:rg`), not bare names:
+ * presence is decided by a whole-line match, because a substring test over the
+ * captured output reported a tool present when its name merely appeared inside
+ * a path or a locale value. The environment facts now share that same stream,
+ * which is what turned the old substring test from a theoretical flaw into a
+ * routine false positive.
+ */
 function found (...names) {
-  const lines = names.map(name => `${name}\n`).join('')
+  const lines = names.map(name => `dsh-tool:${name}\n`).join('')
   return { success: true, exitCode: 0, timedOut: false, stdout: `${lines}dsh-probe-done\n`, stderr: '', truncated: false, durationMs: 1 }
 }
 

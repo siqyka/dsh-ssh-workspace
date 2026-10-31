@@ -110,6 +110,32 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 能被用户读到的连接历史**。排查「为什么刚才断了」「为什么文件树不刷新」先看这里——
 `degraded` 表示 `inotifywait` 推送失效退回轮询，或大文件读取退回了共享 SFTP 通道。
 
+### 连接代次
+
+每条连接带 `generation`（本次会话里该主机成功连接过几次）与 `generationNote`（一句
+说明）。第 1 代是常态，`generationNote` 只说「first generation」；**第 2 代起**说的是：
+
+> connected (generation N); anything started before the reconnect may still be running on the host
+
+这是这个插件唯一能诚实给出的「恢复」语义。远端进程在 TCP 断开后通常继续运行（取决于
+`nohup` / 会话），插件看不到；它能恢复的是自己拥有的东西（连接池、已存隧道、监视器），
+不能恢复它只是**启动过**的东西。所以它报告代次，而不是声称连续。
+
+### 自检、命令与支持包
+
+`selfCheck[]`：每台被探测过的主机一条 `{ alias, missing[], rows[], text }`。`rows` 是三态
+（`present` / `absent` / `unknown`），`text` 与面板渲染的是同一份措辞。**只有 `absent` 带
+`install` 提示**——给 `unknown` 也加提示，等于请用户去装一个他可能早有的工具。
+
+`commands[]`：最近 20 条远端命令（已脱敏），字段 `seq / at / alias / command / channel /
+durationMs / exitCode / timedOut`，以及可选的 `outcomeUnknown`、`refused`、`cwd`、`error`。
+`refused: true` 是唯一确定「没跑」的条目。渲染时只列失败、超时、结果未知与被拒绝的，因为
+一条成功的 `ls` 不是新闻。
+
+`auditText`：同一份记录的可粘贴文本。`supportBundle`：完整支持包——版本、补丁判定、主机
+配置（含 `~/.ssh/config` 里未被采用的条目）、工作区、连接、转发、每主机自检、命令与事件，
+路径与凭据已脱敏，**不上传到任何地方**。
+
 ## ssh_workspace_exec
 
 **在远端**执行 shell 命令，不依赖工作区挂载：主机巡检、挂载前查看目录、

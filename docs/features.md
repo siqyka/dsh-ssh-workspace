@@ -15,7 +15,7 @@
 | 项 | 数值 |
 | --- | --- |
 | Agent 工具 | 10 个 `ssh_workspace_*` |
-| 浏览器 HTTP 路由 | 23 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
+| 浏览器 HTTP 路由 | 25 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
 | 接管的服务 seam | 4 个：`ctx.fs`、`ctx.shell`、`ctx.subprocess`、`ctx.subprocess.spawnTerminal` |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
 | 冒烟测试套件 | 39 个（裸检出活跃 33 个合计 1334 项断言，6 个需真实主机 / 完整 DSH 树则 SKIP） |

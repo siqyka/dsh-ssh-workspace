@@ -13,6 +13,11 @@
 - **诊断文本可导出**：`ssh_workspace_status` 新增 `diagnosticsSchemaVersion` 与 `diagnosticsText`——纯文本、带序号与时间戳、默认脱敏（家目录用户名、私钥路径、显式口令值），可直接贴进 issue。
 - **主机列表能区分「空」与「读不出来」**：`ssh_workspace_hosts` 与状态接口返回 `skipped` / `storeError`，被跳过的条目带原因。
 - **文档数字从源码生成**：新增 `scripts/doc-numbers.mjs`，路由 / 工具 / 补丁 / 模块 / 套件数由源码统计并就地替换；`--check` 在过期时指出具体哪一行，已接入 `npm run check:docs`。
+- **远程环境自检**（F-06）：探测从 `rg / git / inotifywait` 扩到 7 项工具（增加 `sha256sum`、`tar`、`rsync`、`tput`）与 4 项环境事实（登录 shell、locale、可用磁盘、inotify 上限），全部在**一次往返**内问完。报告是三态的——`present` / `absent` / `unknown`——只有 `absent` 带安装提示，`unknown` 既不省略也不装成"没问题"。面板新增「远程环境自检」一节，新增 `GET /self-check` 与状态工具的 `selfCheck` 字段。工具清单在 `lib/capabilities.js` 一张表里，探测脚本的询问列表由它派生。
+- **`~/.ssh/config` 审计**（F-04）：新增 `lib/config-audit.js`，把"支持什么"从注释变成被检查的表。三种判定不允许合并：`ignored`（不读、无损失）、`lost`（不读、用户预期落空，如 `LocalForward` / `Include` / `Match`）、`refused`（无法履行故拒绝该主机，如 `ProxyJump`）。审计挂在 `HostStore.listing()` 每一行的 `unsupported` 字段上，面板、`ssh_workspace_hosts` 与支持包同源。
+- **远端命令审计**（F-07 的可审计部分）：新增 `lib/audit.js`，与诊断环**并列**的有界环（容量 200，`seq` 在环外单调递增）。记录脱敏后的命令行、cwd（独立字段）、通道、时长、退出码、超时、`outcome: 'unknown'`、以及是否被模式门禁拒绝。**脱敏在写入时发生**，覆盖 `Authorization` 头、`DB_PASSWORD=` 这类带前缀赋值、`--password` 旗标、URL 里的 `token=` / `sig=`、家目录。
+- **一键支持包**（F-09）：新增 `lib/support-bundle.js` + `GET /support-bundle`（`text/plain`，可直接在浏览器打开）+ 面板「复制支持包」。它是**组装**而非采集——每个字段都来自已有表面，所以不可能报告面板会否认的事实。含版本、补丁判定、主机（含配置审计）、工作区、连接（含代次）、转发、每主机自检、最近命令与事件。不做自动上传。
+- **连接分代**（F-01 的可解释部分）：`engine.generations` 记录每个 alias 的成功连接次数（**存在 record 之外**，因为 record 每次重连都被替换）。`generationOf()` / `describeGeneration()` 让第 2 代起的连接说明「重连前启动的远端进程可能仍在运行」，第 1 代保持安静。状态工具新增 `generation` / `generationNote`，`/status` 新增 `generations`。
 
 ### 修复
 
@@ -29,6 +34,8 @@
 - **首次主机密钥落盘失败仍静默连**：不再只写无人读取的日志，而是记录一条 `degraded` 诊断并在状态输出 `unpinnedHostKeys` 警告行；后来成功固定时警告自动清除。
 - **并发首读开两条第二通道**：`streamChannel` 加 single-flight，并发只开一条，失败时清空槽位以便重试；元数据缓存改为缓存**进行中的 Promise**，并发同目标 stat 只发一次远端请求，失败不缓存。
 - **对话框缺键盘与读屏契约**：抽出共享的 `useDialogA11y`——`role="dialog"` + `aria-modal` + `aria-labelledby`、打开移入焦点、关闭归还触发元素、Tab 环绕、请求进行中 Esc 不生效。
+- **能力探测用子串匹配判断工具存在**：原实现是 `stdout.includes('rg')`，路径或 locale 值里出现工具名就误报为已安装。环境事实与工具判定共享同一路输出后，这会从理论缺陷变成日常误报；现在每条事实走独立前缀行（`dsh-tool:rg`）并整行匹配。
+- **支持包把未打码的 alias 嵌进报告**：第一版直接嵌入审计的 `exportText()` 输出，而那段文本带着明文 alias（它是写给本地读者看的）。改为从 rows 自己渲染——脱敏必须发生在字符串**形成**的地方，导出时再脱敏救不了别的读者。
 
 ### 测试
 
@@ -37,6 +44,8 @@
 - 新增 `replay-smoke`、`watch-lifecycle-smoke`、`scratch-safety-smoke`、`host-key-smoke`、`host-listing-smoke`、`upstream-contract-smoke`、`doc-numbers-smoke` 七个套件；`client-shape-smoke` 新增 27 项（对话框 10 + 菜单 17）。
 - **菜单方向键的算术抽成纯函数 `nextMenuIndex` 并在测试里真实执行**（12 个用例覆盖环绕、`current = -1` 入口、空列表、非导航键），而不是 grep 源码里有没有 `'ArrowDown'` 字样。
 - 汇总输出改为 PASS / SKIP / FAIL 三态并按名字列出跳过项，不再把 SKIP 当 PASS。
+- 新增四个 Future 套件：`capabilities-report-smoke`（48 项，三态报告、环境警告、探测契约）、`config-audit-smoke`（37 项，三种判定不可合并、通配匹配、first-wins）、`audit-smoke`（56 项，脱敏双向、拒绝记录、有界与 `seq`、不可抛）、`support-bundle-smoke`（61 项，脱敏泄漏检查、缺失字段、代次单调）。
+- 新增 `scripts/reverse-verify-future.mjs`：对上述每一处做破坏性检验，14 个变异全部使对应套件变红。它会临时改写源文件，因此**不是 CI 的一部分**——跑它是审阅动作。
 
 ### 文档
 

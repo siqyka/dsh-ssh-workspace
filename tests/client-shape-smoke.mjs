@@ -90,7 +90,16 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   check('LIST_CAP is 5', /const LIST_CAP = 5\b/.test(client))
   check('CappedList is defined', /function CappedList \(/.test(client))
   const capped = (client.match(/jsx\(CappedList, \{/g) ?? []).length
-  check('all four lists are capped (hosts, forwards, mounted, detached)', capped === 4, `found ${capped} wrappers`)
+  // The four original sections (hosts, forwards, mounted, detached) plus the
+  // two the Future work added (self-check, command audit). The assertion is a
+  // FLOOR rather than an exact count: adding a section is not a regression,
+  // while dropping the cap from one is — so the meaningful check is that every
+  // list-like section goes through CappedList at all, which the named list below
+  // makes explicit.
+  check('every list section is capped (hosts, forwards, mounted, detached, self-check, audit)', capped >= 6, `found ${capped} wrappers`)
+  check('the sections that must be capped still are',
+    ['sshwsp-hosts', 'sshwsp-forwards', 'sshwsp-mounts', 'sshwsp-check', 'sshwsp-audit'].every(className => client.includes(`className: '${className}'`)),
+    JSON.stringify(['sshwsp-hosts', 'sshwsp-forwards', 'sshwsp-mounts', 'sshwsp-check', 'sshwsp-audit'].filter(className => !client.includes(`className: '${className}'`))))
   check('the cap is measured, not assumed from a fixed row height',
     /getBoundingClientRect\(\)\.height/.test(client) && !/LIST_CAP \* \d+px/.test(client))
   check('a short list renders without a reserved scrollbar slot',

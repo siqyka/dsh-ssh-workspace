@@ -11,11 +11,11 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 23 | `lib/routes.js` |
+| HTTP routes | 25 | `lib/routes.js` |
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 25 | directory listing |
-| test suites | 39 | `tests/run.mjs` |
+| modules under `lib/` | 29 | directory listing |
+| test suites | 43 | `tests/run.mjs` |
 | passing assertions (sampled) | — | run `node tests/run.mjs` and pass `--assertions N` |
 
 <!-- doc-numbers:end -->
@@ -41,7 +41,7 @@
 | `lib/forward-persist.js` | 已存映射：**意图**（`enabled`）与**事实**（`live`）分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径（后者逐条走前者） |
 | `lib/transfer.js` | 文件传输：本机 ↔ 远端的流式 SFTP 拷贝与目录树上传（原子发布） |
 | `lib/store.js` | `$DSH_HOME/dsh-ssh.json` 存储：校验、合并（保留未知字段）、原子写 |
-| `lib/routes.js` | 浏览器半边的 23 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / reconnect / test / ls / status / mount / unmount / enable / forward / unforward / forward-save / toggle / delete / remember / probe / settings / transfer / download / upload） |
+| `lib/routes.js` | 浏览器半边的 25 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / reconnect / test / ls / status / mount / unmount / enable / forward / unforward / forward-save / toggle / delete / remember / probe / settings / transfer / download / upload / self-check / support-bundle） |
 | `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
 | `lib/tools.js` | 10 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → 各 profile → 部署自带树 |
@@ -169,10 +169,14 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `transport-smoke` | 无 | 17 | 传输路由与流式通道（第二条 SFTP 通道、退化路径） |
 | `forward-smoke` | 无 | 34 | 隧道本身：建立 / 拆除、`closeForAlias` 按主机拆除且**只拆该主机**、`holds` 引用计数、关闭转发不得断开主机 |
 | `forward-persist-smoke` | 无 | 102 | 已存映射：意图 / 事实分离、端口预检三态、占用端口不落盘、自动开启幂等、连接断开留痕、**主动断开主机与端口行「断开」逐字段一致**（`live` / `enabled` / `error` 三元组） |
-| `capabilities-smoke` | 无 | 19 | 主机能力探测（rg / git / inotifywait）与提示渲染 |
-| `routes-smoke` | 无 | 128 | 23 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
+| `capabilities-smoke` | 无 | 19 | 主机能力探测（rg / git / inotifywait）与提示渲染；答案用 `dsh-tool:<name>` 前缀行，因为存在性必须整行匹配（子串匹配会让路径里的工具名算作已安装） |
+| `capabilities-report-smoke` | 无 | 48 | 远程环境自检（`lib/capabilities.js`）：**三态不可合并**（`unknown` 不是 `absent`，只有 `absent` 带安装提示，缺键读作 `unknown`）、工具表与探测脚本的询问列表同源、四项环境警告各自写清后果、`unknown` 不被计成缺失。引擎侧：一次往返问完全部工具与环境事实、`dsh-env:` 前缀解析、失败探针既不缓存判定也不缓存环境 |
+| `config-audit-smoke` | 无 | 37 | `~/.ssh/config` 审计（`lib/config-audit.js`）：`ignored` / `lost` / `refused` 三种判定不可合并（`LocalForward` 是 `lost`，`ProxyJump` 走 `skipped` 而不是审计）、未列出的关键字也有判定、匹配跟随 resolver（`Host *` 生效、`!name` 排除、别的块不串味）、first-wins 且重复只报一次、长值截断、`listing()` 每行带 `unsupported` |
+| `audit-smoke` | 无 | 56 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
+| `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
+| `routes-smoke` | 无 | 128 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |
-| `lifecycle-smoke` | `DSH_CORE_ROOT` | SKIP | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 23 路由 / 10 工具） |
+| `lifecycle-smoke` | `DSH_CORE_ROOT` | SKIP | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 25 路由 / 10 工具） |
 | `boot-smoke` | `DSH_CORE_ROOT`（远端段另需 `DSH_WS_TEST_ALIAS`） | SKIP | 生产顺序引导、`ctx.fs` 接管与还原、工具端到端、挂载 → 停用 → 读被拒 → 启用往返 |
 | `tool-schemas-smoke` | `DSH_CORE_ROOT` | SKIP | 工具 schema 过真实 `assertSupportedJsonSchema` + render 冒烟（161 项） |
 | `projection-real-smoke` | `DSH_CORE_ROOT` | SKIP | `UPSTREAM-1` 补丁对**真实** `SessionProjectionRegistry` + `WorkingDirectoryService` + 真实 zod，按生产顺序装配：复现 `Invalid input` → 打补丁后 `restore` / `viewCheckpoint` 双双通过 → 报告 `probe: 'broken'` → 卸载后已打开的 ssh:// 会话仍可读。第一节断言的是**缺陷仍然存在**，红 = 删补丁（失败信息自带删除清单） |
