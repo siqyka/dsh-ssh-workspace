@@ -137,10 +137,16 @@ durationMs / exitCode / timedOut`，以及可选的 `outcomeUnknown`、`refused`
 判定、主机密钥、主机配置（含 `~/.ssh/config` 里未被采用的条目与被跳过的条目）、工作区、
 连接（含代次）、转发、每主机自检、命令与事件，路径与凭据已脱敏。
 
-`diagnosis`：面板状态灯的判定，`{ version, state, warn, unknown, findings[], text }`。
+`diagnosis`：面板状态灯的判定，`{ version, state, warn, unknown, findings[], notes[], text }`。
 `state` 三值——`ok` / `warn` / `unknown`——且**只有需要处理的事项才进 `findings`**，所以
 `findings` 为空恰好等价于 `state: 'ok'`。判定只读上面这些字段，不探测、不连接、不读文件。
 它和报告、面板是同一个模块（`lib/diagnosis.js`），三处不会讲三个故事。
+
+`notes`：自检的观察结果，**不计入判定**。缺 `rg`、非 UTF-8 locale、watch 上限偏低这类
+事实属于「那台主机就是这样」，不是「这个会话出了事」——它们往往在主机侧改不了，混进
+`findings` 只会让圆点在健康的机器上变红。行与 `findings` 同形状（`id` / `state` / 可选的
+`alias` / `detail`），所以渲染可以复用；但 `state` / `warn` / `unknown` 只从 `findings` 算。
+`text` 里它们出现在 `advisory (not counted in the verdict):` 一节，标记为 `NOTE`。
 
 ## ssh_workspace_exec
 

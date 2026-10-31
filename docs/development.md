@@ -16,7 +16,7 @@
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 31 | directory listing |
 | test suites | 44 | `tests/run.mjs` |
-| passing assertions (sampled) | 1733 | measured 2026-10-31 |
+| passing assertions (sampled) | 1753 | measured 2026-10-31 |
 
 <!-- doc-numbers:end -->
 
@@ -54,7 +54,7 @@
 | `lib/tools.js` | 10 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → 各 profile → 部署自带树 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现 |
-| `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
+| `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。自检（缺工具、环境告警）**只进 `notes`，不参与判定**——它是主机的属性，不是这个会话的故障。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
 | `lib/client.js` | 浏览器半边：面板、添加工作区流程、标记装饰、全部样式与中英文案 |
 | `lib/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) |
 
@@ -194,7 +194,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `doc-numbers-smoke` | 无 | 17 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红） |
 | `upstream-contract-smoke` | 无 | 37 | 每个补丁声明它碰的宿主符号，双向校验：磁盘上每个 `patch-*.js` 都有契约、契约不指向不存在的文件、安装函数确实导出、声明的符号确实出现在模块里，且安装顺序固定——上游改名一个符号而补丁照常安装，就是「命令静默地跑在本机」 |
 | `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
-| `diagnosis-smoke` | 无 | 63 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、缺工具、环境告警、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**（探测不到的主机不得报成「缺所有工具」），以及聚合规则（确定的坏压过不确定）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
+| `diagnosis-smoke` | 无 | 77 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**，以及聚合规则（确定的坏压过不确定）。**自检是提示不是判定**：缺工具与环境告警只进 `notes`，不改变 `state` / `warn` / `unknown`，也不与 `findings` 重叠；报告里它们出现在 `advisory (not counted in the verdict):` 一节，而同一份报告中的真问题仍然变红（两条断言互为反向，防止只是「把话改小声」）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
 | `routes-smoke` | 无 | 176 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |

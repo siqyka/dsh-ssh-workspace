@@ -126,23 +126,48 @@ console.log('\n[a real problem is red, and says which one]')
 }
 
 {
-  // A missing tool degrades a feature the user can fix; that is a finding.
+  // The self-check is ADVISORY. A host without `rg` still works exactly as
+  // documented — glob/grep degrade, every other tool runs — and the user often
+  // cannot change that host's tool set at all. Folding it into `findings` made
+  // the dot red on a healthy machine, which is the "too loud" failure this
+  // suite exists to catch: a light that goes red for a normal configuration
+  // stops being read, and then it can no longer carry the facts that matter.
   const report = diagnose({
     pluginVersion: '1',
     capabilities: [{ alias: 'box', tools: { rg: false, git: true }, environment: { shell: '/bin/bash', locale: 'en_US.UTF-8', diskFreeKb: 900000, inotifyWatches: 20000 } }],
   })
-  check('a missing tool is a finding', report.state === STATE.warn, JSON.stringify(report))
-  check('...naming the tool and its consequence', /rg/u.test(report.findings[0].detail) && /glob/u.test(report.findings[0].detail), report.findings[0].detail)
-  // A non-POSIX shell / a non-UTF-8 locale are warnings with a consequence, and
-  // they come from the SAME self-check the panel renders.
+  check('a missing tool does NOT change the verdict', report.state === STATE.ok, JSON.stringify({ state: report.state, findings: report.findings }))
+  check('...it is reported as a note instead', report.notes.length > 0, JSON.stringify(report.notes))
+  check('...naming the tool and its consequence', /rg/u.test(report.notes[0].detail) && /glob/u.test(report.notes[0].detail), report.notes[0].detail)
+  check('...and it is not counted in the tallies', report.warn === 0 && report.unknown === 0, `${report.warn}/${report.unknown}`)
+  check('...nor listed among the findings', report.findings.length === 0, JSON.stringify(report.findings))
+
+  // A non-POSIX shell / a non-UTF-8 locale are consequences the user should
+  // know about, but they are properties of the host, not defects in this
+  // session — so they are notes too.
   const env = diagnose({
     pluginVersion: '1',
     capabilities: [{ alias: 'box', tools: {}, environment: { shell: '/bin/fish', locale: 'de_DE.ISO-8859-1', diskFreeKb: 20 * 1024, inotifyWatches: 512 } }],
   })
-  check('an environment warning is a finding', env.state === STATE.warn, JSON.stringify(env.findings.map(f => f.id)))
-  check('...one row per warning, not one merged row',
-    env.findings.filter(f => f.id.startsWith('env:')).length >= 3,
-    JSON.stringify(env.findings.map(f => f.id)))
+  check('an environment warning does not change the verdict either', env.state === STATE.ok, JSON.stringify({ state: env.state, findings: env.findings }))
+  check('...one note per warning, not one merged row',
+    env.notes.filter(f => f.id.startsWith('env:')).length >= 3,
+    JSON.stringify(env.notes.map(f => f.id)))
+  check('...and the tool rows are notes too', env.notes.some(f => f.id.startsWith('tool:')), JSON.stringify(env.notes.map(f => f.id)))
+
+  // The two lists must stay distinct: a caller that renders findings and
+  // forgets notes loses advisory context, but a caller that renders notes as
+  // findings would silently drive the dot red again.
+  const mixed = diagnose({
+    pluginVersion: '1',
+    capabilities: [{ alias: 'box', tools: { rg: false }, environment: {} }],
+    unpinnedHostKeys: [{ alias: 'box', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }],
+  })
+  check('a real problem still turns the dot red beside the notes', mixed.state === STATE.warn, JSON.stringify(mixed))
+  check('...counting only the real problem', mixed.warn === 1, String(mixed.warn))
+  check('...while the note is preserved', mixed.notes.length > 0, JSON.stringify(mixed.notes))
+  check('...and the two lists do not overlap', !mixed.findings.some(f => mixed.notes.some(n => n.id === f.id)),
+    JSON.stringify([mixed.findings.map(f => f.id), mixed.notes.map(f => f.id)]))
 }
 
 {
@@ -177,11 +202,21 @@ console.log('\n[a real problem is red, and says which one]')
 console.log('\n[unknown is neither green nor red]')
 
 {
-  const report = diagnose({ pluginVersion: '1', capabilities: [{ alias: 'box', tools: {}, environment: {} }] })
-  check('a host that could not be probed is unknown, not ok', report.state === STATE.unknown, JSON.stringify(report))
-  check('...and not red either', report.state !== STATE.warn, report.state)
-  check('...and every tool is reported as undetermined', report.findings.every(f => f.state === STATE.unknown), JSON.stringify(report.findings.map(f => f.state)))
-  check('...never as missing', !report.findings.some(f => /is missing/u.test(f.detail)), JSON.stringify(report.findings.map(f => f.detail)))
+  // An unreachable host is a real "I could not judge": the probe failed, so
+  // nothing about that host is known. That is a finding — it is a fact about
+  // THIS session's ability to act on the host, unlike "the host lacks rg",
+  // which is a property of the host. The two must not collapse into one list.
+  const report = diagnose({ pluginVersion: '1', connections: [], reconnecting: [{ alias: 'box', phase: 'gave-up', attempts: 2 }] })
+  check('a host that cannot be reached at all is a finding', report.state === STATE.warn, JSON.stringify(report))
+
+  // The self-check's own "could not determine" rows stay advisory: an
+  // unprobed host is not evidence that anything is wrong with the plugin.
+  const probed = diagnose({ pluginVersion: '1', capabilities: [{ alias: 'box', tools: {}, environment: {} }] })
+  check('an unprobed host is not, by itself, a verdict', probed.state === STATE.ok, JSON.stringify(probed.findings))
+  check('...its rows are notes', probed.notes.length > 0, JSON.stringify(probed.notes))
+  check('...every one of them undetermined, never missing',
+    probed.notes.every(f => f.state === STATE.unknown) && !probed.notes.some(f => /is missing/u.test(f.detail)),
+    JSON.stringify(probed.notes.map(f => f.detail)))
 }
 
 {
@@ -189,7 +224,7 @@ console.log('\n[unknown is neither green nor red]')
   // that says "and also I could not judge something" is still a red dot.
   const report = diagnose({
     pluginVersion: '1',
-    capabilities: [{ alias: 'box', tools: { rg: false }, environment: {} }],
+    unpinnedHostKeys: [{ alias: 'box', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }],
     upstreamWorkarounds: [{ id: 'U', probe: 'unprobeable', detail: '' }],
   })
   check('a definite problem wins over an undetermined one', report.state === STATE.warn, JSON.stringify(report))
@@ -230,6 +265,35 @@ console.log('\n[the report carries the verdict, and it agrees with the sections]
   check('an empty input produces an ok verdict', /verdict: ok/u.test(clean), clean.split('\n').find(line => line.startsWith('verdict')) ?? '')
   const dirty = buildSupportBundle({ pluginVersion: '0.2.7', hostsSkipped: [{ alias: 'b', reason: 'jump host' }] })
   check('...and a skipped host alone turns it red', /verdict: needs attention/u.test(dirty), dirty.split('\n').find(line => line.startsWith('verdict')) ?? '')
+
+  // The self-check rides along in the same report but under its own heading,
+  // marked advisory. A pasted report that listed "rg is missing" next to
+  // "a host key is unpinned" would make the two look equally urgent.
+  const withNotes = buildSupportBundle({
+    pluginVersion: '0.2.7',
+    capabilities: [{ alias: 'box', tools: { rg: false }, environment: { shell: '/bin/bash', locale: 'en_US.UTF-8', diskFreeKb: 900000, inotifyWatches: 20000 } }],
+  })
+  check('a missing tool alone leaves the report verdict green', /verdict: ok/u.test(withNotes),
+    withNotes.split('\n').find(line => line.startsWith('verdict')) ?? '')
+  check('...while the report still says the tool is missing', withNotes.includes('rg is missing'), withNotes)
+  check('...under an advisory heading, not among the findings',
+    withNotes.includes('advisory (not counted in the verdict):'), withNotes)
+  check('...and no WARN line is produced for it',
+    !/^WARN tool:rg/mu.test(withNotes),
+    withNotes.split('\n').filter(line => line.includes('tool:rg')).join(' | '))
+
+  // The counter-check: a REAL problem in the same report still goes red, so the
+  // advisory section cannot be silencing anything.
+  const mixed = buildSupportBundle({
+    pluginVersion: '0.2.7',
+    capabilities: [{ alias: 'box', tools: { rg: false }, environment: {} }],
+    unpinnedHostKeys: [{ alias: 'box', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }],
+  })
+  check('a real problem beside a note still reads red', /verdict: needs attention/u.test(mixed),
+    mixed.split('\n').find(line => line.startsWith('verdict')) ?? '')
+  check('...and both are present, each in its own place',
+    /^WARN host-key/mu.test(mixed) && mixed.includes('advisory (not counted in the verdict):'),
+    mixed)
 }
 
 // ---------------------------------------------------------------------------

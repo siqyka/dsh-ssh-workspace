@@ -426,6 +426,35 @@ console.log('\n[a11y: the menu contract]')
 }
 
 // ---------------------------------------------------------------------------
+// The panel renders the self-check as ADVISORY, not as findings
+//
+// A missing optional tool is a property of the host (often not even changeable
+// there), not a malfunction of this session. When the panel listed it among the
+// findings, the dot went red on healthy machines and the light stopped being
+// read — so the separation has to be visible in the rendering, not only in the
+// verdict arithmetic.
+// ---------------------------------------------------------------------------
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  check('the panel renders the advisory rows', /\(diagnosis\.notes \?\? \[\]\)\.length > 0/u.test(source),
+    'notes are not rendered at all')
+  check('...under their own heading', /t\('diagnosis\.notes', \{ n: /u.test(source),
+    'no label separating notes from findings')
+  check('...collapsed behind a disclosure, not competing with the findings',
+    /jsxs\('details', \{ className: 'sshwsp-diagnosis-notes'/u.test(source), 'notes rendered as a plain block')
+  check('...and the two lists are read from different fields',
+    /\(diagnosis\.findings \?\? \[\]\)/u.test(source) && /\(diagnosis\.notes \?\? \[\]\)/u.test(source),
+    'one of the two lists is missing')
+  check('the advisory rows carry no severity badge',
+    // The findings row renders a badge; the notes row deliberately does not,
+    // because a badge is what makes a row read as a verdict.
+    !/sshwsp-diagnosis-notes[\s\S]{0,600}?diagnosis\.warnLabel/u.test(source),
+    'notes wear a severity badge')
+  check('the advisory block has its own style',
+    /\.sshwsp-diagnosis-notes \{/u.test(source), 'no style for the advisory block')
+}
+
+// ---------------------------------------------------------------------------
 // The diagnostic report: opened in the panel, copied from inside the window.
 //
 // This section pins the SHAPE of the fix, not "there is a button": the failure

@@ -2,6 +2,18 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
+## [Unreleased]
+
+### 变更
+
+- **自检改为提示，不再计入状态灯**：缺 `rg` / `git`、非 UTF-8 locale、`inotify` 上限偏低这类
+  自检结果以前混在 `findings` 里，会让一个**健康的机器**（干净安装、没装 `rg`）直接变红。现在
+  它们单独进 `diagnosis.notes`，不参与 `state` / `warn` / `unknown` 的计算。面板把它们折叠在
+  findings 下方且不带严重度徽章；报告里出现在 `advisory (not counted in the verdict):` 一节。
+  信息没有减少——只是不再冒充结论。分界线是「谁能改变它」：finding 是这个会话出了事（未固定的
+  密钥、读不出的存储、没人重试的断连），note 是那台主机就是这样（往往无 root、镜像受限）。
+- `ssh_workspace_status` 的 `diagnosis` 新增 `notes`（数组，advisory，`required`）。
+
 ## [0.2.8] - 2026-10-31
 
 ### 新增
