@@ -433,5 +433,117 @@ function rejects (schema, value) {
   uninstallProjectionRelaxation(ctxFor(registry))
 }
 
+// ---------------------------------------------------------------------------
+// 10. A schema that accepts the probe ONLY because it captured OUR patched
+//     predicate is NOT evidence that upstream fixed anything.
+//
+//     This is the regression the retirement signal shipped with: the bridge is
+//     installed from this plugin's own `apply()`, and the `workingDirectory`
+//     unit is constructed when its service is first touched — so on the real
+//     Host the schema captures the PATCHED `isAbsolute`. It then accepts an
+//     ssh:// value, a plain accept-check reports `fixed`, and the advice that
+//     verdict prints is "delete the workaround" — on a Host whose source still
+//     says `refine(isAbsolute)`.
+//
+//     The discriminator is whether the acceptance READS the binding. The
+//     registry double below is paired with a fake bridge so both orders can be
+//     reproduced without the real fs-shim (which would drag in the peers).
+// ---------------------------------------------------------------------------
+{
+  const { BRIDGE } = await import(pathToFileURL(path.join(pluginRoot, 'lib/path-binding.js')).href)
+  const originalIsAbsolute = path.isAbsolute
+  /** A predicate that accepts ssh://, like the one fs-shim installs. */
+  const patchedIsAbsolute = (candidate) => typeof candidate === 'string'
+    && (originalIsAbsolute(candidate) || /^ssh:\/\//iu.test(candidate))
+
+  /** Install/remove a fake bridge — BOTH the state and the real patch. */
+  const withBridge = (fn) => {
+    const prior = globalThis[BRIDGE]
+    const priorIsAbsolute = path.isAbsolute
+    globalThis[BRIDGE] = {
+      pathPatches: [{ surface: path, isAbsolute: priorIsAbsolute, resolve: path.resolve, join: path.join, relative: path.relative }],
+      republish: () => {},
+    }
+    path.isAbsolute = patchedIsAbsolute
+    try {
+      return fn()
+    } finally {
+      path.isAbsolute = priorIsAbsolute
+      if (prior === undefined) delete globalThis[BRIDGE]
+      else globalThis[BRIDGE] = prior
+    }
+  }
+
+  // The Host's DEFECTIVE unit, built while the bridge is live: it captures
+  // whatever `path.isAbsolute` is at construction — i.e. the patched one.
+  const capturedAfterPatch = withBridge(() => {
+    const captured = path.isAbsolute
+    return capturedSchema(captured)
+  })
+
+  check('a schema that captured the PATCHED predicate does accept the ssh:// cwd',
+    acceptsRemotePath(capturedAfterPatch) === true)
+  check('...so a plain accept-check alone would call this Host fixed (the trap)',
+    acceptsRemotePath(capturedAfterPatch) === true)
+
+  const judged = withBridge(() => probeUpstream(makeRegistry({
+    key: RELAXED_KEY,
+    stateVersion: 1,
+    stateSchema: capturedAfterPatch,
+    init: (header) => header.cwd ?? null,
+    apply: (state) => state,
+    wire: { viewSchema: capturedAfterPatch, view: (state) => state },
+  })))
+  check('...but the probe reports BROKEN, not fixed: the capture is still a capture',
+    judged.state === PROBE.broken, `${judged.state} — ${judged.detail}`)
+  check('...and the detail says why, rather than claiming the Host rejects ssh://',
+    /captured/u.test(judged.detail), judged.detail)
+
+  // The genuinely fixed unit reads the binding at call time, so restoring the
+  // original predicate makes it stop accepting — that is what proves the read.
+  const readsBinding = withBridge(() => ({
+    parse (value) {
+      if (value === null) return value
+      if (typeof value !== 'string' || value.length === 0) throw new Error('Invalid input')
+      if (!(path.isAbsolute(value) || /^ssh:\/\//iu.test(value))) throw new Error('Invalid input')
+      return value
+    },
+  }))
+  check('a schema that reads the binding is STILL reported fixed',
+    withBridge(() => probeUpstream(makeRegistry({
+      key: RELAXED_KEY,
+      stateVersion: 1,
+      stateSchema: readsBinding,
+      init: (header) => header.cwd ?? null,
+      apply: (state) => state,
+      wire: { viewSchema: readsBinding, view: (state) => state },
+    }))).state === PROBE.fixed)
+
+  // No bridge at all (a bare harness, or a Host that never patched): an
+  // acceptance cannot be this plugin's doing, so it is evidence.
+  const loneFixed = {
+    parse (value) {
+      if (value === null) return value
+      if (typeof value !== 'string' || value.length === 0) throw new Error('Invalid input')
+      if (!(originalIsAbsolute(value) || /^ssh:\/\//iu.test(value))) throw new Error('Invalid input')
+      return value
+    },
+  }
+  check('with no bridge installed, an accepting schema is still judged fixed',
+    probeUpstream(makeRegistry({
+      key: RELAXED_KEY,
+      stateVersion: 1,
+      stateSchema: loneFixed,
+      init: (header) => header.cwd ?? null,
+      apply: (state) => state,
+      wire: { viewSchema: loneFixed, view: (state) => state },
+    })).state === PROBE.fixed)
+
+  // relaxSchema must keep wrapping the captured schema: it is a pure superset,
+  // and skipping it here is what made the whole thing load-order dependent.
+  check('relaxSchema still wraps a captured schema that happens to accept',
+    withBridge(() => relaxSchema(capturedAfterPatch)) !== capturedAfterPatch)
+}
+
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)
