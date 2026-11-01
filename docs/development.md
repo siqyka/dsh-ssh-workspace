@@ -16,7 +16,7 @@
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 31 | directory listing |
 | test suites | 44 | `tests/run.mjs` |
-| passing assertions (sampled) | 1773 | measured 2026-10-31 |
+| passing assertions (sampled) | 1756 | measured 2026-11-01 |
 
 <!-- doc-numbers:end -->
 
@@ -169,7 +169,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `replay-smoke` | 无 | 34 | 失败重放策略：写类 SFTP 操作失败后**不重放**（第一次可能已经在服务器上落地，重放就是执行两次），改标 `outcome: 'unknown'`并保留原始报错文本；远端命令走显式 `replay: 'safe'` 才重试；连接中断记成 `disconnect` 而不是 `reconnect` |
 | `host-key-smoke` | 无 | 18 | 主机密钥固定与**落盘失败的区分**：首次连接记下指纹；不一致直接拒绝；写不进 `knownHosts` 时连接仍成功，但必须记 `degraded` 诊断并在状态里列 `unpinnedHostKeys`，后来固定成功时自动清除——「警告写进无人读的日志」等于用户以为密钥已固定 |
 | `host-listing-smoke` | 无 | 32 | 主机列表把「真的空」与「读不出来」分开：空配置不带提示，被跳过的 `~/.ssh/config` 块带原因列在 `skipped`，存储读失败带 `storeError`——两种完全不同的问题不能都长成「没有主机」 |
-| `client-shape-smoke` | 无 | 122 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。新增**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」 |
+| `client-shape-smoke` | 无 | 157 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径 |
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 40 | 目录树上传、原子发布、递归与失败路径 |

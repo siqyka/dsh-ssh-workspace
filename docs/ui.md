@@ -242,7 +242,28 @@ verdict):` 一节）、在工具返回值里（`diagnosis.notes`）。**看不�
 
 判定与计数只读 `findings`，`notes` 永远是 `state` / `warn` / `unknown` 的旁观者。
 
-### 自检卡片默认折叠，标题即开关
+### 自检分区默认关闭
+
+面板上原本有一节「远程环境自检」，每台探测过的主机一张卡片，外加一个「自检」按钮。
+**这一节现在不渲染了**，由 `lib/client.js` 里的 `SHOW_SELF_CHECK_SECTION = false` 控制。
+
+**是关掉的一棵活树，不是注释。** 两者的区别在于本仓库的测试方式：`client-shape-smoke`
+几乎全部断言都是对 bundle 文本做 grep，把 JSX 注释掉会让**所有**相关断言继续绿着，
+而面板什么都不显示——测试从此描述一段不存在的界面。所以这里留一个具名布尔值，两处渲染点
+（标题区与列表）都带 `&& SHOW_SELF_CHECK_SECTION`，并让套件把「它是活的」也钉住：
+`isLive()` 用注释配平判定某个匹配落在注释里还是代码里。改回 `true` 就恢复 0.2.8 的行为，
+包括每张卡片的展开与 `/status` 优先的数据源。
+
+**信息没有消失，只是不再占面板。** 同一批行的其余三条路径都还在：状态灯下方的
+`details` 提示块、诊断报告里 `advisory (not counted in the verdict):` 一节、
+`GET /self-check` 与 `ssh_workspace_status` 的 `selfCheck` 字段。一条事实都没少，
+少的只是面板对一个它并不参与判定的信息又重复了一遍。
+
+关掉的是渲染，**不是探测**：服务端仍然按需探测并缓存，因为报告和 agent 都要读它。
+
+### 自检卡片：默认折叠，标题即开关
+
+（以下描述的是开关打开时的形状，保留下来是因为恢复时要恢复的是这个行为，而不是它前面那个 bug。）
 
 一张自检卡片只显示 `qiyk  2 缺失  3/7 已安装`。想知道缺的是哪两个，点标题展开——
 标题是 `<button aria-expanded>`，不是 `div` 加 `onClick`：键盘可达、读屏能读出展开状态，
@@ -318,8 +339,7 @@ unavailable)` 把"补丁不需要装"和"我不知道补丁装没装"写成了�
 
 **标识符一律不动**：路由 `/support-bundle`、工具字段 `supportBundle`、模块
 `lib/support-bundle.js`、套件 `support-bundle-smoke` 都是契约面，改名没有功能收益。
-这与仓库既有习惯一致——面板叫「远程环境自检」而路由叫 `/self-check`，面板叫
-「最近的远端命令」而模块叫 `audit.js`。
+这与仓库既有习惯一致——面板叫「最近的远端命令」而模块叫 `audit.js`。
 
 避免用「插件诊断」：`ssh_workspace_status` 里已有 `diagnosticsText`（事件环容量 40 条、
 它只导出最新 20 条），

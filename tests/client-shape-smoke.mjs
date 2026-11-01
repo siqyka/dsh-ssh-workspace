@@ -30,6 +30,40 @@ function check (name, condition, detail) {
   }
 }
 
+/**
+ * Whether the text matching `re` is live code rather than a comment.
+ *
+ * Every structural assertion in this file is a grep, and a grep cannot tell the
+ * two apart: turning a rendered section into a block comment keeps all of them
+ * green while the panel shows nothing. So the greps that pin RENDERING have to
+ * ask this question, or the suite silently starts describing dead text.
+ *
+ * The balance is counted from `function RemoteWorkspacePanel`, not from the top
+ * of the file: the injected CSS string legitimately contains block-comment
+ * TOKENS as text, which unbalances any global count. Within the panel everything
+ * is balanced in the file as it stands, so a drift means an added comment.
+ *
+ * Heuristic by design — it does not parse. A `//` earlier on the same line reads
+ * as a comment; both failure modes err toward failing loudly, not toward a false
+ * pass, except a bare terminator token which could mask one (there is none).
+ *
+ * @param {string} source - file text.
+ * @param {RegExp} re - pattern; the first match decides.
+ * @returns {boolean} true when a match exists and is not inside a comment.
+ */
+function isLive (source, re) {
+  const anchor = source.indexOf('function RemoteWorkspacePanel')
+  const match = re.exec(source)
+  if (match === null || anchor < 0 || match.index < anchor) return false
+  const before = source.slice(0, match.index)
+  const lineStart = before.lastIndexOf('\n') + 1
+  if (before.slice(lineStart).includes('//')) return false
+  const region = source.slice(anchor, match.index)
+  const opens = (region.match(/\/\*/gu) ?? []).length
+  const closes = (region.match(/\*\//gu) ?? []).length
+  return opens <= closes
+}
+
 console.log('\n=== client shape smoke ===\n')
 console.log(`[package root: ${packageRoot}]`)
 
@@ -466,7 +500,57 @@ console.log('\n[a11y: the menu contract]')
 // Both halves are pinned here: the summary arithmetic is EXECUTED (a grep for
 // `missing.length` would pass on any of the broken variants), and the wiring is
 // checked so the state list cannot quietly go back to being the only source.
+//
+// ONE MORE THING, which changed the framing of this whole block: the section is
+// now GATED OFF (`SHOW_SELF_CHECK_SECTION = false`) because the user asked for it
+// to be commented out. It is a gated tree rather than a commented one because
+// every assertion in this file greps the bundle — turning the JSX into comments
+// would keep ALL of the assertions below green while rendering nothing, which is
+// exactly the fake-green shape this suite exists to avoid. So the assertions
+// below describe the shape of the DISABLED tree: the reason they still matter is
+// that flipping the flag back to `true` has to restore the 0.2.8 behaviour and
+// not the bug that preceded it. The gate itself is pinned in the block above.
 // ---------------------------------------------------------------------------
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const flag = source.match(/const SHOW_SELF_CHECK_SECTION = (true|false)/u)
+  check('the self-check section has one named switch', flag !== null, 'SHOW_SELF_CHECK_SECTION not found')
+  check('...and it is currently OFF', flag !== null && flag[1] === 'false',
+    `SHOW_SELF_CHECK_SECTION is ${flag?.[1] ?? 'missing'} — the section is not meant to render`)
+  // Both elements carry the guard: a heading with no list under it is worse than
+  // either half alone, so a single guard site would mean a partial hide.
+  check('both elements of the section are guarded',
+    (source.match(/SHOW_SELF_CHECK_SECTION && /gu) ?? []).length === 2,
+    `${(source.match(/SHOW_SELF_CHECK_SECTION && /gu) ?? []).length} guard site(s)`)
+  // The tree must be LIVE, not commented out. A commented section satisfies every
+  // grep below AND the flag assertions above, so the panel would render nothing
+  // while the suite reported the shape as intact — which is precisely why the
+  // requested "comment it out" was implemented as a gate instead. Two sites, two
+  // messages, so a failure says WHICH render site went dead rather than pointing
+  // at a combined pattern that broke for an unrelated reason.
+  check('the section heading is live code, not commented-out text',
+    isLive(source, /jsx\('h3', \{ children: t\('check\.title'\) \}/u),
+    'either the heading is gone or it sits in a comment: nothing renders')
+  check('the card disclosure is live code, not commented-out text',
+    isLive(source, /className: 'sshwsp-check-head'/u),
+    'the expandable card is in a comment: the greps would keep praising a shape that never renders')
+  check('the derivation is gated too, so a hidden section does no per-poll merge',
+    /const selfCheckRows = !SHOW_SELF_CHECK_SECTION \? \[\]/u.test(source),
+    'the list is still built on every poll while nothing renders it')
+  // Hiding a section must not hide the facts. These three are the remaining
+  // paths to the same rows; if one disappears with the section, the information
+  // is gone rather than merely off-panel.
+  check('the advisory notes still reach the panel',
+    /\(diagnosis\.notes \?\? \[\]\)\.length > 0 && jsxs\('details'/u.test(source),
+    'the section was the only place these rows were visible')
+  check('the on-demand route is still served',
+    /path: ROUTES\.selfCheck/u.test(readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')),
+    'the route behind the button was removed along with the button')
+  check('the status tool still reports self-check rows',
+    /selfCheck: probedAliases\(engine\)/u.test(readFileSync(path.join(packageRoot, 'lib', 'tools.js'), 'utf8')),
+    'an agent can no longer ask what a host is missing')
+}
+
 {
   const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
   const count = (re) => (source.match(re) ?? []).length

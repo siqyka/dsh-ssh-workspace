@@ -154,6 +154,60 @@ const CASES = [
     expect: 2,
     why: 'the record is replaced on reconnect, so a per-record counter resets to 1',
   },
+  // ---- the self-check section's off-switch
+  //
+  // The user asked for the panel section to be COMMENTED OUT. It is a gated tree
+  // instead, and these five cases are the evidence for that choice: the first two
+  // show a commented section is caught by a named assertion rather than by a
+  // crash, and they hold while 22 other self-check greps stay green (the fake
+  // green a comment leaves behind). `client-shape-smoke` greps this bundle, so
+  // without the live-code checks a commented section would keep the whole suite
+  // reporting an intact shape that renders nothing.
+  {
+    label: 'self-check gate: the heading is moved into a comment',
+    file: 'lib/client.js',
+    from: "          jsx('h3', { children: t('check.title') }),",
+    to: "          // jsx('h3', { children: t('check.title') }),",
+    suite: 'client-shape-smoke.mjs',
+    expect: 1,
+    why: 'the file still parses and every other grep still passes, so only a live-code check can see that nothing renders',
+  },
+  {
+    label: 'self-check gate: the card disclosure is moved into a comment',
+    file: 'lib/client.js',
+    from: "                      className: 'sshwsp-check-head',",
+    to: "                      // className: 'sshwsp-check-head',",
+    suite: 'client-shape-smoke.mjs',
+    expect: 1,
+    why: 'the expandable card is the part the user asked for; a commented one must not keep earning praise from greps',
+  },
+  {
+    label: 'self-check gate: the switch is flipped on',
+    file: 'lib/client.js',
+    from: 'const SHOW_SELF_CHECK_SECTION = false',
+    to: 'const SHOW_SELF_CHECK_SECTION = true',
+    suite: 'client-shape-smoke.mjs',
+    expect: 1,
+    why: 'restoring the section has to be a decision that breaks a test, not an edit nobody notices',
+  },
+  {
+    label: 'self-check gate: only one of the two elements is guarded',
+    file: 'lib/client.js',
+    from: "        SHOW_SELF_CHECK_SECTION && jsxs('div', { className: 'sshwsp-section-head', children: [",
+    to: "        jsxs('div', { className: 'sshwsp-section-head', children: [",
+    suite: 'client-shape-smoke.mjs',
+    expect: 1,
+    why: 'a heading with no list under it is a worse outcome than hiding either half alone',
+  },
+  {
+    label: 'self-check gate: the derivation ignores the switch',
+    file: 'lib/client.js',
+    from: 'const selfCheckRows = !SHOW_SELF_CHECK_SECTION ? []',
+    to: 'const selfCheckRows = true ? []',
+    suite: 'client-shape-smoke.mjs',
+    expect: 1,
+    why: 'a hidden section should not merge a list that arrives on every poll for nobody to render',
+  },
 ]
 
 let failures = 0
