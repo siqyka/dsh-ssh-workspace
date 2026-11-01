@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+### 文档
+
+- **断言总数按实测重算，两处口径都错了**：`docs/development.md` 的生成表写 1756，实测裸检出
+  是 **1782**——少的 26 项正好是 `secrets-smoke`，它只打印 `=== all checks passed ===` 而没有
+  `N passed` 行，按数字行加总的统计口径会静默漏掉它。真实装配树同理：文档写 1956，实测
+  **2005**（1782 + `tool-schemas` 160 + `boot` 29 + `projection-real` 18 + `lifecycle` 16）。
+  其余三处引用这两个数字的地方（`features.md`、`unmount-modes.md`、`acceptance-prompts.md`）一并更正。
+- **三处逐套件的项数过期**：`architecture.md` 的 `probe-smoke` 15 → 20、`projection-relax-smoke`
+  66 → 73。这两处写的是**当前**状态，会误导读者按旧数字估算覆盖面。
+- `optimization-and-future.md` 里那三个旧数字（`host-listing` 16、`fake-transport` 23、
+  `doc-numbers` 16）**没有改**：它们记的是各自那一轮的历史快照，逐条核对过 `git show` 当时
+  确实是这些值。改成现值会让「推进结果」变成一句谎话。只在状态行补了一句快照说明，指向
+  由 `check:docs` 强制同步的生成表。
+- F-06 补一条事后变更说明：面板上那一节自 2026-11-01 起默认关闭，探测与 `GET /self-check` 未动。
+
 ### 变更
 
 - **面板不再渲染「远程环境自检」一节**：由 `lib/client.js` 的 `SHOW_SELF_CHECK_SECTION = false`

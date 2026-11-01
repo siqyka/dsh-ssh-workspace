@@ -264,7 +264,7 @@ receiver 原样转发。
 明确 miss）会让 registry 把会话从记账里剪掉——卸载一个工作区不该顺手改写它的会话归属。
 合成答案只声称"是目录"，不谎报大小或时间戳；挂载那一刻插件已经确认过它确实是目录。
 
-回归测试在 `tests/probe-smoke.mjs`（15 项），断言直接数 `withSftp` / `acquire` 的调用
+回归测试在 `tests/probe-smoke.mjs`（20 项），断言直接数 `withSftp` / `acquire` 的调用
 次数：把判活改回 `acquire()` 后 6 条变红。
 
 
@@ -293,7 +293,7 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 以覆盖「插件先加载、单元后注册」的重载/测试顺序。
 
 放宽只有 `ssh://` 一种形态：相对路径与空串照旧被拒，`null` 照旧通过，其它投影单元不动。
-回归测试是 `tests/projection-relax-smoke.mjs`（66 项，逻辑）与 `tests/projection-real-smoke.mjs`
+回归测试是 `tests/projection-relax-smoke.mjs`（73 项，逻辑）与 `tests/projection-real-smoke.mjs`
 （18 项，真实 `SessionProjectionRegistry` + `WorkingDirectoryService` + 真实 zod，按生产顺序
 装配）。两者的反向验证都做过：禁用修复后分别有 9 条与 3 条断言变红。
 

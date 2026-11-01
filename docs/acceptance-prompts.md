@@ -159,7 +159,7 @@ the session sandbox mode is "<未知值>", which this plugin does not recognise 
 ## 快速回归（可选，若配了 `DSH_WS_TEST_ALIAS`）
 
 ```bash
-node tests/run.mjs                 # 期望 44/44 套件、1733 项断言全绿（裸检出：38 运行 / 6 SKIP）
+node tests/run.mjs                 # 期望 44/44 套件、1782 项断言全绿（裸检出：38 运行 / 6 SKIP）
 DSH_CORE_ROOT=<assembled 树> node tests/run.mjs   # 期望含 tool-schemas / mode-gate / transfer / routes
 ```
 

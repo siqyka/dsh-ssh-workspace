@@ -16,7 +16,7 @@
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 31 | directory listing |
 | test suites | 44 | `tests/run.mjs` |
-| passing assertions (sampled) | 1756 | measured 2026-11-01 |
+| passing assertions (sampled) | 1782 | measured 2026-11-01 |
 
 <!-- doc-numbers:end -->
 
@@ -148,7 +148,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 
 断言数按裸检出实测：`DSH_CORE_ROOT` / `DSH_WS_TEST_ALIAS` 未设置时，需要真实装配树或真实主机的
 套件整体 SKIP；`DSH_CORE_ROOT` 指向真实装配树时，`projection-real` / `lifecycle` /
-`tool-schemas` / `boot` 四个跑起来，只剩 `live` 与 `acceptance` 真正未跑，合计 **1956** 项。
+`tool-schemas` / `boot` 四个跑起来，只剩 `live` 与 `acceptance` 真正未跑，合计 **2005** 项。
 
 但尾行会写成 `41 passed, 3 skipped`，而不是 `42 passed, 2 skipped`：`boot-smoke` 本身跑了
 29 项，却会为自己那段需要真实主机的远端检查打一行 `SKIP`，而 runner 判定套件状态的唯一依据

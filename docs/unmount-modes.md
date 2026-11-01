@@ -353,9 +353,9 @@ if (detachedSet.has(path)) continue
 把常驻行加回去后「not duplicated」变红。
 
 全套：`node tests/run.mjs` 当前 **44/44** 套件。裸检出（无环境变量）下 38 个套件运行、
-合计 **1733** 项断言（实测 2026-10-31）；`lifecycle` / `boot` / `tool-schemas` / `projection-real` 与
+合计 **1782** 项断言（实测 2026-11-01）；`lifecycle` / `boot` / `tool-schemas` / `projection-real` 与
 `live` / `acceptance` 共 6 个套件需要 `DSH_CORE_ROOT` 或真实主机，未提供时明确 SKIP
-（`DSH_CORE_ROOT` 指向真实装配树时这 6 个跑起 4 个，合计 **1956** 项；只剩 `live` / `acceptance` 两个套件真正未跑，但 `boot-smoke` 会为它自己那段需真机的远端检查打一行 SKIP，而 runner 是按“有没有 SKIP 行”判定套件状态的，所以尾行会写成“41 passed, 3 skipped”；「跳过套件数」与「SKIP 行数」是两个不同的量，见 [development.md](./development.md)）。
+（`DSH_CORE_ROOT` 指向真实装配树时这 6 个跑起 4 个，合计 **2005** 项；只剩 `live` / `acceptance` 两个套件真正未跑，但 `boot-smoke` 会为它自己那段需真机的远端检查打一行 SKIP，而 runner 是按“有没有 SKIP 行”判定套件状态的，所以尾行会写成“41 passed, 3 skipped”；「跳过套件数」与「SKIP 行数」是两个不同的量，见 [development.md](./development.md)）。
 （其中 `tool-schemas` 单独是 160 项 schema 断言，`lifecycle` 16 项、`boot` 29 项——别把这几个套件当成「合计 160 项」。）本组相关的 `probe-smoke` 20 项、`detach-smoke` 73 项。
 
 ---
