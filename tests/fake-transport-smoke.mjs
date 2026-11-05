@@ -349,12 +349,83 @@ console.log('\n[5] every command channel opens with a real options bag')
   check('the refusal is reported, not hidden', retried.forwardingRefused === true, JSON.stringify(retried))
 }
 
+// ======================================================= [6] config edit invalidates
+console.log('\n[6] editing the SSH config drops a live connection')
+{
+  // `resolve()` re-reads the file on every call, so a host ADDED or EDITED
+  // through the panel is picked up immediately. The gap this closes is the user
+  // editing `~/.ssh/config` in an editor: nothing tells the engine, so the
+  // pooled socket keeps using the descriptor it was opened with. The user
+  // changes the port, the panel still shows the old session, and the only cure
+  // was toggling the workspace or restarting.
+  //
+  // A real socket is required here: the assertion is "a NEW connection is
+  // dialed", and a fake transport cannot produce a second connection count.
+  const server = await startFakeSshServer({ pluginRoot, password: 'sekret' })
+  track(() => server.close())
+
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsh-config-stamp-'))
+  track(() => rmSync(dir, { recursive: true, force: true }))
+  const storeFile = path.join(dir, 'hosts.json')
+  // A host served ONLY by the editable store: the SSH config is not consulted
+  // for it, so the stamp is the one thing that can invalidate the connection.
+  writeFileSync(storeFile, JSON.stringify({
+    version: 1,
+    hosts: [{
+      alias: 'fake',
+      host: '127.0.0.1',
+      port: server.port,
+      user: 'tester',
+      auth: { kind: 'password', password: 'sekret' },
+    }],
+  }, null, 2), 'utf8')
+  const configPath = path.join(dir, 'ssh_config')
+  writeFileSync(configPath, 'Host unrelated\n  HostName example.test\n', 'utf8')
+  const store = new HostStore(configPath, new HostConfigStore(storeFile))
+  const engine = new SshWorkspaceEngine({ store, reconnect: false, sweepIntervalMs: 3_600_000 })
+  track(() => engine.dispose())
+  engine.addWantedCheck(() => true)
+
+  const first = await engine.acquire('fake')
+  check('the connection is live and stamped', first.broken === false && server.connections === 1,
+    `connections=${server.connections} stamp=${first.configStamp}`)
+  check('the stamp matches the file it was built from', first.configStamp === store.configStamp(),
+    `${first.configStamp} vs ${store.configStamp()}`)
+
+  // Acquiring again WITHOUT touching anything must reuse the socket: a stamp
+  // comparison that reconnected every time would be worse than the bug.
+  const reused = await engine.acquire('fake')
+  check('an unchanged config reuses the connection', reused === first && server.connections === 1,
+    `connections=${server.connections}`)
+
+  // Now the user edits the config. The content is irrelevant to this host —
+  // what matters is that the engine cannot know that, and a stale socket is
+  // the dangerous default.
+  writeFileSync(configPath, 'Host unrelated\n  HostName example.test\n  Port 2222\n', 'utf8')
+  const second = await engine.acquire('fake')
+  check('a config edit drops the stale connection and dials again',
+    second !== first && second.broken === false && server.connections === 2,
+    `connections=${server.connections}`)
+  check('the new connection carries the new stamp', second.configStamp === store.configStamp(),
+    `${second.configStamp} vs ${store.configStamp()}`)
+  const events = engine.diagnostics.list()
+  check('the invalidation is explained in the diagnostics ring',
+    events.some(event => event.kind === 'disconnect' && /SSH config changed on disk/u.test(event.message)),
+    JSON.stringify(events.map(event => `${event.kind}: ${event.message}`).slice(-3)))
+  // Not `forget()`: that cancels the reconnect loop, which is right for an
+  // operator decision and wrong for a file edit — a mounted root may still
+  // want this host.
+  check('the edit does not cancel the reconnect loop permanently',
+    engine.reconnector?.stateOf?.('fake') === undefined,
+    JSON.stringify(engine.reconnector?.list?.()))
+}
+
 // ==================================================================== cleanup
 for (const cleanup of cleanups.reverse()) {
   try { await cleanup() } catch { /* a teardown failure must not mask a result */ }
 }
 
-console.log(`\n=== fake transport smoke: ${passed} passed, ${failures.length} failed ===\n`)
+console.log(`\n=== ${passed} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   console.log('failures:')
   for (const failure of failures) console.log(`  ${failure}`)

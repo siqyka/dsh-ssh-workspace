@@ -163,7 +163,7 @@ const leaking = zhKeys.filter((k) => makeTranslate(echoBound, zh)(k) === k)
 check('no key renders raw through the fallback path', leaking.length === 0, leaking.join(', '))
 
 // ---------------------------------------------------------------------------
-console.log(`\n${passes.length} passed, ${failures.length} failed\n`)
+console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   for (const f of failures) console.log(`  - ${f}`)
   process.exit(1)

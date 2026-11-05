@@ -15,8 +15,8 @@
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 33 | directory listing |
-| test suites | 44 | `tests/run.mjs` |
-| passing assertions (sampled) | 1853 | measured 2026-11-05 |
+| test suites | 46 | `tests/run.mjs` |
+| passing assertions (sampled) | 1943 | measured 2026-11-05 |
 
 <!-- doc-numbers:end -->
 
@@ -147,22 +147,30 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按裸检出实测：`DSH_CORE_ROOT` / `DSH_WS_TEST_ALIAS` 未设置时，需要真实装配树或真实主机的
-套件整体 SKIP。裸检出下 **41 个套件实际运行、1853 项断言**（生成表里那行就是这个数，由
+套件整体 SKIP。裸检出下 **40 个套件实际运行、1905 项断言**（生成表里那行就是这个数，由
 `node scripts/doc-numbers.mjs --assertions N` 打时间戳）；`DSH_CORE_ROOT` 指向真实装配树时，
-`projection-real` / `lifecycle` / `tool-schemas` / `boot` 四个再跑起来，只剩 `live` 与 `acceptance`
-真正未跑。
+`projection-real` / `lifecycle` / `tool-schemas` / `boot` 四个再跑起来，共 **2128 项**；
+再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，共 **2221 项**，
+46 个套件全部运行、零 SKIP。
 
-**统计口径的坑**：不要把「逐套件 `PASS` 行数」直接相加。`secrets-smoke` 收尾只打印
-`=== all checks passed ===`，没有 `N passed` 行——按数字行加总的脚本会静默跳过它那 26 项，
-得到一个看起来核对过、实际少一整个套件的数字（本文件曾因此写成 1756，比实测少了 26）。
+**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以「逐套件
+`PASS` 行数」与「汇总行数字」两种算法给出同一个值（实测：裸检出 1905 = 1905，装配树 2128 = 2128）。
+这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
+`client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
+脚本会静默跳过一个套件甚至五个，得出看起来核对过、实际少掉数百项的数字（本文件曾因此写 1756，
+另一次写 1782，都是这么来的）。**要加总就先确认每个套件都有数字行**；`tests/run.mjs` 的尾行只
+报套件状态，不报断言数。
+
+同样地，这次还发现 `ssh-config` 与 `redact` 两个套件**文件存在、能跑绿，却不在 `run.mjs` 的
+`SUITES` 里**——它们的 72 项断言从未在 `npm test` 中执行过。已补进列表。表格里的套件数与
+`tests/run.mjs` 的条目数应当逐一对得上，这一点也是查出来的，不是本来就成立。
 
 但尾行会写成 `41 passed, 3 skipped`，而不是 `42 passed, 2 skipped`：`boot-smoke` 本身跑了
 29 项，却会为自己那段需要真实主机的远端检查打一行 `SKIP`，而 runner 判定套件状态的唯一依据
 就是「输出里有没有 SKIP 行」。所以**「跳过套件数」与「SKIP 行数」是两个不同的量**，不要混用；
 要看某个套件究竟跑没跑，读它自己那行 `=== N passed`，不要读汇总。
 
-下表的项数是数每个套件打印的 `PASS` 行得到的，也不要与末尾 `=== N passed` 那行相加——
-`locale-register` 与 `secrets` 的收尾格式不同。
+下表各套件的「项数」就是它收尾行里的数字，与上文的加总口径一致。
 
 | 套件 | 前置 | 项数 | 覆盖 |
 | --- | --- | --- | --- |
@@ -175,19 +183,19 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `replay-smoke` | 无 | 34 | 失败重放策略：写类 SFTP 操作失败后**不重放**（第一次可能已经在服务器上落地，重放就是执行两次），改标 `outcome: 'unknown'`并保留原始报错文本；远端命令走显式 `replay: 'safe'` 才重试；连接中断记成 `disconnect` 而不是 `reconnect` |
 | `host-key-smoke` | 无 | 18 | 主机密钥固定与**落盘失败的区分**：首次连接记下指纹；不一致直接拒绝；写不进 `knownHosts` 时连接仍成功，但必须记 `degraded` 诊断并在状态里列 `unpinnedHostKeys`，后来固定成功时自动清除——「警告写进无人读的日志」等于用户以为密钥已固定 |
 | `host-listing-smoke` | 无 | 32 | 主机列表把「真的空」与「读不出来」分开：空配置不带提示，被跳过的 `~/.ssh/config` 块带原因列在 `skipped`，存储读失败带 `storeError`——两种完全不同的问题不能都长成「没有主机」 |
-| `client-shape-smoke` | 无 | 175 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径 |
+| `client-shape-smoke` | 无 | 180 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径 |
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 40 | 目录树上传、原子发布、递归与失败路径 |
 | `insert-once-smoke` | 无 | 18 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
 | `locale-register-smoke` | 无 | 21 | 中英词典注册、重复注册不污染、`translate` 回落 |
-| `detach-smoke` | 无 | 73 | 停用清单读写与脏数据退化、路径包含判定、`ctx.fs` 十个方法逐个断言被拒、重新启用两条路径、shell / terminal 拒绝且不拨号、工作区外照常可用、跨分区写入隔离、启用不得经过围栏探测、**沙箱模式围栏（`read-only` 拒写且不拨号）、三个围栏错误码的可分性、`/tmp` 对写围栏可达而对停用 / 探针仍按原始挂载根** |
+| `detach-smoke` | 无 | 83 | 停用清单读写与脏数据退化、路径包含判定、`ctx.fs` 十个方法逐个断言被拒、重新启用两条路径、shell / terminal 拒绝且不拨号、工作区外照常可用、跨分区写入隔离、启用不得经过围栏探测、**沙箱模式围栏（`read-only` 拒写且不拨号）、三个围栏错误码的可分性、`/tmp` 对写围栏可达而对停用 / 探针仍按原始挂载根** |
 | `probe-smoke` | 无 | 20 | 内建桥三条身份探针无活连接时不拨号、挂载根外必须 `ENOENT`、有连接时取真实属性、broken 记录不算连接（直接数 `withSftp` / `acquire` 次数） |
 | `phase6-smoke` | 无（有真框架时更全） | 36 | 失败与规模路径的回归：断连 close 不误判完成、rename 回退不误删目标、`listDir` 无 N+1 stat、`StreamTail` join 缓存 |
 | `watch-lifecycle-smoke` | 无 | 8 | 变更监视的降级与销毁：推送死了回退轮询之后，`close()` 必须连轮询那一支一起关掉——只关推送分支会把定时器、SFTP 轮询和连接持有者一直漏到进程结束 |
 | `store-lock-smoke` | 无 | 15 | 主机存储的跨进程写锁：互斥与降级、死锁接管、并发 `mutateHosts` 不丢条目、`save()` 的替换语义 |
 | `transfer-smoke` | 无 | 43 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去） |
-| `mode-gate-smoke` | 无 | 115 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
+| `mode-gate-smoke` | 无 | 119 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
 | `shell-smoke` | 无 | 35 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
 | `terminal-smoke` | 无 | 23 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原 |
 | `transport-smoke` | 无 | 43 | 传输路由与流式通道（第二条 SFTP 通道、退化路径）；**逐主机传输开关**：`agentForward` 与 `compress` 是选择加入，未勾选的主机必须产生与它们出现之前逐字节相同的 ssh2 配置；`agentForward` 还有更硬的一层——ssh2 把**连接级** `agentForward` 读成全连接许可，并在连接没有 agent 时于 `connect()` **同步抛错**，所以引擎绝不能把它写在连接配置里，愿望存在池化 record 上、由每个 exec/shell 通道自己表达（`channelExecOptions`），SFTP 不经过它；**agent 必须先应答才上连接**：`resolveAgentPath` 只是名字解析器（Windows 无条件给 `pageant`），ssh2 不在连接时校验端点，挂一个没在跑的 agent 会让认证阶段报「Failed to retrieve identities from agent」，把真正的失败原因（密码错 / 密钥被拒）替换掉，所以连之前先问一次 `getIdentities`，答不上来就当没有；转发请求被服务器拒绝（`AllowAgentForwarding no` 是标准加固项）时重试一次不带该标志并把 `forwardingRefused` 带到结果里，而不是让整条命令失败 |
@@ -204,7 +212,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
 | `diagnosis-smoke` | 无 | 77 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**，以及聚合规则（确定的坏压过不确定）。**自检是提示不是判定**：缺工具与环境告警只进 `notes`，不改变 `state` / `warn` / `unknown`，也不与 `findings` 重叠；报告里它们出现在 `advisory (not counted in the verdict):` 一节，而同一份报告中的真问题仍然变红（两条断言互为反向，防止只是「把话改小声」）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
-| `routes-smoke` | 无 | 176 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
+| `routes-smoke` | 无 | 190 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |
 | `lifecycle-smoke` | `DSH_CORE_ROOT` | SKIP | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 25 路由 / 10 工具） |
 | `boot-smoke` | `DSH_CORE_ROOT`（远端段另需 `DSH_WS_TEST_ALIAS`） | SKIP | 生产顺序引导、`ctx.fs` 接管与还原、工具端到端、挂载 → 停用 → 读被拒 → 启用往返 |

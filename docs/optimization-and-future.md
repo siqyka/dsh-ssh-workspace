@@ -409,13 +409,21 @@ HTTP 处理器则常用 200 + `{ ok: false, error }`（如 `lib/routes.js:998`�
 
 ### F-06 能力探测与远程环境自检
 
-- 探测范围从 `rg / git / inotifywait` 扩到传输相关（`sha256sum`、`tar`、`rsync`）、终端相关（`$SHELL`、`tput`、locale）与资源（磁盘余量、inotify 上限）。
+- 探测范围从 `rg / git / inotifywait` 扩到终端相关（`$SHELL`、locale）与资源（磁盘余量、inotify 上限）。
 - 形成"远程环境自检"一页：缺什么、影响哪个功能、如何安装（给出命令但不自动执行）。
 - 不自动安装任何东西：在别人机器上安装软件是需要明确同意的动作。
 
 **验证**：全新最小化容器上，自检能准确列出缺失项，且各项与实际功能表现一致。
 
-**推进结果（本轮）**：探测从 3 项扩到 7 项工具 + 4 项环境事实，全部在**一次往返**里问完（`command -v` 扫描 + `$SHELL` / locale / `df` / `fs.inotify.max_user_watches`）。工具清单在 `lib/capabilities.js` 的一张表里（工具、依赖的功能、缺失的后果、安装提示），探测脚本的询问列表由这张表**派生**，所以加一项能力是加一行，而不是改四处渲染。
+**推进结果（本轮）**：探测从 3 项扩到 3 项工具 + 4 项环境事实，全部在**一次往返**里问完（`command -v` 扫描 + `$SHELL` / locale / `df` / `fs.inotify.max_user_watches`）。工具清单在 `lib/capabilities.js` 的一张表里（工具、依赖的功能、缺失的后果、安装提示），探测脚本的询问列表由这张表**派生**，所以加一项能力是加一行，而不是改四处渲染。
+
+> **更正（2026-11-05）**：这里原本写"扩到 7 项工具"，其中 `sha256sum` / `tar` / `rsync` / `tput` 四条是**虚构的**。整套 `lib/` 里除能力表本身之外，这四个名字的引用数是 **0 / 0 / 0 / 1（仅一条注释）**——从未有一行代码调用它们。于是"缺 coreutils 就没有传输校验""缺 tar 就逐文件传输"这类说法描述的是两个状态里都不存在的功能：`lib/transfer.js` 从来没有算过任何哈希。
+>
+> 代价不是文字问题。`capabilities-report-smoke` 断言这四个"已加入探测"，而探测列表由表派生，所以这条断言**恒真**——它测的是循环，不是承诺。用户照提示装了 coreutils，什么也不会变，而面板会一直很自信地这么说。
+>
+> 现在这四条移进 `UNPROBED_CAPABILITIES`，每条带"为什么不探测"的理由；新增一条**直接读 `lib/`** 的断言：表里每一行声明的工具，必须在本文件之外真的被引用。反向验证：把 `rsync` 加回表 → 2 条变红。
+>
+> 剩下的三项（`rg` / `git` / `inotifywait`）是真实使用的，形态不变。
 
 三个关键性质：
 
@@ -427,7 +435,7 @@ HTTP 处理器则常用 200 + `{ ok: false, error }`（如 `lib/routes.js:998`�
 
 **同时修掉一个真 bug**：原实现用 `stdout.includes('rg')` 判断存在，是整段输出的子串匹配——路径、locale 值里出现工具名就会误报为"已安装"。现在每条事实走独立前缀行（`dsh-tool:rg`）并整行匹配。反向验证：改回 `includes` → 2 条变红（含"值里出现 rg 不算存在"那条）。
 
-**验证**：`tests/capabilities-report-smoke.mjs`（48 项）、`tests/capabilities-smoke.mjs`（19 项，已改为新格式）。界面在面板新增"远程环境自检"一节 + `GET /api/dsh-ssh-workspace/self-check`。
+**验证**：`tests/capabilities-report-smoke.mjs`（53 项，含新增的"承诺必须真的接线"一组）、`tests/capabilities-smoke.mjs`（19 项，已改为新格式）。界面在面板新增"远程环境自检"一节 + `GET /api/dsh-ssh-workspace/self-check`。
 
 > **事后变更（2026-11-01）**：面板上那一节**已默认关闭**（`SHOW_SELF_CHECK_SECTION = false`），探测与 `GET /self-check` 保持不变，见 [ui.md](./ui.md) 的「自检分区默认关闭」。本节其余内容描述的是它打开时的形状。
 

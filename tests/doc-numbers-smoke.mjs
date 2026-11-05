@@ -14,7 +14,7 @@
  * Run: node tests/doc-numbers-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -126,6 +126,58 @@ console.log('\n[5] splicing refuses a document with no markers')
   check('a missing region is an error, not a silent no-op', error !== undefined, String(error))
   check('the error names the marker to add',
     /doc-numbers:begin/u.test(String(error?.message ?? '')), String(error?.message))
+}
+
+// ---------------------------------------------------------------------------
+// The suite table must list every suite the runner runs — and nothing else
+// ---------------------------------------------------------------------------
+// Two failure modes have actually happened here:
+//
+//   1. `ssh-config-smoke` and `redact-smoke` existed, passed, and were NOT in
+//      `run.mjs`'s SUITES — 72 assertions that `npm test` never executed. A
+//      suite that exists but never runs is worse than a missing one: the file
+//      is evidence of coverage that does not exist.
+//   2. The development table drifted out of step with SUITES, so the document
+//      described a suite list the runner did not have (and omitted two).
+//
+// Both are the same missing invariant, so it is asserted once: the suite list
+// in `run.mjs`, the rows in `docs/development.md`, and the generated table's
+// suite count must agree. A new suite therefore cannot be added by creating a
+// file, and cannot be added to the runner without being documented.
+console.log('\n[6] the runner, the document table and the generated count agree')
+{
+  const suites = numbers.suiteNames()
+  const document = readFileSync(path.join(pluginRoot, 'docs', 'development.md'), 'utf8')
+  const documented = [...document.matchAll(/^\| `([a-z0-9-]+)-smoke` \|/gmu)].map(match => match[1])
+
+  // A suite FILE that is not in the runner: 72 assertions existed that way
+  // (`ssh-config`, `redact`) and `npm test` never executed them. This is the
+  // direction that is invisible — the file looks like coverage.
+  const orphans = readdirSync(path.join(pluginRoot, 'tests'))
+    .filter(name => name.endsWith('-smoke.mjs'))
+    .map(name => name.replace(/-smoke\.mjs$/u, ''))
+    .filter(name => !suites.includes(name))
+  check('no suite file is orphaned from the runner', orphans.length === 0, JSON.stringify(orphans))
+
+  // A suite listed in the runner with no file would fail at run time with a
+  // confusing "not found"; catching it here names the problem.
+  const missingFiles = suites.filter(name => !existsSync(path.join(pluginRoot, 'tests', `${name}-smoke.mjs`)))
+  check('every listed suite has a file', missingFiles.length === 0, JSON.stringify(missingFiles))
+
+  const undocumented = suites.filter(name => !documented.includes(name))
+  check('every suite in the runner has a row in the development table',
+    undocumented.length === 0, JSON.stringify(undocumented))
+
+  const phantom = documented.filter(name => !suites.includes(name))
+  check('the development table names no suite the runner does not run',
+    phantom.length === 0, JSON.stringify(phantom))
+
+  check('the generated suite count equals the runner length',
+    document.includes(`| test suites | ${suites.length} |`), `runner has ${suites.length}`)
+
+  check('the runner list has no duplicate entries',
+    new Set(suites).size === suites.length,
+    `${suites.length} entries, ${new Set(suites).size} distinct`)
 }
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)

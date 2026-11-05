@@ -824,10 +824,17 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
    * construct live code" — for the region that actually matters.
    */
   const bodyOf = (name) => {
-    const start = source.indexOf('function ' + name + ' (')
+    // `async function` is matched too. The first version keyed only on
+    // `function name (`, so every async helper sliced to '' and `liveIn`
+    // returned false for code that existed — and, worse, an assertion written
+    // as `!liveIn(...)` would have passed on nothing at all.
+    const asyncStart = source.indexOf('async function ' + name + ' (')
+    const start = asyncStart >= 0 ? asyncStart : source.indexOf('function ' + name + ' (')
     if (start < 0) return ''
-    const next = source.indexOf('\n    function ', start + 1)
-    const slice = source.slice(start, next < 0 ? start + 12000 : next)
+    const nextPlain = source.indexOf('\n    function ', start + 1)
+    const nextAsync = source.indexOf('\n    async function ', start + 1)
+    const next = [nextPlain, nextAsync].filter(index => index >= 0).sort((a, b) => a - b)[0]
+    const slice = source.slice(start, next === undefined ? start + 12000 : next)
     return slice
       .replace(/\/\*[\s\S]*?\*\//gu, ' ')
       .replace(/\/\/[^\n]*/gu, ' ')
@@ -875,6 +882,39 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       (bodyOf('installTreeMenuBridge').match(/openForRow\(row, /gu) ?? []).length === 2,
     'the keyboard path would place the menu at a different spot than the pointer path')
 
+  // F-08's two path actions. Both are asserted at the point where correctness
+  // lives, not by "the string exists somewhere". Note these helpers are
+  // `async function`, which the `bodyOf` slicer (keyed on `function name (`)
+  // does not find — so `liveIn` would pass trivially on an empty body. The
+  // check below pins the declaration prefix as well, or a rename to a plain
+  // function would silently turn every assertion into a no-op.
+  check('the copy and mount helpers are declared where the slicer can see them',
+    /    async function copyRowPath \(/u.test(source) && /    async function mountRowAsRoot \(/u.test(source),
+    'an `async function` is invisible to bodyOf, so liveIn would test an empty slice')
+  check('the row menu offers copying the path',
+    liveIn('openTaskMenu', /translate\('rowmenu\.copyPath'\)/u),
+    'the row menu has no copy action')
+  check('...copying the ssh:// spelling, not the bare remote path',
+    liveIn('copyRowPath', /writeText\(absPath\)/u),
+    'a bare /home/x paste names a path on whatever machine the reader is on')
+  check('...and reports a refused clipboard instead of failing silently',
+    liveIn('copyRowPath', /translate\('rowmenu\.copyUnavailable'\)/u) &&
+      (bodyOf('copyRowPath').match(/rowmenu\.copyUnavailable/gu) ?? []).length === 2,
+    'a copy that quietly did nothing leaves stale clipboard content behind')
+  check('the row menu offers setting a directory as the workspace root',
+    liveIn('openTaskMenu', /translate\('rowmenu\.setAsRoot'\)/u),
+    'the row menu has no set-as-root action')
+  check('...disabled for a file, with the reason visible',
+    liveIn('openTaskMenu', /rowmenu\.setAsRootNeedsDir'\)[\s\S]{0,220}?disabled: !isDir/u),
+    'a file row would offer mounting a file as a root')
+  check('...through the SAME route the browser dialog uses',
+    liveIn('mountRowAsRoot', /fetchJson\(API\.mount,/u) &&
+      // `handleMount` is a `const … = async () =>` arrow inside the dialog
+      // component, not a function declaration, so it is checked against the
+      // whole file rather than through the slicer.
+      /const handleMount = async \(\) => \{[\s\S]{0,400}?fetchJson\(API\.mount,/u.test(source),
+    'two mount implementations would drift')
+
   // An error is the only report a failed tree transfer produces, so it must not
   // expire before it can be read — and it must interrupt, not wait its turn.
   check('an error toast does not time out',
@@ -900,10 +940,80 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 }
 
 
+// ---------------------------------------------------------------------------
+// The map at the top of the bundle must describe the bundle
+// ---------------------------------------------------------------------------
+// The map is the only navigation aid in a file this size, and it had drifted to
+// ten entries while the file held eighteen sections: two entries named banners
+// that do not exist ("Forwarding panel", "Directory flow / persistent
+// sessions"), the rest were renamed, and six real sections were missing. A
+// stale map is worse than no map — it sends a reader to a section that is not
+// there and hides the one they wanted.
+//
+// Nothing caught it because a comment cannot fail. This does: parse the real
+// banners, parse the map, and require the two lists to agree in content and in
+// order. Order matters because the map's whole claim is "a jump-to-next-banner
+// walk visits them in order".
+{
+  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const borderRe = /^ {4}\/\/ =+\s*$/u
+  const lines = client.split('\n')
+  const banners = []
+  for (let i = 1; i < lines.length - 1; i += 1) {
+    if (!borderRe.test(lines[i - 1]) || !borderRe.test(lines[i + 1])) continue
+    if (borderRe.test(lines[i])) continue
+    const title = lines[i].trim().replace(/^\/\/ ?/u, '')
+    if (title === '') continue
+    banners.push(title)
+  }
+  // The map's own banner is not a section of the file it describes.
+  const sections = banners.slice(1)
 
-console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)
+  // Map entries look like `//   7. Directory browser dialog` — a number, a dot,
+  // then the title. The trailing parenthetical is a gloss, not part of the
+  // title, so it is stripped before the comparison.
+  const mapEntries = [...client.matchAll(/^ {4}\/\/ +(\d+)\. (.+)$/gmu)]
+    .map(match => ({ number: Number(match[1]), title: match[2].trim() }))
+
+  check('the map lists at least one section', mapEntries.length > 0, String(mapEntries.length))
+  check('the map numbers its entries consecutively from 1',
+    mapEntries.every((entry, index) => entry.number === index + 1),
+    JSON.stringify(mapEntries.map(e => e.number)))
+
+  /** Strip the map's parenthetical gloss and normalise whitespace. */
+  const plain = (title) => title.replace(/\s*\([^)]*\)\s*$/u, '').trim()
+  /** Compare two titles, allowing an extra parenthetical on either side. */
+  const sameSection = (a, b) => {
+    const left = plain(a).toLowerCase()
+    const right = plain(b).toLowerCase()
+    if (left === right) return true
+    // A map entry may gloss a banner that itself carries a parenthetical; in
+    // that case one is a prefix of the other. Prefixes only — "Host card" and
+    // "Host editor dialog" must never be treated as the same section.
+    return left.startsWith(right) || right.startsWith(left)
+  }
+
+  const missingFromMap = sections.filter(title => !mapEntries.some(entry => sameSection(entry.title, title)))
+  check('every section banner appears in the map', missingFromMap.length === 0,
+    `missing ${JSON.stringify(missingFromMap)}`)
+
+  const phantomInMap = mapEntries.filter(entry => !sections.some(title => sameSection(entry.title, title)))
+  check('the map names no section that does not exist', phantomInMap.length === 0,
+    `phantom ${JSON.stringify(phantomInMap.map(e => e.title))}`)
+
+  check('the map lists the sections in file order',
+    mapEntries.length === sections.length &&
+      mapEntries.every((entry, index) => sameSection(entry.title, sections[index])),
+    JSON.stringify({ map: mapEntries.map(e => e.title), actual: sections }))
+}
+
 if (failures.length > 0) {
   console.log('\nfailures:')
   for (const failure of failures) console.log(`  - ${failure}`)
 }
+// A numeric summary, in the same `=== N passed, M failed ===` shape every other
+// suite prints. Without it, a script that totals the run by summing these lines
+// skips this suite's assertions silently — which is exactly how its count came
+// to be missing from the documentation three times in a row.
+console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)
 process.exit(failures.length === 0 ? 0 : 1)

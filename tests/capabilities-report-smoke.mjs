@@ -29,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const {
   TOOL_CAPABILITIES,
+  UNPROBED_CAPABILITIES,
   probedTools,
   selfCheckRows,
   environmentFindings,
@@ -69,7 +70,51 @@ check(
 // The three original capabilities must keep their place at the front: a reader
 // written against the first shape must still find them.
 check('rg, git and inotifywait are still probed', ['rg', 'git', 'inotifywait'].every(tool => probedTools().includes(tool)), probedTools().join(','))
-check('the transfer/terminal tools joined the probe', ['sha256sum', 'tar', 'rsync', 'tput'].every(tool => probedTools().includes(tool)), probedTools().join(','))
+check(
+  'the four fictional capabilities are NOT probed',
+  ['sha256sum', 'tar', 'rsync', 'tput'].every(tool => !probedTools().includes(tool)),
+  probedTools().join(','),
+)
+check(
+  'those four are documented as unprobed instead of silently dropped',
+  ['sha256sum', 'tar', 'rsync', 'tput'].every(tool => UNPROBED_CAPABILITIES.some(spec => spec.tool === tool)),
+  JSON.stringify(UNPROBED_CAPABILITIES.map(spec => spec.tool)),
+)
+
+// ---------------------------------------------------------------------------
+// THE check this suite was missing.
+//
+// The old suite asserted the probe list contained four tools, which was true by
+// construction: the probe list is derived from the table, so "it is probed" can
+// never fail. What went untested was the CLAIM — that a missing tool actually
+// costs the user something. That is a fact about `lib/`, not about this module,
+// so it is checked against `lib/` directly: every row's tool must be named
+// somewhere outside this file. A row whose tool appears nowhere describes a
+// feature that does not exist.
+console.log('\n[every promised capability is actually wired]')
+
+{
+  const { readdirSync, readFileSync } = await import('node:fs')
+  const libDir = path.join(pluginRoot, 'lib')
+  const sources = readdirSync(libDir)
+    .filter(name => name.endsWith('.js') && name !== 'capabilities.js')
+    .map(name => readFileSync(path.join(libDir, name), 'utf8'))
+    .join('\n')
+  for (const spec of TOOL_CAPABILITIES) {
+    // `tput` is only ever named in a comment, so a plain substring test is not
+    // enough — this looks for the tool as a command, in a template string or
+    // as an argument, which is what "the plugin runs it" looks like.
+    const used = new RegExp(`\\b${spec.tool}\\b`, 'u').test(sources)
+    check(`table row '${spec.tool}' is referenced outside the table`, used, spec.feature)
+  }
+  check(
+    'no unprobed tool is referenced outside the table either',
+    UNPROBED_CAPABILITIES.every(spec => !new RegExp(`(?:^|[^\\w-])${spec.tool}(?:$|[^\\w-])`, 'u').test(
+      sources.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, ''),
+    )),
+    JSON.stringify(UNPROBED_CAPABILITIES.map(spec => spec.tool)),
+  )
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n[three-valued, not two]')
@@ -162,10 +207,10 @@ console.log('\n[environment findings]')
 console.log('\n[the rendered report is stable enough to paste]')
 
 {
-  const report = selfCheck({ rg: true, git: false, inotifywait: true, sha256sum: false, tar: true, rsync: false, tput: true }, { shell: '/bin/sh', locale: 'C', diskFreeKb: 10, inotifyWatches: 4096 })
+  const report = selfCheck({ rg: true, git: false, inotifywait: false }, { shell: '/bin/sh', locale: 'C', diskFreeKb: 10, inotifyWatches: 4096 })
   const text = renderSelfCheck(report)
   check('the text is not empty', text.length > 0)
-  check('every missing tool appears', ['git', 'sha256sum', 'rsync'].every(tool => text.includes(tool)), text)
+  check('every missing tool appears', ['git', 'inotifywait'].every(tool => text.includes(tool)), text)
   check('every warning appears', ['locale', 'disk'].every(id => text.includes(id)), text)
   check('the text does not claim a present tool is missing', !/MISSING rg/u.test(text), text)
 }

@@ -283,6 +283,70 @@ const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFile
   check('enabling a detached workspace succeeds', enable.ok === true, JSON.stringify(enable))
 }
 
+// The probe's FAILURE has to name what it probed.
+//
+// SFTP's own text for a missing path is "No such file": true and useless. The
+// caller handed over an alias AND a path, either of which could be the typo, so
+// a message that names neither leaves the model guessing — and guessing is how
+// a mistyped directory becomes a "the host is broken" report.
+//
+// This assertion lived only in `boot-smoke`, which needs a real host and
+// therefore never ran in CI: the message asserted there had never existed.
+// Pinned here, against a fake connection, so it runs everywhere.
+{
+  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+  /** The error ssh2 reports for a path that is not there. */
+  const missing = () => Object.assign(new Error('No such file'), { code: 2 })
+
+  for (const [toolName, args, expected] of [
+    ['ssh_workspace_mount', { alias: 'alpha', remotePath: '/home/dev/typo', register: false }, '/home/dev/typo'],
+    ['ssh_workspace_enable', { workspacePath: 'ssh://beta/home/dev/typo' }, '/home/dev/typo'],
+  ]) {
+    const engine = new SshWorkspaceEngine({})
+    engine.withSftp = async (_alias, fn) => await fn({ stat: (_path, callback) => callback(missing(), undefined) })
+    const router = new RemoteFileSystem({ engine })
+    const tool = workspaceTools({ get: () => undefined }, engine, router, { list: () => [] }, { list: () => [] })
+      .find(candidate => candidate.name === toolName)
+    const result = await tool.execute(args, {})
+    check(`${toolName} refuses a missing directory`, result.ok === false, JSON.stringify(result))
+    check(`${toolName} names the path it probed`, String(result.error).includes(expected), String(result.error))
+    check(`${toolName} says the directory is missing, not that the host failed`,
+      /no such directory/iu.test(String(result.error)), String(result.error))
+  }
+
+  // A path that exists but is a FILE is a different mistake and gets its own
+  // sentence: "no such directory" would send the caller to check the spelling
+  // of something that is spelled correctly.
+  {
+    const engine = new SshWorkspaceEngine({})
+    engine.withSftp = async (_alias, fn) => await fn({
+      stat: (_path, callback) => callback(undefined, { isDirectory: () => false }),
+    })
+    const router = new RemoteFileSystem({ engine })
+    const tool = workspaceTools({ get: () => undefined }, engine, router, { list: () => [] }, { list: () => [] })
+      .find(candidate => candidate.name === 'ssh_workspace_mount')
+    const result = await tool.execute({ alias: 'alpha', remotePath: '/home/dev/file.txt', register: false }, {})
+    check('mounting a file rather than a directory says so', result.ok === false && /not a directory/iu.test(String(result.error)), String(result.error))
+    check('...and does not claim the path is missing', !/no such directory/iu.test(String(result.error)), String(result.error))
+  }
+
+  // A transport failure is neither: it must not be reported as a missing path,
+  // or the user deletes a directory that is still there.
+  {
+    const engine = new SshWorkspaceEngine({})
+    engine.withSftp = async (_alias, fn) => await fn({
+      stat: (_path, callback) => callback(Object.assign(new Error('connection lost'), { code: 7 }), undefined),
+    })
+    const router = new RemoteFileSystem({ engine })
+    const tool = workspaceTools({ get: () => undefined }, engine, router, { list: () => [] }, { list: () => [] })
+      .find(candidate => candidate.name === 'ssh_workspace_mount')
+    const result = await tool.execute({ alias: 'alpha', remotePath: '/home/dev/proj', register: false }, {})
+    check('a transport failure is not reported as a missing directory',
+      result.ok === false && !/no such directory/iu.test(String(result.error)), String(result.error))
+    check('...and says the stat itself failed', /cannot stat/iu.test(String(result.error)), String(result.error))
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The sandbox mode fence: a remote write must honour read-only
 // ---------------------------------------------------------------------------

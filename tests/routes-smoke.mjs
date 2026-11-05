@@ -160,7 +160,13 @@ function fakeEngine (files, directories = new Set()) {
         },
         open (target, flags, callback) {
           state.opened += 1
-          if (flags === 'w') {
+          // Record what the route actually asked for. The upload path opens
+          // staging files with 'wx' (O_EXCL) so two concurrent uploads to one
+          // destination cannot share a staging name — a double that only knows
+          // 'w' would silently send that request down the READ branch, which is
+          // how this stub hid the flag change instead of verifying it.
+          state.openFlags = [...(state.openFlags ?? []), { target, flags }]
+          if (flags.includes('w')) {
             // Writes go to a buffer the handle accumulates; publish renames it.
             callback(null, { __content: Buffer.alloc(0), __write: true, __target: target })
             return
@@ -553,6 +559,33 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
     }), res)
     check('an in-workspace browser upload succeeds with the fence in place',
       JSON.parse(state.body).ok === true, state.body)
+  }
+  {
+    // O-07's fix reached the agent tool but not this route for a long time: the
+    // route kept `pid-Date.now().toString(36)` as its staging token and opened
+    // `'w'`, so two uploads to one destination in the same millisecond shared a
+    // staging path and the loser's cleanup deleted the winner's file.
+    //
+    // Both halves are asserted here, because either alone is insufficient:
+    // randomness without O_EXCL still acts on a collision, and O_EXCL without
+    // randomness turns a common case into a spurious failure.
+    const { res, state } = fakeRes()
+    await upload.handler(fakeUploadReq({
+      url: `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv/app')}&name=staged.txt`,
+      chunks: [Buffer.from('z')],
+    }), res)
+    const opened = inRootsEngine.state.openFlags ?? []
+    const stagingOpen = opened.find(entry => entry.target.startsWith('/srv/app/staged.txt.'))
+    check('the upload opens a sibling staging name, never the destination',
+      stagingOpen !== undefined && stagingOpen.target.startsWith('/srv/app/staged.txt.dsh-up-'),
+      JSON.stringify(opened))
+    check('the upload opens its staging file with wx (O_EXCL)',
+      stagingOpen?.flags === 'wx', JSON.stringify(stagingOpen))
+    check('the staging name carries a random suffix, not just a timestamp',
+      // `pid-<base36 time>-<16 hex>`: the old spelling had no third segment, so
+      // this fails if the timestamp-only token comes back.
+      /\.dsh-up-\d+-[0-9a-z]+-[0-9a-f]{16}$/u.test(stagingOpen?.target ?? ''),
+      String(stagingOpen?.target))
   }
 }
 
@@ -1375,6 +1408,31 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
       check('...and says what was wrong', typeof JSON.parse(state.body).error === 'string', state.body)
     }
 
+    // Tags had no way IN: the store kept them, the search box and the agent
+    // tool both matched them, and this route dropped the field on the floor —
+    // so the panel's editor could have posted anything and nothing was saved.
+    {
+      const { res, state } = fakeRes()
+      await findRoute(ROUTES.hostSave).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: {
+          alias: 'gamma', host: '10.0.0.3', user: 'dev', auth: { kind: 'agent' },
+          tags: ['  prod  ', 'prod', '', 'db', 42],
+        },
+      }), res)
+      check('saving a host with tags succeeds', state.status === 200, `${state.status} ${state.body}`)
+      const rows = contractEngine.store.entryStore.load()
+      const saved = rows.find(row => row.alias === 'gamma')
+      check('the tags survive the save route', Array.isArray(saved?.tags) && saved.tags.length === 2,
+        JSON.stringify(saved?.tags))
+      check('...trimmed and de-duplicated, with non-strings dropped',
+        JSON.stringify(saved?.tags) === JSON.stringify(['prod', 'db']), JSON.stringify(saved?.tags))
+      check('...and a blank list is stored as an empty array, not omitted',
+        Array.isArray(rows.find(row => row.alias === 'alpha')?.tags),
+        JSON.stringify(rows.find(row => row.alias === 'alpha')?.tags))
+    }
+
     // A transport failure is not the caller's fault: 502.
     {
       const { res, state } = fakeRes()
@@ -1417,6 +1475,110 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
   }
 }
 
+
+// --- the directory listing route -------------------------------------------
+// This route had no coverage at all until the cap was added, which is exactly
+// how it came to return every entry a directory held: nothing was asserting
+// anything about its response shape. These cases pin the cap, the accounting
+// that makes truncation visible, and the refusal of a nonsense `limit`.
+{
+  const makeListingEngine = (entries) => {
+    const calls = { limits: [] }
+    return {
+      calls,
+      async withSftp (_alias, work) {
+        return await work({
+          readdir (target, callback) {
+            calls.limits.push(target)
+            callback(null, entries.map(entry => ({
+              filename: entry.name,
+              attrs: {
+                size: entry.size ?? 0,
+                mtime: 1,
+                isDirectory: () => entry.type === 'directory',
+                isSymbolicLink: () => entry.type === 'symlink',
+              },
+            })))
+          },
+          realpath (_target, callback) { callback(null, '/home/dev') },
+        })
+      },
+      async exec () { return { exitCode: 0, stdout: '', stderr: '' } },
+    }
+  }
+  const big = []
+  for (let i = 0; i < 700; i += 1) big.push({ name: `file-${String(i).padStart(4, '0')}.txt`, type: 'file' })
+  big.push({ name: 'zdir', type: 'directory' })
+  const listingEngine = makeListingEngine(big)
+  const listingRoutes = makeRoutes({
+    engine: listingEngine,
+    router: {},
+    forwards: { list: () => [], open: async () => ({}), close: () => false },
+    shells,
+    ctx: { get: () => undefined },
+  })
+  const ls = listingRoutes.find(route => route.path === ROUTES.ls)
+  check('the ls route is registered', ls !== undefined)
+
+  const lsRequest = async (query) => {
+    const { res, state } = fakeRes()
+    await ls.handler(fakeReq({ url: `${ROUTES.ls}?alias=a${query}`, headers: { host: 'localhost:4074' } }), res)
+    return { state, body: JSON.parse(state.body) }
+  }
+
+  {
+    const { state, body } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig')
+    check('a large directory is capped at the default limit', body.entries.length === 500, String(body.entries.length))
+    check('the cap is announced, not silent', body.truncated === true, String(body.truncated))
+    check('the response carries the true total', body.total === 701, String(body.total))
+    check('the response echoes the limit it applied', body.limit === 500, String(body.limit))
+    check('a capped listing still answers 200', state.status === 200, String(state.status))
+  }
+
+  {
+    const { body } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&limit=3')
+    check('an explicit limit is honoured', body.entries.length === 3, String(body.entries.length))
+    // Directories must survive the cut: they are what a picker can navigate
+    // into, and the whole reason this route exists.
+    check('directories are kept ahead of files when truncating',
+      body.entries.some(entry => entry.name === 'zdir'), JSON.stringify(body.entries.map(e => e.name)))
+  }
+
+  {
+    const { state } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&limit=abc')
+    check('a non-numeric limit is refused rather than coerced', state.status === 400, String(state.status))
+  }
+
+  {
+    const { state } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&limit=0')
+    check('a zero limit is refused', state.status === 400, String(state.status))
+  }
+
+  {
+    const { body } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&limit=99999')
+    check('a limit above the ceiling is clamped, not accepted', body.limit === 2000, String(body.limit))
+  }
+
+  {
+    // A small directory must NOT be reported as truncated: a panel that warned
+    // on every listing would train the user to ignore the warning.
+    const small = makeListingEngine([{ name: 'a.txt', type: 'file' }, { name: 'd', type: 'directory' }])
+    const smallRoutes = makeRoutes({
+      engine: small,
+      router: {},
+      forwards: { list: () => [], open: async () => ({}), close: () => false },
+      shells,
+      ctx: { get: () => undefined },
+    })
+    const { res, state } = fakeRes()
+    await smallRoutes.find(route => route.path === ROUTES.ls).handler(
+      fakeReq({ url: `${ROUTES.ls}?alias=a&path=%2Fhome%2Fdev%2Fsmall`, headers: { host: 'localhost:4074' } }), res)
+    const body = JSON.parse(state.body)
+    check('a directory under the cap is not reported as truncated', body.truncated === false, String(body.truncated))
+    check('an untruncated listing still reports its total', body.total === 2, String(body.total))
+    check('an untruncated listing is returned whole', body.entries.length === 2, String(body.entries.length))
+  }
+}
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)

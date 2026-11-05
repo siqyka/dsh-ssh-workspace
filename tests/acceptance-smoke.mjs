@@ -116,7 +116,28 @@ const registry = app.get('tools')
 const remote = (p) => ({ targetKey: `ssh://${alias}${p}`, displayPath: `ssh://${alias}${p}` })
 
 // The plugin must hand us a remote-aware fs while leaving local reads alone.
-check('plugins mounted', registry.tools.size === 5, `registered ${registry.tools.size} tools`)
+//
+// Named, not counted. This assertion used to read `registry.tools.size === 5`,
+// which let a tool disappearing and a tool being added cancel out: the suite
+// went on claiming "plugins mounted" while the actual surface had changed
+// twice (it is ten tools now). A count is a fact about the registry; the names
+// are the fact that matters.
+const EXPECTED_TOOLS = [
+  'ssh_workspace_hosts',
+  'ssh_workspace_mount',
+  'ssh_workspace_unmount',
+  'ssh_workspace_enable',
+  'ssh_workspace_status',
+  'ssh_workspace_exec',
+  'ssh_workspace_transfer',
+  'ssh_workspace_shell',
+  'ssh_workspace_forward',
+  'ssh_workspace_unforward',
+]
+const missingTools = EXPECTED_TOOLS.filter(name => !registry.tools.has(name))
+const extraTools = [...registry.tools.keys()].filter(name => !EXPECTED_TOOLS.includes(name))
+check('every documented tool is registered', missingTools.length === 0, `missing ${JSON.stringify(missingTools)}`)
+check('no undocumented tool is registered', extraTools.length === 0, `extra ${JSON.stringify(extraTools)}`)
 
 // --- mount a real remote directory ------------------------------------------
 // Prepare the remote directory with the plugin's own exec tool, so the mount

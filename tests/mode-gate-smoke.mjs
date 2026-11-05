@@ -92,6 +92,68 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
   check('a spec mode is read from sandboxPolicy', specModeOf({ sandboxPolicy: { mode: 'read-only' } }) === 'read-only')
   check('a spec without a policy has no mode', specModeOf({}) === undefined)
   check('an empty spec mode string is not a mode', specModeOf({ sandboxPolicy: { mode: '' } }) === undefined)
+
+  // --- a real Cordis context traps the PROPERTY read ----------------------
+  // These three cases exist because the previous implementation read
+  // `ctx?.get?.('sandboxPolicy') ?? ctx?.sandboxPolicy`, which looks safe and
+  // is not: when `ctx.get` legitimately answers `undefined` (a composition
+  // without the policy service), the `??` falls through to the property read,
+  // and on a real Cordis context that read is TRAPPED —
+  // `cannot get property "sandboxPolicy" without inject`. An absent policy then
+  // looked like a broken one, and the acceptance suite failed on a real host
+  // with that message instead of reporting an unconfined deployment.
+  //
+  // A plain object context cannot reproduce this, so the trap is spelled out.
+  //
+  // Every call here is wrapped. An implementation that walks into the trap
+  // THROWS, and an uncaught throw ends the whole suite: the run would stop at
+  // the first regression and every assertion after it would go unrun, which
+  // reads as "one suite broke" rather than "the gate is open". Catching turns
+  // it into an ordinary failure with the message attached.
+  const attempt = (fn) => {
+    try { return { value: fn() } } catch (error) { return { error } }
+  }
+  // Both halves matter for the two cases whose expected value is `undefined`:
+  // a thrown error also leaves `value` undefined, so asserting `value ===
+  // undefined` alone would report a THROW as the correct answer. That is the
+  // same shape of false green this suite exists to prevent.
+  const resolvedTo = (outcome, expected) => outcome.error === undefined && outcome.value === expected
+  const describe = (outcome) => outcome.error === undefined ? String(outcome.value) : `threw: ${outcome.error.message}`
+  const trappingCtx = {
+    get: () => undefined,
+    get sandboxPolicy () { throw new Error('cannot get property "sandboxPolicy" without inject') },
+  }
+  {
+    const outcome = attempt(() => sessionModeOf(trappingCtx, { id: 's1' }))
+    check('a trapped property read with no service resolves to undefined, not a throw',
+      resolvedTo(outcome, undefined), describe(outcome))
+  }
+
+  // The property fallback still serves a plain-object context that has no
+  // `get` at all — that shape is what several suites build by hand.
+  {
+    const outcome = attempt(() => sessionModeOf({ sandboxPolicy: { resolve: () => ({ mode: 'read-only' }) } }, { id: 's1' }))
+    check('a plain context with the service as a property still resolves',
+      resolvedTo(outcome, 'read-only'), describe(outcome))
+  }
+
+  // A `get` that throws is a broken lookup, not a broken policy: the property
+  // read is still worth trying, and when that also fails the answer is the
+  // same "unconfined" one — a throwing lookup must not manufacture a denial.
+  const throwingGet = {
+    get: () => { throw new Error('no such service') },
+    sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
+  }
+  {
+    const outcome = attempt(() => sessionModeOf(throwingGet, { id: 's1' }))
+    check('a throwing ctx.get falls through to the property read',
+      resolvedTo(outcome, 'workspace-write'), describe(outcome))
+  }
+  {
+    const outcome = attempt(() => sessionModeOf({ get: () => { throw new Error('no such service') } }, { id: 's1' }))
+    check('a throwing ctx.get with no property is unconfined, not read-only',
+      resolvedTo(outcome, undefined), describe(outcome))
+  }
 }
 
 // ---------------------------------------------------------------------------

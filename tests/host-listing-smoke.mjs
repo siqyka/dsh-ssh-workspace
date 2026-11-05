@@ -250,6 +250,39 @@ console.log('\n[9] the tool renderer keeps the three cases apart')
   }
 }
 
+console.log('\n[10] a config edit is detectable without re-parsing')
+{
+  // `resolve()` re-reads the file every call, so an ADDED or EDITED host is
+  // picked up. The gap this closes is the pooled CONNECTION: nothing tells the
+  // engine that ~/.ssh/config moved, so a socket opened before the edit keeps
+  // using the descriptor it was built from.
+  const { store, dir } = storeWith({ configText: 'Host alpha\n  HostName a.example\n  Port 22\n' })
+  track(dir)
+  const before = store.configStamp()
+  check('a stamp is produced for an existing file', typeof before === 'string' && before !== 'absent', before)
+  check('the stamp is stable while the file is untouched', store.configStamp() === before, store.configStamp())
+
+  // A size change is the common case: the user typed a new port.
+  writeFileSync(path.join(dir, 'ssh_config'), 'Host alpha\n  HostName a.example\n  Port 2222\n')
+  const afterSize = store.configStamp()
+  check('changing the port changes the stamp', afterSize !== before, `${before} → ${afterSize}`)
+
+  // The case mtime+size misses on NTFS: a SAME-LENGTH in-place edit inside one
+  // timestamp tick leaves both `ino` and `mtimeMs` identical. The stamp hashes
+  // the bytes precisely because this was measured failing with stat metadata.
+  const sameLength = 'Host alpha\n  HostName b.example\n  Port 2222\n'
+  writeFileSync(path.join(dir, 'ssh_config'), sameLength)
+  check('a same-length rewrite is still a different stamp', store.configStamp() !== afterSize,
+    `${afterSize} → ${store.configStamp()}`)
+
+  // A host served from the editable store never consults this file, but the
+  // stamp must still be comparable: "absent" has to equal "absent", or every
+  // acquire on a store-only host would reconnect.
+  const missing = new HostStore(path.join(dir, 'no-such-config'))
+  check('a missing config stamps as "absent"', missing.configStamp() === 'absent', missing.configStamp())
+  check('and it is stable', missing.configStamp() === missing.configStamp(), missing.configStamp())
+}
+
 for (const cleanup of cleanups) cleanup()
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)

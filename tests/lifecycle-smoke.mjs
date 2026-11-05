@@ -61,8 +61,10 @@ const EXPECTED_TOOLS = [
 const EXPECTED_ROUTES = 25
 
 let failures = 0
+let passes = 0
 function check (label, ok, detail) {
   if (ok) {
+    passes += 1
     console.log(`  PASS  ${label}`)
   } else {
     failures += 1
@@ -208,5 +210,5 @@ console.log('\n[5] announceToAgent must not require a systemPrompt service')
   check('agent tools still registered', [...app.get('tools').registered.keys()].length === EXPECTED_TOOLS.length)
 }
 
-console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===`)
+console.log(`\n=== ${passes} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)

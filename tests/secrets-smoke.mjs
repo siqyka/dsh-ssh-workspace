@@ -29,8 +29,10 @@ const read = () => readFileSync(storeFile, 'utf8')
 const parsed = () => JSON.parse(read())
 
 let failures = 0
+let passes = 0
 function check (label, ok, detail) {
   if (ok) {
+    passes += 1
     console.log(`  PASS  ${label}`)
   } else {
     failures += 1
@@ -140,5 +142,5 @@ try {
   rmSync(home, { recursive: true, force: true })
 }
 
-console.log(`\n=== ${failures === 0 ? 'all checks passed' : `${failures} failed`} ===`)
+console.log(`\n=== ${passes} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)
