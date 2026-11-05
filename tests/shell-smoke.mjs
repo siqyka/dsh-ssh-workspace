@@ -371,5 +371,68 @@ console.log('\n=== shell smoke ===\n')
   check('no replacement glyph appears', !result.output.includes('\uFFFD'), JSON.stringify(result.output))
 }
 
+// --- a reopen reuses the directory the session was STARTED in ---------------
+{
+  const firstPrepared = fakeChannel({ results: {} })
+  const shells = new ShellManager({ engine: fakeEngine([firstPrepared]) })
+  await shells.open('test', { session: 'work', cwd: '/srv/app' })
+  // The connection dies; the channel closes, so the session is finished.
+  firstPrepared.channel.emit('close')
+  // The SAME manager opens the session again: it must reconnect to the same
+  // directory, not to the login directory.
+  const secondPrepared = fakeChannel({ results: { pwd: { output: '/srv/app', code: 0 } } })
+  shells.engine = fakeEngine([secondPrepared])
+  const result = await shells.run('test', 'pwd', { session: 'work' })
+  check('a reopen lands in the session\'s original directory',
+    result.output === '/srv/app', JSON.stringify(result.output))
+  check('and the reopen is reported as such', result.reopened === true, JSON.stringify(result))
+  check('with the directory it started in', result.cwd === '/srv/app', JSON.stringify(result.cwd))
+}
+
+// --- a first open is NOT reported as a reopen -------------------------------
+{
+  const prepared = fakeChannel({ results: { pwd: { output: '/home/u', code: 0 } } })
+  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const result = await shells.run('test', 'pwd', { session: 'fresh', cwd: '/home/u' })
+  check('a first open is not a reopen', result.reopened === false, JSON.stringify(result))
+  check('a first open says where it started', result.cwd === '/home/u', JSON.stringify(result.cwd))
+}
+
+// --- an explicit close forgets the start directory --------------------------
+{
+  const prepared = fakeChannel({ results: { pwd: { output: '/a', code: 0 } } })
+  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  await shells.open('test', { session: 'gone', cwd: '/a' })
+  shells.close('test', 'gone')
+  check('closing a session forgets where it started', shells.starts.size === 0,
+    String(shells.starts.size))
+}
+
+// --- an explicit cwd on a reopen overrides the remembered one --------------
+{
+  const firstPrepared = fakeChannel({ results: { pwd: { output: '/old', code: 0 } } })
+  const shells = new ShellManager({ engine: fakeEngine([firstPrepared]) })
+  await shells.open('test', { session: 'move', cwd: '/old' })
+  firstPrepared.channel.emit('close')
+  const secondPrepared = fakeChannel({ results: { pwd: { output: '/new', code: 0 } } })
+  shells.engine = fakeEngine([secondPrepared])
+  const result = await shells.run('test', 'pwd', { session: 'move', cwd: '/new' })
+  check('an explicit cwd wins over the remembered start',
+    result.cwd === '/new', JSON.stringify(result.cwd))
+  check('and the output comes from the new directory',
+    result.output === '/new', JSON.stringify(result.output))
+}
+
+// --- the session list names the start directory WITHOUT calling it cwd -----
+{
+  const prepared = fakeChannel({ results: {} })
+  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  await shells.open('test', { session: 'listed', cwd: '/var/log' })
+  const [row] = shells.list()
+  check('the list reports where the session started', row.startedIn === '/var/log',
+    JSON.stringify(row))
+  check('and does not claim to know its current directory', !('cwd' in row), JSON.stringify(row))
+}
+
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)

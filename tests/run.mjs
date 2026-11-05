@@ -79,6 +79,7 @@ const SUITES = [
   'lifecycle',
   'phase6',
   'watch-lifecycle',
+  'watch-recovery',
   'store-lock',
   'transfer',
   'mode-gate',
