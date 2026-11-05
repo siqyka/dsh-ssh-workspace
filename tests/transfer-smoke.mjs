@@ -16,7 +16,7 @@
 
 import path from 'node:path'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -57,7 +57,7 @@ function check (label, ok, detail) {
  */
 function fakeSftp (options = {}) {
   const files = new Map(options.files ?? [])
-  const state = { writes: 0, renamed: [], unlinked: [] }
+  const state = { writes: 0, bytesWritten: 0, renamed: [], unlinked: [] }
   const failAfter = options.failAfter ?? Number.POSITIVE_INFINITY
   const handles = new Map()
   let nextHandle = 1
@@ -136,6 +136,9 @@ function fakeSftp (options = {}) {
     write (handle, buffer, offset, length, position, callback) {
       if (typeof callback !== 'function') return
       state.writes += 1
+      // Count only writes to a destination that is NOT a resume sidecar: the
+      // sidecar is written first and would otherwise be counted as payload.
+      if (!String(handle.target).endsWith('.json')) state.bytesWritten += length
       if (state.writes > failAfter) { callback(Object.assign(new Error('write refused'), { code: 4 })); return }
       const current = files.get(handle.target) ?? Buffer.alloc(0)
       const slice = buffer.subarray(offset, offset + length)
@@ -588,6 +591,141 @@ try {
     check('top-level files land at the top',
       (await readFile(path.join(destination, 'a.txt'))).toString() === 'alpha',
       'missing')
+  }
+
+  // --- a resumable upload continues where it stopped ------------------------
+  {
+    // The scenario: the first attempt wrote 4 of 8 bytes and then the link
+    // died. The retry must send bytes 4..8, not 0..8.
+    const source = path.join(scratch, 'resume.bin')
+    await writeFile(source, Buffer.from('ABCDEFGH'))
+    const info = await stat(source)
+    const { sourceIdentity, resumableStagingName, resumeSidecarName } = await import(
+      pathToFileURL(path.join(pluginRoot, 'lib', 'resume.js')).href)
+    const identity = sourceIdentity({ size: info.size, mtimeMs: info.mtimeMs })
+
+    const { sftp, files, state } = fakeSftp({ dirs: ['/srv'] })
+    // Seed: a partial staging file plus its sidecar, as a dead attempt leaves.
+    const staging = resumableStagingName('/srv/resume.bin')
+    files.set(staging, Buffer.from('ABCD'))
+    files.set(resumeSidecarName('/srv/resume.bin'), Buffer.from(JSON.stringify({
+      version: 1,
+      identity,
+      totalBytes: 8,
+      at: Date.now(),
+    })))
+    const writesBefore = state.writes
+    const bytesBefore = state.bytesWritten
+
+    const result = await transferFile(fakeEngine(sftp), {
+      alias: 'test',
+      direction: 'upload',
+      localPath: source,
+      remotePath: '/srv/resume.bin',
+      resume: true,
+    })
+    check('the resumed upload reports the full size', result.bytes === 8, String(result.bytes))
+    check('it published', state.renamed.length === 1, JSON.stringify(state.renamed))
+    // THE assertion: the destination is the source, exactly once. Appending the
+    // whole file to the seed would give "ABCDABCDEFGH" — 12 bytes, and a size
+    // check alone would not catch it, which is why this compares the content.
+    check('the published file is the source and nothing else',
+      Buffer.from(files.get('/srv/resume.bin') ?? []).toString() === 'ABCDEFGH',
+      JSON.stringify(Buffer.from(files.get('/srv/resume.bin') ?? []).toString()))
+    // The count is of WRITE CALLS, which is an implementation detail (the
+    // helper splits large buffers). What matters is that the prefix was not
+    // rewritten — which the content assertion above already proves, and which
+    // the byte total below confirms independently of chunking.
+    check('the upload did not rewrite the whole file',
+      state.bytesWritten - bytesBefore === 4, `${state.bytesWritten - bytesBefore} bytes`)
+  }
+
+  // --- a changed source discards the partial instead of appending ----------
+  {
+    const source = path.join(scratch, 'changed.bin')
+    await writeFile(source, Buffer.from('ABCDEFGH'))
+    const info = await stat(source)
+    const { sourceIdentity, resumableStagingName, resumeSidecarName } = await import(
+      pathToFileURL(path.join(pluginRoot, 'lib', 'resume.js')).href)
+    // The sidecar describes an OLDER version of the source.
+    const staleIdentity = `${info.size}:${Math.trunc(info.mtimeMs) - 60_000}`
+
+    const { sftp, files, state } = fakeSftp({ dirs: ['/srv'] })
+    files.set(resumableStagingName('/srv/changed.bin'), Buffer.from('ZZZZ'))
+    files.set(resumeSidecarName('/srv/changed.bin'), Buffer.from(JSON.stringify({
+      version: 1,
+      identity: staleIdentity,
+      totalBytes: 8,
+      at: Date.now(),
+    })))
+    const writesBefore = state.writes
+    const bytesBefore = state.bytesWritten
+    await transferFile(fakeEngine(sftp), {
+      alias: 'test',
+      direction: 'upload',
+      localPath: source,
+      remotePath: '/srv/changed.bin',
+      resume: true,
+    })
+    // Appending "EFGH" onto "ZZZZ" would give "ZZZZEFGH" — the disaster this
+    // pins. Reading the destination is the only check that catches it.
+    check('the result is the source, not a mixture of old and new',
+      Buffer.from(files.get('/srv/changed.bin') ?? []).toString() === 'ABCDEFGH',
+      JSON.stringify(Buffer.from(files.get('/srv/changed.bin') ?? []).toString()))
+    // The whole 8 bytes were re-sent, because the 4 stale ones were discarded.
+    check('the whole source was re-sent', state.bytesWritten - bytesBefore === 8,
+      `${state.bytesWritten - bytesBefore} bytes`)
+    check('the stale sidecar did not survive', !files.has(resumeSidecarName('/srv/changed.bin')),
+      JSON.stringify([...files.keys()]))
+  }
+
+  // --- a failed resumable attempt KEEPS its partial ------------------------
+  {
+    const source = path.join(scratch, 'keep.bin')
+    await writeFile(source, Buffer.from('0123456789'))
+    const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
+    // Fail the publish: the partial must survive so the next attempt resumes.
+    const failing = {
+      ...sftp,
+      rename (from, to, cb) { cb(Object.assign(new Error('link died'), { code: 4 })) },
+    }
+    let thrown
+    try {
+      await transferFile(fakeEngine(failing), {
+        alias: 'test',
+        direction: 'upload',
+        localPath: source,
+        remotePath: '/srv/keep.bin',
+        resume: true,
+      })
+    } catch (error) {
+      thrown = error
+    }
+    check('the transfer failed', thrown !== undefined)
+    const { resumableStagingName } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'resume.js')).href)
+    check('BUT the partial was kept for the next attempt',
+      files.has(resumableStagingName('/srv/keep.bin')), JSON.stringify([...files.keys()]))
+  }
+
+  // --- a non-resumable failure still cleans up -----------------------------
+  {
+    const source = path.join(scratch, 'cleanup.bin')
+    await writeFile(source, Buffer.from('0123456789'))
+    const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
+    const failing = {
+      ...sftp,
+      rename (from, to, cb) { cb(Object.assign(new Error('link died'), { code: 4 })) },
+    }
+    try {
+      await transferFile(fakeEngine(failing), {
+        alias: 'test',
+        direction: 'upload',
+        localPath: source,
+        remotePath: '/srv/cleanup.bin',
+      })
+    } catch { /* expected */ }
+    check('a non-resumable failure leaves no staging file',
+      [...files.keys()].every(key => !key.includes('.dsh-up-')), JSON.stringify([...files.keys()]))
   }
 
   // --- an EMPTY remote directory still appears locally ----------------------
