@@ -83,6 +83,8 @@ const SUITES = [
   'reverse-forward',
   'watch-lifecycle',
   'watch-recovery',
+  'include-chain',
+  'match-eval',
   'store-lock',
   'transfer',
   'mode-gate',

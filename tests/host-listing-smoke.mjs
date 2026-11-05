@@ -161,6 +161,39 @@ console.log('\n[4] a usable store entry is still a row')
   check('a complete listing reports nothing skipped', (listing.skipped ?? []).length === 0, JSON.stringify(listing.skipped))
 }
 
+console.log('\n[3c] `Include` is followed, so hosts it defines are real hosts')
+{
+  // The reason this matters: a real configuration puts a few lines in
+  // `~/.ssh/config` and everything else in `conf.d/`. A reader that ignores
+  // Include shows an almost empty panel, and the audit used to report the
+  // keyword as `lost` — accurate at the time, and useless to the user.
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsh-hosts-include-'))
+  track(dir)
+  const configPath = path.join(dir, 'ssh_config')
+  writeFileSync(configPath, 'Host local\n  HostName local.example\nInclude conf.d/*.conf\n', 'utf8')
+  mkdirSync(path.join(dir, 'conf.d'), { recursive: true })
+  writeFileSync(path.join(dir, 'conf.d', 'prod.conf'), 'Host prodbox\n  HostName prod.example\n  User deploy\n', 'utf8')
+  writeFileSync(path.join(dir, 'conf.d', 'dev.conf'), 'Host devbox\n  HostName dev.example\n', 'utf8')
+
+  const store = new HostStore(configPath)
+  store.entryStore = { load: () => [], sshConfigAliases: () => [] }
+  const aliases = store.sshConfigAliases().sort()
+  check('hosts from an included file are listed',
+    aliases.includes('prodbox') && aliases.includes('devbox'), JSON.stringify(aliases))
+  check('and so is the host written directly', aliases.includes('local'), JSON.stringify(aliases))
+
+  // Resolution must see the included block's keywords too, or the row would
+  // exist with the wrong login.
+  const resolved = store.resolve('prodbox')
+  check('an included block resolves with its own settings',
+    resolved.host === 'prod.example' && resolved.user === 'deploy', JSON.stringify(resolved))
+
+  const listing = store.listing()
+  check('the listing has a row for it',
+    listing.rows.some(row => row.alias === 'prodbox'),
+    JSON.stringify(listing.rows.map(row => row.alias)))
+}
+
 console.log('\n[4b] a store entry carries its jump chain too')
 {
   // The ssh-config half of this is covered above. The STORE half is a separate

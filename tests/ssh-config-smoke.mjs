@@ -104,12 +104,29 @@ console.log('[1] a `Match` line starts a section of its own')
 }
 
 {
-  // `Match` must not select anyone: its conditions are not evaluated, so
-  // treating it as applicable would be worse than ignoring it.
+  // `Match host <alias>` now EVALUATES, so a block naming the alias applies to
+  // it — that is what the construct is for. What must not change is that a
+  // Match body is never an EXACT declaration: identity keywords (`User`, `Port`,
+  // `IdentityFile`) still come only from a literal `Host` block, so a Match
+  // cannot rewrite who you log in as.
   const sections = sectionsOf('Host web\nMatch host web\n  User evil\n')
   const match = sections.find(section => section.kind === 'match')
-  check('a Match naming the alias does not select it', selects(match, 'web') === false)
-  check('...and is never an exact declaration either', isExact(match, 'web') === false)
+  check('a Match naming the alias selects it', selects(match, 'web') === true)
+  check('...but is never an exact declaration, so it cannot set identity',
+    isExact(match, 'web') === false)
+
+  // The security half of O-10, restated for the evaluated form: a Match naming
+  // a DIFFERENT host must not select this one.
+  const other = sectionsOf('Host web\nMatch host db\n  User evil\n').find(section => section.kind === 'match')
+  check('a Match naming another host does not select it', selects(other, 'web') === false)
+
+  // And a Match whose condition cannot be decided selects nobody.
+  const undecidable = sectionsOf('Host web\nMatch address 10.0.0.1\n  User evil\n').find(section => section.kind === 'match')
+  check('an undecidable Match selects nobody', selects(undecidable, 'web') === false)
+
+  // `Match exec` is refused outright: it would run a local command.
+  const refused = sectionsOf('Host web\nMatch exec true\n  User evil\n').find(section => section.kind === 'match')
+  check('a Match exec selects nobody', selects(refused, 'web') === false)
 }
 
 {
@@ -193,11 +210,10 @@ console.log('[2] O-17: a Match body cannot leak into the previous Host')
 }
 
 {
-  // The nastiest shape: a `Match` that NAMES the alias. Its condition might be
-  // true in OpenSSH, but this plugin does not evaluate conditions at all, so
-  // the body must still apply to nobody. A resolver that treated `Match host
-  // web` as selecting `web` would let `ProxyJump none` cancel the bastion for
-  // the very host that needs it.
+  // A `Match` that NAMES the alias DOES apply now — that is the point of
+  // evaluating the construct. Here the user wrote "for web, do not proxy", and
+  // first-obtained-wins makes that the answer even though `Host *` below says
+  // otherwise. Asserting `direct` is asserting that the directive was READ.
   const { store } = storeWith([
     'Host web',
     '  HostName web.example',
@@ -210,9 +226,26 @@ console.log('[2] O-17: a Match body cannot leak into the previous Host')
     '',
   ].join('\n'))
   const resolved = store.resolve('web')
-  check('a Match naming the alias does not cancel the bastion',
-    resolved.jump?.kind === 'chain' && resolved.jump.hops[0]?.host === 'bastion',
-    JSON.stringify(resolved.jump))
+  check('a Match naming the alias applies its settings',
+    resolved.jump?.kind === 'direct', JSON.stringify(resolved.jump))
+
+  // The mirror case, which is the one that must never regress: a Match naming a
+  // DIFFERENT host leaves the bastion alone.
+  const other = storeWith([
+    'Host web',
+    '  HostName web.example',
+    '',
+    'Match host db',
+    '  ProxyJump none',
+    '',
+    'Host *',
+    '  ProxyJump bastion',
+    '',
+  ].join('\n'))
+  const otherResolved = other.store.resolve('web')
+  check('a Match naming another host does not cancel the bastion',
+    otherResolved.jump?.kind === 'chain' && otherResolved.jump.hops[0]?.host === 'bastion',
+    JSON.stringify(otherResolved.jump))
 }
 
 {
