@@ -78,6 +78,30 @@ console.log('\n=== routes smoke ===\n')
 // routes.js pulls the SFTP primitives from remote-fs.js, which resolves the DSH
 // peer packages; the suite needs the assembled tree even though it never opens
 // a connection.
+// ---------------------------------------------------------------------------
+// Provenance travels with the status payload
+// ---------------------------------------------------------------------------
+// Asserted against the SOURCE rather than a live route: this suite needs the
+// assembled tree for its route tests and skips without one, and a skip in CI is
+// exactly where "the payload stopped carrying its ages" would go unnoticed. A
+// source check runs everywhere.
+{
+  const source = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  // Anchored on the exact property name AND the call, because a renamed field
+  // (`provenanceDisabled: statusProvenance(...)`) satisfies "a statusProvenance
+  // call exists" while the panel reads `status.provenance` and renders nothing.
+  check('the status route ships a field literally named `provenance`',
+    /^\s{8,}provenance: statusProvenance\(\{/mu.test(source),
+    'no `provenance:` field')
+  check('...computed from the probe cache, not a constant',
+    /oldestProbe\(engine\)/u.test(source), 'no oldestProbe call')
+  // The panel reads `status.provenance.capabilities`; a renamed field would make
+  // it render nothing while every other assertion here still passed.
+  const client = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  check('...under the name the panel reads',
+    /status\.provenance\?\.capabilities/u.test(client), 'panel reads a different field')
+}
+
 const coreRoot = process.env.DSH_CORE_ROOT
 if (!coreRoot) {
   console.log('  SKIP  DSH_CORE_ROOT is not set (needs @deepseek-ai/dsh-fs)')

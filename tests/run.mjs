@@ -87,6 +87,7 @@ const SUITES = [
   'match-eval',
   'command-policy',
   'command-confirm',
+  'status-provenance',
   'recent-hosts',
   'store-lock',
   'transfer',

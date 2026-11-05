@@ -1011,6 +1011,40 @@ if (failures.length > 0) {
   console.log('\nfailures:')
   for (const failure of failures) console.log(`  - ${failure}`)
 }
+// ---------------------------------------------------------------- provenance
+console.log('\n[provenance] the panel admits how old the cached sections are')
+{
+  const source = readFileSync(path.join(packageRoot, 'lib', 'client.js'), 'utf8')
+  // The renderer must exist and be USED: a helper with no call site renders
+  // nothing while reading as implemented.
+  check('a provenance renderer exists', /function provenanceText/u.test(source))
+  // The call must be REACHABLE, not merely present: the first version of this
+  // assertion matched the call anywhere in the file, so replacing the render
+  // with `false &&` left it green while the panel showed nothing. Requiring the
+  // call to sit inside the returned tree is what makes it a rendering claim.
+  check('and the panel calls it from the rendered tree',
+    /jsxs\('div', \{ className: 'sshwsp',[\s\S]{0,3000}?provenanceText\(t, status\.provenance/.test(source),
+    'no reachable call site')
+  check('the call is not guarded by a constant',
+    !/false && jsx\('div'[\s\S]{0,80}provenance/u.test(source), 'guarded by `false &&`')
+  check('the capability section is the one labelled',
+    /status\.provenance\?\.capabilities/u.test(source), 'capabilities not named')
+  // Three kinds, three sentences: collapsing "stale" into "cached" would erase
+  // the only distinction a user can act on (wait versus investigate).
+  //
+  // "At least two occurrences" rather than exactly two: the dictionary defines
+  // each key and the RENDERER references it, so the honest floor is one
+  // definition per locale. Pinning the exact count would break the moment a
+  // second render site is added, which is not a behaviour change.
+  for (const key of ['provenance.live', 'provenance.cached', 'provenance.stale']) {
+    const count = source.split(`'${key}'`).length - 1
+    check(`${key} is defined in both locales`, count >= 2, `found ${count}`)
+  }
+  // An unrecognised label must stay visible rather than rendering blank.
+  check('an unknown kind falls through to the raw value',
+    /return label\.kind/u.test(source), 'no fallthrough')
+}
+
 // A numeric summary, in the same `=== N passed, M failed ===` shape every other
 // suite prints. Without it, a script that totals the run by summing these lines
 // skips this suite's assertions silently — which is exactly how its count came
