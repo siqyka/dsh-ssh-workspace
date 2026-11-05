@@ -88,6 +88,8 @@ const SUITES = [
   'command-policy',
   'command-confirm',
   'status-provenance',
+  'verify',
+  'conflict-policy',
   'recent-hosts',
   'store-lock',
   'transfer',

@@ -528,6 +528,152 @@ try {
     )
     check('read-only still allows a download', downloadResult.ok === true, JSON.stringify(downloadResult))
   }
+  // --- the conflict policy reaches the transfer, not just the helper -------
+  {
+    // The mutation this pins removed the decision from `transferFile`, and the
+    // suite stayed green because nothing here ever asked for a non-default
+    // policy. A helper that decides correctly and is never consulted is the
+    // same defect as no helper.
+    const source = path.join(scratch, 'conflict.bin')
+    await writeFile(source, Buffer.from('new'))
+
+    // skip: the destination keeps its old content and the result says so.
+    {
+      const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
+      files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
+      const result = await transferFile(fakeEngine(sftp), {
+        alias: 'test',
+        direction: 'upload',
+        localPath: source,
+        remotePath: '/srv/conflict.bin',
+        onConflict: 'skip',
+      })
+      check('skip reports zero bytes', result.bytes === 0, String(result.bytes))
+      check('skip marks the result skipped', result.skipped === true, JSON.stringify(result))
+      check('skip leaves the destination untouched',
+        Buffer.from(files.get('/srv/conflict.bin')).toString() === 'old',
+        Buffer.from(files.get('/srv/conflict.bin') ?? []).toString())
+    }
+
+    // refuse: an error, and nothing written.
+    {
+      const { sftp, files, state } = fakeSftp({ dirs: ['/srv'] })
+      files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
+      let thrown
+      try {
+        await transferFile(fakeEngine(sftp), {
+          alias: 'test',
+          direction: 'upload',
+          localPath: source,
+          remotePath: '/srv/conflict.bin',
+          onConflict: 'refuse',
+        })
+      } catch (error) {
+        thrown = error
+      }
+      check('refuse throws', thrown !== undefined, thrown === undefined ? 'no error' : '')
+      check('refuse wrote nothing', state.renamed.length === 0, JSON.stringify(state.renamed))
+      check('refuse left the destination alone',
+        Buffer.from(files.get('/srv/conflict.bin')).toString() === 'old',
+        Buffer.from(files.get('/srv/conflict.bin') ?? []).toString())
+    }
+
+    // rename: the bytes land beside the old file, which survives.
+    {
+      const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
+      files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
+      const result = await transferFile(fakeEngine(sftp), {
+        alias: 'test',
+        direction: 'upload',
+        localPath: source,
+        remotePath: '/srv/conflict.bin',
+        onConflict: 'rename',
+      })
+      check('rename reports the new path', typeof result.path === 'string' && result.path !== '/srv/conflict.bin',
+        JSON.stringify(result))
+      check('rename wrote the NEW path', files.has(result.path), JSON.stringify([...files.keys()]))
+      check('rename left the original alone',
+        Buffer.from(files.get('/srv/conflict.bin') ?? []).toString() === 'old',
+        Buffer.from(files.get('/srv/conflict.bin') ?? []).toString())
+    }
+
+    // overwrite (the default) still replaces, so the new knob did not change
+    // the behaviour every existing caller relies on.
+    {
+      const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
+      files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
+      const result = await transferFile(fakeEngine(sftp), {
+        alias: 'test',
+        direction: 'upload',
+        localPath: source,
+        remotePath: '/srv/conflict.bin',
+      })
+      check('the default still overwrites', result.bytes === 3, String(result.bytes))
+      check('and the destination now holds the new bytes',
+        Buffer.from(files.get('/srv/conflict.bin') ?? []).toString() === 'new',
+        Buffer.from(files.get('/srv/conflict.bin') ?? []).toString())
+    }
+  }
+
+  // --- verification reports itself honestly --------------------------------
+  {
+    // An engine that answers the hasher probe with "nothing installed": the
+    // copy is UNVERIFIED, which must never render as verified.
+    const engine = {
+      async withSftp (_alias, operation) {
+        return await operation(fakeSftp({ dirs: ['/srv'] }).sftp)
+      },
+      capabilities: new Map(),
+      async probeCapabilities () { return { rg: true, git: true } },
+      async exec () {
+        return { success: true, exitCode: 0, stdout: '', stderr: '', timedOut: false, truncated: false, durationMs: 1 }
+      },
+    }
+    const source = path.join(scratch, 'verify.bin')
+    await writeFile(source, Buffer.from('payload'))
+    const result = await transferFile(engine, {
+      alias: 'test',
+      direction: 'upload',
+      localPath: source,
+      remotePath: '/srv/verify.bin',
+      verify: true,
+    })
+    check('no hasher means verified === false', result.verified === false, JSON.stringify(result))
+    check('and the reason names the missing tool',
+      /sha256sum|shasum|openssl/u.test(String(result.verification)), String(result.verification))
+    // The transfer itself still succeeded: unverified is not failed.
+    check('an unverified copy still reports its bytes', result.bytes === 7, String(result.bytes))
+  }
+
+  // --- a real digest mismatch is reported as a mismatch ---------------------
+  {
+    // The engine claims the remote copy hashes to something different from the
+    // local file, which is what a truncated upload would look like.
+    const engine = {
+      async withSftp (_alias, operation) {
+        return await operation(fakeSftp({ dirs: ['/srv'] }).sftp)
+      },
+      capabilities: new Map(),
+      async probeCapabilities () { return { rg: true, git: true } },
+      async exec (_alias, command) {
+        const body = command.includes('command -v')
+          ? 'dsh-hash:sha256sum\n'
+          : `${'0'.repeat(64)}  /srv/mismatch.bin\n`
+        return { success: true, exitCode: 0, stdout: body, stderr: '', timedOut: false, truncated: false, durationMs: 1 }
+      },
+    }
+    const source = path.join(scratch, 'mismatch.bin')
+    await writeFile(source, Buffer.from('payload'))
+    const result = await transferFile(engine, {
+      alias: 'test',
+      direction: 'upload',
+      localPath: source,
+      remotePath: '/srv/mismatch.bin',
+      verify: true,
+    })
+    check('a mismatch is verified === false', result.verified === false, JSON.stringify(result))
+    check('and the reason says mismatch', /mismatch/u.test(String(result.verification)), String(result.verification))
+  }
 } finally {
   await rm(scratch, { recursive: true, force: true })
 }

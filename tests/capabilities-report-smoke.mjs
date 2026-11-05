@@ -71,13 +71,27 @@ check(
 // written against the first shape must still find them.
 check('rg, git and inotifywait are still probed', ['rg', 'git', 'inotifywait'].every(tool => probedTools().includes(tool)), probedTools().join(','))
 check(
-  'the four fictional capabilities are NOT probed',
-  ['sha256sum', 'tar', 'rsync', 'tput'].every(tool => !probedTools().includes(tool)),
+  'the three STILL-fictional capabilities are NOT probed',
+  ['tar', 'rsync', 'tput'].every(tool => !probedTools().includes(tool)),
   probedTools().join(','),
 )
 check(
-  'those four are documented as unprobed instead of silently dropped',
-  ['sha256sum', 'tar', 'rsync', 'tput'].every(tool => UNPROBED_CAPABILITIES.some(spec => spec.tool === tool)),
+  'those three are documented as unprobed instead of silently dropped',
+  ['tar', 'rsync', 'tput'].every(tool => UNPROBED_CAPABILITIES.some(spec => spec.tool === tool)),
+  JSON.stringify(UNPROBED_CAPABILITIES.map(spec => spec.tool)),
+)
+// `sha256sum` was one of the four and is now REAL: `lib/verify.js` hashes both
+// sides of a transfer on request. The membership test above (does any code
+// outside this file reference the tool?) is what moves a row between the two
+// lists — in either direction. Pinning that here is what makes the earlier
+// removal a fact rather than a decision nobody re-examines.
+check(
+  'sha256sum moved back to probed, because verification now exists',
+  probedTools().includes('sha256sum'), probedTools().join(','),
+)
+check(
+  'and is no longer claimed as unprobed',
+  !UNPROBED_CAPABILITIES.some(spec => spec.tool === 'sha256sum'),
   JSON.stringify(UNPROBED_CAPABILITIES.map(spec => spec.tool)),
 )
 
