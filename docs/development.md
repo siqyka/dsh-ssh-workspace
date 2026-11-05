@@ -14,9 +14,9 @@
 | HTTP routes | 25 | `lib/routes.js` |
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 38 | directory listing |
-| test suites | 53 | `tests/run.mjs` |
-| passing assertions (sampled) | 2202 | measured 2026-11-05 |
+| modules under `lib/` | 39 | directory listing |
+| test suites | 55 | `tests/run.mjs` |
+| passing assertions (sampled) | 2299 | measured 2026-11-05 |
 
 <!-- doc-numbers:end -->
 
@@ -200,6 +200,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `include-chain-smoke` | 无 | 30 | `Include` 跟随：被包含的文件**就地**插入（顺序即"哪一块先赢"，与 OpenSSH 一致）、glob 只读匹配的普通文件且按排序、`?` 与字面路径、空 glob 有记录但不报错、自包含与互包含终止、`./` 与相对绕路都不能骗过按真实路径的环检测、嵌套上限、引号与一行多参数、缺失的顶层文件是空而不是错 |
 | `match-eval-smoke` | 无 | 41 | `Match` 求值的三态不许合并：`host` / `originalhost` / `all` 求值（glob、逗号列表、`!` 排除，复用 Host 块同一个匹配器）；**`exec` 拒绝**（会执行本地命令）且匹配的 host 救不回它；`user` / `address` / `port` / `final` 等需要活连接的条件一律"选中无人"并说明原因；未知条件与畸形行同样选中无人；多个条件按合取 |
 | `recent-hosts-smoke` | 无 | 16 | 最近使用排序：记录与覆盖、100 条上限且丢最旧、列表按用过的在前且时间戳随行、**只存在于 ssh-config 的主机也能进最近**（这正是它单独成一个 section 而不是条目不字段的原因）、已删除的别名不会复活成一行、存储损坏时降级而不抛 |
+| `command-policy-smoke` | 无 | 57 | 命令确认策略：默认关闭；`all` 与按规则两种模式；13 条应当确认与 8 条应当放行的实测清单；判词报出**匹配到的片段**（提示框要引用它）；可只启用部分规则；**全是不认识规则名时回落到关闭**（"开着却永远不匹配"比关掉更糟）；坏正则不静默废掉整条策略；无人可问时拒绝运行并区分"没有 approval 服务"与"不在 turn 内"，且句子里写明**这不是沙箱**；三个规避形态实测两个被抓、一个漏（漏的那个就是文档写明的上限） |
+| `command-confirm-smoke` | 无 | 30 | 确认门本身（不只是规则判定）：`allowed-once` 放行且请求里带 callId 与匹配原因、`rejected` / `cancelled` / `unavailable` / 服务抛错 / 无服务各有自己的句子且**全部拒绝**、「不在 turn 内」与「服务坏了」的句子可分、任何拒绝都不暗示「已隔离」；**坏正则之后的正则仍然生效**（第一版夹具用了 `[unclosed`，那在 JS 里是合法的字面量，所以什么都没测到） |
 | `store-lock-smoke` | 无 | 15 | 主机存储的跨进程写锁：互斥与降级、死锁接管、并发 `mutateHosts` 不丢条目、`save()` 的替换语义 |
 | `transfer-smoke` | 无 | 43 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去） |
 | `mode-gate-smoke` | 无 | 119 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |

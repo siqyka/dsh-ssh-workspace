@@ -85,6 +85,8 @@ const SUITES = [
   'watch-recovery',
   'include-chain',
   'match-eval',
+  'command-policy',
+  'command-confirm',
   'recent-hosts',
   'store-lock',
   'transfer',
