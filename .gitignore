@@ -11,3 +11,16 @@ verify-plugin.mjs
 tools/
 .test-shims/
 .trae/
+# One-shot patch scripts (throwaway; never part of the repo)
+/patch-*.py
+/*-tmp.py
+/tmp[a-z]*.py
+cp[0-9]*.py
+prov[0-9]*.py
+recent[0-9]*.py
+doc[f0-9]*.py
+reg[0-9]*.py
+cl[0-9]*.py
+mutate.py
+docpatch.py
+inspect.py
