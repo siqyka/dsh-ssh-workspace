@@ -23,7 +23,8 @@
 | [upstream-workarounds.md](./upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 | 完成 |
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
-| [optimization-and-future.md](./optimization-and-future.md) | **优化项与 Future**：一次全量审阅的 16 项优化（每项附推进结果与反向验证）、明确不做的事、9 个能力方向 | 完成 |
+| [optimization-and-future.md](./optimization-and-future.md) | **优化项与 Future（第一辑）**：首次全量审阅的 16 项优化（每项附推进结果与反向验证）、明确不做的事与 9 个能力方向 | 完成 |
+| [optimization-and-future02.md](./optimization-and-future02.md) | **优化项与 Future（第二辑 · 2026-11-04 复审）**：O-17 / O-18 两个新问题、对 O-11 / O-12 / O-13 三条结论的更正、F-10 / F-11 与可复现实测记录 | 完成 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 

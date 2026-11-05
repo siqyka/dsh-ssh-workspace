@@ -300,7 +300,8 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 |
 | [upstream-workaround-pattern.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、反模式与成本边界 |
 | [troubleshooting.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/troubleshooting.md) | 排查与常见问题：错误语义、连接问题、已知限制 |
-| [optimization-and-future.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/optimization-and-future.md) | **优化项与 Future**：16 项优化（每项附推进结果与反向验证）、明确不做的事、9 个能力方向 |
+| [optimization-and-future.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/optimization-and-future.md) | **优化项与 Future（第一辑）**：首次全量审阅的 16 项优化（每项附推进结果与反向验证）、明确不做的事与 9 个能力方向 |
+| [optimization-and-future02.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/optimization-and-future02.md) | **优化项与 Future（第二辑 · 2026-11-04 复审）**：O-17 / O-18 两个新问题、对 O-11 / O-12 / O-13 的更正、F-10 / F-11 与可复现实测记录 |
 | [CONTRIBUTING.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CONTRIBUTING.md) | 参与开发：环境、三种测试、代码约定、改完之后 |
 | [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY.md) | 安全策略：凭据如何存储、主机密钥校验、已知边界、漏洞报告 |
 | [CHANGELOG.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CHANGELOG.md) | 更新日志：各版本的新增、修复与变更 |

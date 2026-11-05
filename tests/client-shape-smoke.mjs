@@ -350,8 +350,33 @@ console.log('\n[a11y: the dialog contract]')
     /addEventListener\('keydown', onKeyDown, true\)/u.test(source), 'not capture phase')
   check('Esc is ignored while a request is in flight',
     /if \(busyRef\.current\) return/u.test(source), 'Esc not gated on busy')
-  check('every dialog uses the hook',
-    count(/useDialogA11y\(\{/gu) === 3, `${count(/useDialogA11y\(\{/gu)} call site(s)`)
+  // The assertion used to be `=== 3`, and that literal is exactly why the
+  // fourth dialog (DirectoryBrowser) stayed inaccessible for two releases:
+  // the count said "three dialogs are wired" while the file had four. It
+  // measured a number instead of the property. Now the two sides are compared
+  // to each other - every dialog component must call the hook - so a fifth
+  // dialog that forgets the hook turns this red on its own.
+  const dialogComponents = count(/function [A-Z][A-Za-z]* \(\{[^)]*onClose/u)
+  const hookCallSites = count(/useDialogA11y\(\{/gu)
+  check('every dialog component calls the hook',
+    dialogComponents > 0 && hookCallSites >= dialogComponents,
+    `${hookCallSites} call site(s) for ${dialogComponents} dialog component(s)`)
+  // Pinned by name, because "the fourth one" is what was missing and a count
+  // alone cannot say WHICH dialog is unwired.
+  // The next sibling declaration, kept as a plain literal so no escape
+  // processing can turn it into a real newline.
+  const NEXT_COMPONENT = 'function '
+  for (const name of ['HostEditor', 'DirectoryBrowser', 'ReportDialog', 'RemoteWorkspaceDialog']) {
+    // Located by declaration, then searched FORWARD from there: the hook call
+    // comes after the local state, so a fixed-size window measured from the
+    // signature would measure the component's size, not its wiring.
+    const start = source.indexOf('function ' + name + ' (')
+    const next = start < 0 ? -1 : source.indexOf(NEXT_COMPONENT, start + 1)
+    const body = start < 0 ? '' : source.slice(start, next < 0 ? start + 8000 : next)
+    check(name + ' is wired to the dialog contract',
+      start >= 0 && body.includes('useDialogA11y({'),
+      start < 0 ? 'component not found' : 'no useDialogA11y call in the component body')
+  }
 }
 
 console.log('\n[a11y: the menu contract]')
@@ -768,6 +793,112 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
       !/support\.hint': '[^']*不会上传/u.test(client),
     'the hint still carries the upload promise')
 }
+
+// ---------------------------------------------------------------------------
+console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
+//
+// C-01 in optimization-and-future02.md. The panel had four dialogs and wired
+// three; the fourth (DirectoryBrowser) had a backdrop and a dialog frame, so it
+// LOOKED covered while keyboard focus walked straight through it into the page
+// behind. Two more holes sat in the same area: the browser's rows were
+// `div` + `onClick` while the stylesheet drew them a `:focus-visible` ring and
+// `cursor: pointer` (advertising a button nobody could reach), and the row
+// menu — the ONLY way to download, upload or add a file to the task — carried
+// `role="menu"` / `role="menuitem"` with no focus management, no arrow keys, and
+// no way to open it without a right-click.
+//
+// These assertions are about the SHAPE that makes the behaviour possible, so
+// each one is paired with the reverse-verification note in its detail string:
+// removing the construct is what should turn it red.
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+
+  /**
+   * The body of one top-level module function, with its comments removed.
+   *
+   * `isLive` cannot be used here: it anchors on `function RemoteWorkspacePanel`
+   * and takes the FIRST match in the whole file, so `nextMenuIndex` resolves to
+   * the React popover's call site rather than the DOM menu's, and every
+   * component defined above the panel (the dialogs) resolves to nothing. Slicing
+   * the function and stripping comments answers the same question — "is this
+   * construct live code" — for the region that actually matters.
+   */
+  const bodyOf = (name) => {
+    const start = source.indexOf('function ' + name + ' (')
+    if (start < 0) return ''
+    const next = source.indexOf('\n    function ', start + 1)
+    const slice = source.slice(start, next < 0 ? start + 12000 : next)
+    return slice
+      .replace(/\/\*[\s\S]*?\*\//gu, ' ')
+      .replace(/\/\/[^\n]*/gu, ' ')
+  }
+  const liveIn = (name, re) => re.test(bodyOf(name))
+
+  check('the browser dialog claims the dialog role',
+    liveIn('DirectoryBrowser', /useDialogA11y\(\{/u) &&
+      liveIn('DirectoryBrowser', /className: 'sshwsp-dialog', \.\.\.dialog\.props/u),
+    'the fourth dialog renders without role="dialog" / aria-modal / focus trap')
+  check('...and its title is the label the dialog announces',
+    liveIn('DirectoryBrowser', /id: dialog\.titleId, children: t\('browser\.title'/u),
+    'aria-labelledby points at nothing')
+
+  // The rows: directories are real buttons, so Enter/Space and the focus ring
+  // come from the element rather than from three separate handlers that a
+  // fourth caller would forget.
+  check('a directory row is a real button, not a div with onClick',
+    liveIn('DirectoryBrowser', /jsxs\(entry\.type === 'directory' \? 'button' : 'div'/u),
+    'rows are divs, so no keyboard activation and no focus ring')
+  check('...and only it gets the pointer cursor',
+    liveIn('DirectoryBrowser', /entry\.type === 'directory' \? 'sshwsp-entry sshwsp-entry-dir' : 'sshwsp-entry'/u) &&
+      /\.sshwsp-entry \{[\s\S]{0,400}?cursor: default/u.test(source) &&
+      /\.sshwsp-entry-dir \{ cursor: pointer; \}/u.test(source),
+    'a file row advertises a click that does nothing')
+
+  // The menu: focus moves in, arrows move between items, Escape and Tab close,
+  // and it can be opened without a mouse.
+  check('the row menu takes focus when it opens',
+    liveIn('openTaskMenu', /firstEnabled\(\)\[0\]\?\.focus\?\.\(\)/u),
+    'focus stays on the trigger, so ArrowDown does nothing')
+  check('...and reuses the shared index arithmetic',
+    liveIn('openTaskMenu', /nextMenuIndex\(event\.key, current, items\.length\)/u),
+    'a second copy of the wrap arithmetic is how one menu wraps and another does not')
+  check('...returns focus to the row that opened it',
+    liveIn('openTaskMenu', /taskMenuOpener = document\.activeElement/u) &&
+      liveIn('closeTaskMenu', /document\.contains\(opener\)\) opener\.focus\(\)/u),
+    'closing leaves focus on a removed node')
+  check('...can be opened from the keyboard',
+    liveIn('installTreeMenuBridge', /event\.key !== 'ContextMenu'/u) &&
+      liveIn('installTreeMenuBridge', /event\.shiftKey && event\.key === 'F10'/u),
+    'the menu is reachable only by right-click')
+  check('...and both openers share one anchor computation',
+    liveIn('installTreeMenuBridge', /const openForRow = \(row, event\) =>/u) &&
+      (bodyOf('installTreeMenuBridge').match(/openForRow\(row, /gu) ?? []).length === 2,
+    'the keyboard path would place the menu at a different spot than the pointer path')
+
+  // An error is the only report a failed tree transfer produces, so it must not
+  // expire before it can be read — and it must interrupt, not wait its turn.
+  check('an error toast does not time out',
+    liveIn('notifyUser', /if \(!failed\) domToastTimer = setTimeout\(\(\) => el\.remove\(\), 3500\)/u),
+    'the failure text vanishes after 3.5 seconds')
+  check('...and is announced as an alert rather than a status',
+    liveIn('notifyUser', /el\.setAttribute\('role', failed \? 'alert' : 'status'\)/u),
+    'a polite announcement can be removed mid-sentence')
+  check('...while the connection-test failure also stays',
+    /if \(toast === null \|\| toast\.kind !== 'ok'\) return undefined/u.test(source),
+    'a failed test expires before the reason can be read')
+  // A message that never expires must be clearable without a mouse, and the
+  // keyboard path has to be reachable: focusable but never focused is the same
+  // as unreachable. The comment claimed "click, or Esc" before the handler
+  // existed, which is exactly the kind of claim this suite should not let pass.
+  check('...and a persisting error can be dismissed from the keyboard',
+    liveIn('notifyUser', /event\.key !== 'Escape' && event\.key !== 'Enter'/) ||
+      liveIn('notifyUser', /event\.key === 'Escape' \|\| event\.key === 'Enter'/u),
+    'no Esc/Enter dismissal on the error toast')
+  check('...and that path is reachable, because the toast takes focus',
+    liveIn('notifyUser', /if \(failed\) el\.focus\(\)/u),
+    'a focusable toast that is never focused cannot be dismissed by keyboard')
+}
+
 
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)

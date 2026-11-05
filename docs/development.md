@@ -14,9 +14,9 @@
 | HTTP routes | 25 | `lib/routes.js` |
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 31 | directory listing |
+| modules under `lib/` | 33 | directory listing |
 | test suites | 44 | `tests/run.mjs` |
-| passing assertions (sampled) | 1782 | measured 2026-11-01 |
+| passing assertions (sampled) | 1853 | measured 2026-11-05 |
 
 <!-- doc-numbers:end -->
 
@@ -147,8 +147,14 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按裸检出实测：`DSH_CORE_ROOT` / `DSH_WS_TEST_ALIAS` 未设置时，需要真实装配树或真实主机的
-套件整体 SKIP；`DSH_CORE_ROOT` 指向真实装配树时，`projection-real` / `lifecycle` /
-`tool-schemas` / `boot` 四个跑起来，只剩 `live` 与 `acceptance` 真正未跑，合计 **2005** 项。
+套件整体 SKIP。裸检出下 **41 个套件实际运行、1853 项断言**（生成表里那行就是这个数，由
+`node scripts/doc-numbers.mjs --assertions N` 打时间戳）；`DSH_CORE_ROOT` 指向真实装配树时，
+`projection-real` / `lifecycle` / `tool-schemas` / `boot` 四个再跑起来，只剩 `live` 与 `acceptance`
+真正未跑。
+
+**统计口径的坑**：不要把「逐套件 `PASS` 行数」直接相加。`secrets-smoke` 收尾只打印
+`=== all checks passed ===`，没有 `N passed` 行——按数字行加总的脚本会静默跳过它那 26 项，
+得到一个看起来核对过、实际少一整个套件的数字（本文件曾因此写成 1756，比实测少了 26）。
 
 但尾行会写成 `41 passed, 3 skipped`，而不是 `42 passed, 2 skipped`：`boot-smoke` 本身跑了
 29 项，却会为自己那段需要真实主机的远端检查打一行 `SKIP`，而 runner 判定套件状态的唯一依据
@@ -169,7 +175,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `replay-smoke` | 无 | 34 | 失败重放策略：写类 SFTP 操作失败后**不重放**（第一次可能已经在服务器上落地，重放就是执行两次），改标 `outcome: 'unknown'`并保留原始报错文本；远端命令走显式 `replay: 'safe'` 才重试；连接中断记成 `disconnect` 而不是 `reconnect` |
 | `host-key-smoke` | 无 | 18 | 主机密钥固定与**落盘失败的区分**：首次连接记下指纹；不一致直接拒绝；写不进 `knownHosts` 时连接仍成功，但必须记 `degraded` 诊断并在状态里列 `unpinnedHostKeys`，后来固定成功时自动清除——「警告写进无人读的日志」等于用户以为密钥已固定 |
 | `host-listing-smoke` | 无 | 32 | 主机列表把「真的空」与「读不出来」分开：空配置不带提示，被跳过的 `~/.ssh/config` 块带原因列在 `skipped`，存储读失败带 `storeError`——两种完全不同的问题不能都长成「没有主机」 |
-| `client-shape-smoke` | 无 | 157 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径 |
+| `client-shape-smoke` | 无 | 175 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径 |
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 40 | 目录树上传、原子发布、递归与失败路径 |
@@ -189,10 +195,12 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `forward-persist-smoke` | 无 | 102 | 已存映射：意图 / 事实分离、端口预检三态、占用端口不落盘、自动开启幂等、连接断开留痕、**主动断开主机与端口行「断开」逐字段一致**（`live` / `enabled` / `error` 三元组） |
 | `capabilities-smoke` | 无 | 19 | 主机能力探测（rg / git / inotifywait）与提示渲染；答案用 `dsh-tool:<name>` 前缀行，因为存在性必须整行匹配（子串匹配会让路径里的工具名算作已安装） |
 | `capabilities-report-smoke` | 无 | 48 | 远程环境自检（`lib/capabilities.js`）：**三态不可合并**（`unknown` 不是 `absent`，只有 `absent` 带安装提示，缺键读作 `unknown`）、工具表与探测脚本的询问列表同源、四项环境警告各自写清后果、`unknown` 不被计成缺失。引擎侧：一次往返问完全部工具与环境事实、`dsh-env:` 前缀解析、失败探针既不缓存判定也不缓存环境 |
+| `ssh-config-smoke` | 无 | 43 | `Match` 块必须**终止**当前 `Host` 段（`lib/ssh-config.js`）：三个扫描器过去只在 `Host` 行重置选择状态，于是 `Match host db` 之后的 `User` / `Port` / `IdentityFile` 被当成上一个 `Host` 的内容——主机名对、凭据是另一台机器的；更严重的是该段里的 `ProxyJump none` 会取消 `Host *` 的跳板机，让本应被拒的主机变成「可直连」。section 切分现在只有一个实现，精确块、代理扫描与审计都从它读。另钉住 `O-18` 的通配身份字段：`Host *` 里的 `User` 必须报 `lost`（解析器只从精确块取身份，审计也这么说），而精确块里的同一关键字保持沉默；词表每个键都必须能被 `verdictFor` 命中（`addkeysToagent` / `stricthostkeychecking` 曾经是混合大小写的死键，`strict-host-key-checking` 连解析正则都匹配不上） |
 | `config-audit-smoke` | 无 | 37 | `~/.ssh/config` 审计（`lib/config-audit.js`）：`ignored` / `lost` / `refused` 三种判定不可合并（`LocalForward` 是 `lost`，`ProxyJump` 走 `skipped` 而不是审计）、未列出的关键字也有判定、匹配跟随 resolver（`Host *` 生效、`!name` 排除、别的块不串味）、first-wins 且重复只报一次、长值截断、`listing()` 每行带 `unsupported` |
 | `scratch-safety-smoke` | 无 | 41 | 测试自己的远端清理围栏：`DSH_WS_TEST_DIR` 为空、含空格、指向 `/etc` 三种输入都必须在任何删除发生**之前**被拒，而不是把 `rm -rf` 带着错误路径发出去 |
 | `doc-numbers-smoke` | 无 | 17 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红） |
 | `upstream-contract-smoke` | 无 | 37 | 每个补丁声明它碰的宿主符号，双向校验：磁盘上每个 `patch-*.js` 都有契约、契约不指向不存在的文件、安装函数确实导出、声明的符号确实出现在模块里，且安装顺序固定——上游改名一个符号而补丁照常安装，就是「命令静默地跑在本机」 |
+| `redact-smoke` | 无 | 29 | 脱敏规则只有一个实现（`lib/redact.js`），三份对外产物共用：`diagnostics` 的 `exportText()`、支持包、审计行。存在理由是它们曾各写一套并**互相矛盾**——`engine.js` 每条成功连接都记 `connected to alice@prod-db-01.internal.corp:22`，支持包会打码而诊断文本不会，于是「支持包已经打码」正好成了用户放心粘贴诊断文本的理由。断言用真实字符串与真实函数：登录用户名、内网主机名、凭据样式的文件名必须消失，而 `host:port`、路径形状与普通源码文件名必须保留（过度打码的报告同样没用）；家目录 / 私钥 / `password=` 三组旧规则不得回归；脱敏必须幂等；别名掩码与三处产物口径一致 |
 | `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
 | `diagnosis-smoke` | 无 | 77 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**，以及聚合规则（确定的坏压过不确定）。**自检是提示不是判定**：缺工具与环境告警只进 `notes`，不改变 `state` / `warn` / `unknown`，也不与 `findings` 重叠；报告里它们出现在 `advisory (not counted in the verdict):` 一节，而同一份报告中的真问题仍然变红（两条断言互为反向，防止只是「把话改小声」）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
