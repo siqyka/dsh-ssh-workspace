@@ -16,7 +16,7 @@
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 42 | directory listing |
 | test suites | 58 | `tests/run.mjs` |
-| passing assertions (sampled) | 2409 | measured 2026-11-05 |
+| passing assertions (sampled) | 2422 | measured 2026-11-05 |
 
 <!-- doc-numbers:end -->
 
@@ -206,7 +206,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `verify-smoke` | 无 | 28 | 传输校验：三种工具输出的解析（`sha256sum` / `openssl -r` / 大写）、**短于 64 位的十六进制不算摘要**（否则工具的错误文本会被当成校验和「匹配」）、本地流式哈希对上已知值、`compareDigests` 在**两边都取不到摘要时拒绝**（JS 里 `undefined === undefined` 为真，写得天真就会在两边都失败时报告成功）、按偏好顺序找远端工具、探测失败也返回「没有」而不是抛 |
 | `conflict-policy-smoke` | 无 | 28 | 冲突策略四态：默认 overwrite、拼错回落到默认且**绝不变成 rename**、目标不存在时永远 proceed、**skip 是结果不是错误**（树上传撞到已存在文件时不该失败）、refuse 在写入前停、rename 把编号放在扩展名之前、dotfile 的前导点不是扩展名、探测永远说「占用」时会终止 |
 | `store-lock-smoke` | 无 | 15 | 主机存储的跨进程写锁：互斥与降级、死锁接管、并发 `mutateHosts` 不丢条目、`save()` 的替换语义 |
-| `transfer-smoke` | 无 | 59 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去）、**冲突策略真的被 `transferFile` 采用**（skip 不动目标且标 skipped / refuse 抛且一个字节没写 / rename 写在旁边且原文件保留 / 默认仍然覆盖）、**校验如实报告**（无工具时 `verified: false` 且传输本身仍成功 / 摘要不匹配时报 mismatch） |
+| `transfer-smoke` | 无 | 72 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去）、**冲突策略真的被 `transferFile` 采用**（skip 不动目标且标 skipped / refuse 抛且一个字节没写 / rename 写在旁边且原文件保留 / 默认仍然覆盖）、**校验如实报告**（无工具时 `verified: false` 且传输本身仍成功 / 摘要不匹配时报 mismatch）、**目录下载**（形状保留、嵌套目录、**空的远端目录在本地也要出现**——只有遍历能造出它，文件路径自带父目录、symlink 只列出不跟随、冲突按**每个文件**判定而不是整棵树） |
 | `mode-gate-smoke` | 无 | 119 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
 | `shell-smoke` | 无 | 35 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
 | `terminal-smoke` | 无 | 23 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原 |

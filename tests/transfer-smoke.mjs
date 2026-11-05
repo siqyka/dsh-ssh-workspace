@@ -15,7 +15,8 @@
  */
 
 import path from 'node:path'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -31,7 +32,7 @@ if (!coreRoot) {
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { transferFile, uploadTree } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
+const { transferFile, uploadTree, downloadTree } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
 
 let passed = 0
 let failures = 0
@@ -528,6 +529,207 @@ try {
     )
     check('read-only still allows a download', downloadResult.ok === true, JSON.stringify(downloadResult))
   }
+  // --- a directory tree comes down, shape preserved -------------------------
+  {
+    // The remote side is a directory listing the fake SFTP answers from a map.
+    // This is what a caller would otherwise have to write by hand before every
+    // `download` of a tree.
+    const remoteFiles = new Map([
+      ['/remote', null],
+      ['/remote/a.txt', Buffer.from('alpha')],
+      ['/remote/sub', null],
+      ['/remote/sub/b.txt', Buffer.from('beta!')],
+    ])
+    const sftp = {
+      readdir (dir, cb) {
+        const entries = []
+        for (const [full] of remoteFiles) {
+          if (!full.startsWith(`${dir}/`)) continue
+          const rest = full.slice(dir.length + 1)
+          if (rest.includes('/')) continue
+          const value = remoteFiles.get(full)
+          entries.push({
+            filename: rest,
+            longname: rest,
+            attrs: value === null
+              ? { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false, size: 0 }
+              : { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, size: value.length },
+          })
+        }
+        cb(undefined, entries)
+      },
+      stat (target, cb) {
+        const value = remoteFiles.get(target)
+        if (value === undefined) { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
+        if (value === null) { cb(undefined, { isDirectory: () => true, isFile: () => false, size: 0, mode: 0o40755 }); return }
+        cb(undefined, { isDirectory: () => false, isFile: () => true, size: value.length, mode: 0o100644 })
+      },
+      open (target, flags, cb) { cb(undefined, Buffer.from(String(remoteFiles.get(target) ?? ''))) },
+      read (handle, buffer, offset, length, position, cb) {
+        const all = Buffer.from(String(handle))
+        const slice = all.subarray(position, Math.min(position + length, all.length))
+        slice.copy(buffer, offset)
+        cb(undefined, slice.length, buffer)
+      },
+      close (handle, cb) { cb(undefined) },
+    }
+
+    const destination = path.join(scratch, 'downloaded')
+    const result = await downloadTree(fakeEngine(sftp), {
+      alias: 'test',
+      remotePath: '/remote',
+      localPath: destination,
+    })
+    check('the tree reports its file count', result.files === 2, String(result.files))
+    check('and its byte total', result.bytes === 10, String(result.bytes))
+    check('nested files land in nested directories',
+      (await readFile(path.join(destination, 'sub', 'b.txt'))).toString() === 'beta!',
+      await readFile(path.join(destination, 'sub', 'b.txt')).then(buffer => buffer.toString()).catch(() => 'missing'))
+    check('top-level files land at the top',
+      (await readFile(path.join(destination, 'a.txt'))).toString() === 'alpha',
+      'missing')
+  }
+
+  // --- an EMPTY remote directory still appears locally ----------------------
+  {
+    // `downloadFile` creates its own parent, so a tree of nothing but files
+    // arrives whether or not the walk makes directories. An EMPTY directory is
+    // the case that only the walk can produce, and the one a build output's
+    // `logs/` or `cache/` folder hits immediately.
+    const remoteFiles = new Map([
+      ['/shaped', null],
+      ['/shaped/empty', null],
+      ['/shaped/full', null],
+      ['/shaped/full/x.txt', Buffer.from('x')],
+    ])
+    const sftp = {
+      readdir (dir, cb) {
+        const entries = []
+        for (const [full] of remoteFiles) {
+          if (!full.startsWith(`${dir}/`)) continue
+          const rest = full.slice(dir.length + 1)
+          if (rest.includes('/')) continue
+          const value = remoteFiles.get(full)
+          entries.push({
+            filename: rest,
+            longname: rest,
+            attrs: value === null
+              ? { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false, size: 0 }
+              : { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, size: value.length },
+          })
+        }
+        cb(undefined, entries)
+      },
+      stat (target, cb) {
+        const value = remoteFiles.get(target)
+        if (value === undefined) { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
+        if (value === null) { cb(undefined, { isDirectory: () => true, isFile: () => false, size: 0, mode: 0o40755 }); return }
+        cb(undefined, { isDirectory: () => false, isFile: () => true, size: value.length, mode: 0o100644 })
+      },
+      open (target, flags, cb) { cb(undefined, Buffer.from(String(remoteFiles.get(target) ?? ''))) },
+      read (handle, buffer, offset, length, position, cb) {
+        const all = Buffer.from(String(handle))
+        const slice = all.subarray(position, Math.min(position + length, all.length))
+        slice.copy(buffer, offset)
+        cb(undefined, slice.length, buffer)
+      },
+      close (handle, cb) { cb(undefined) },
+    }
+    const destination = path.join(scratch, 'shaped')
+    await downloadTree(fakeEngine(sftp), {
+      alias: 'test',
+      remotePath: '/shaped',
+      localPath: destination,
+    })
+    check('an empty remote directory exists locally', existsSync(path.join(destination, 'empty')),
+      JSON.stringify(existsSync(destination) ? await readFile(path.join(destination, 'full', 'x.txt')).catch(() => 'no x') : 'no root'))
+    check('a directory with files still exists', existsSync(path.join(destination, 'full')),
+      'missing')
+  }
+
+  // --- a symlink in the remote tree is SKIPPED and reported -----------------
+  {
+    // Following one turns "download this directory" into a walk with a size
+    // nobody pictured, so the honest behaviour is to say it was there.
+    const sftp = {
+      readdir (dir, cb) {
+        if (dir === '/linked') {
+          cb(undefined, [
+            { filename: 'real.txt', longname: 'real.txt', attrs: { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, size: 2 } },
+            { filename: 'escape', longname: 'escape', attrs: { isDirectory: () => false, isFile: () => false, isSymbolicLink: () => true, size: 0 } },
+          ])
+          return
+        }
+        cb(undefined, [])
+      },
+      stat (target, cb) {
+        if (target === '/linked/real.txt') { cb(undefined, { isDirectory: () => false, isFile: () => true, size: 2, mode: 0o100644 }); return }
+        cb(Object.assign(new Error('no such file'), { code: 2 }))
+      },
+      open (target, flags, cb) { cb(undefined, Buffer.from('hi')) },
+      read (handle, buffer, offset, length, position, cb) {
+        const all = Buffer.from(String(handle))
+        const slice = all.subarray(position, Math.min(position + length, all.length))
+        slice.copy(buffer, offset)
+        cb(undefined, slice.length, buffer)
+      },
+      close (handle, cb) { cb(undefined) },
+    }
+    const destination = path.join(scratch, 'linked')
+    const result = await downloadTree(fakeEngine(sftp), {
+      alias: 'test',
+      remotePath: '/linked',
+      localPath: destination,
+    })
+    check('the real file came down', result.files === 1, String(result.files))
+    check('the link is listed, not followed', result.links.length === 1 && result.links[0].endsWith('/escape'),
+      JSON.stringify(result.links))
+    check('and nothing was written for it', !existsSync(path.join(destination, 'escape')),
+      'a link target was materialised')
+  }
+
+  // --- the per-FILE conflict policy applies inside a tree -------------------
+  {
+    const sftp = {
+      readdir (dir, cb) {
+        if (dir !== '/mixed') { cb(undefined, []); return }
+        cb(undefined, [
+          { filename: 'exists.txt', longname: 'exists.txt', attrs: { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, size: 3 } },
+          { filename: 'fresh.txt', longname: 'fresh.txt', attrs: { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, size: 3 } },
+        ])
+      },
+      stat (target, cb) {
+        if (target.startsWith('/mixed/')) { cb(undefined, { isDirectory: () => false, isFile: () => true, size: 3, mode: 0o100644 }); return }
+        cb(Object.assign(new Error('no such file'), { code: 2 }))
+      },
+      open (target, flags, cb) { cb(undefined, Buffer.from('new')) },
+      read (handle, buffer, offset, length, position, cb) {
+        const all = Buffer.from(String(handle))
+        const slice = all.subarray(position, Math.min(position + length, all.length))
+        slice.copy(buffer, offset)
+        cb(undefined, slice.length, buffer)
+      },
+      close (handle, cb) { cb(undefined) },
+    }
+    const destination = path.join(scratch, 'mixed')
+    await mkdir(destination, { recursive: true })
+    await writeFile(path.join(destination, 'exists.txt'), 'old')
+    const result = await downloadTree(fakeEngine(sftp), {
+      alias: 'test',
+      remotePath: '/mixed',
+      localPath: destination,
+      onConflict: 'skip',
+    })
+    // Per FILE, not per directory: the interesting tree is mostly-new with one
+    // collision, and refusing the whole tree would lose the rest.
+    check('the colliding file is skipped', result.skipped === 1, JSON.stringify(result))
+    check('the new file still arrives', result.files === 1, String(result.files))
+    check('the existing file keeps its content',
+      (await readFile(path.join(destination, 'exists.txt'))).toString() === 'old', 'overwritten')
+    check('the fresh file was written',
+      (await readFile(path.join(destination, 'fresh.txt'))).toString() === 'new', 'missing')
+  }
+
   // --- the conflict policy reaches the transfer, not just the helper -------
   {
     // The mutation this pins removed the decision from `transferFile`, and the
