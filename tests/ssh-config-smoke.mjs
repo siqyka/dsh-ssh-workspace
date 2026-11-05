@@ -160,21 +160,19 @@ console.log('[2] O-17: a Match body cannot leak into the previous Host')
     '  ProxyJump bastion',
     '',
   ].join('\n'))
-  let thrown = null
-  try {
-    store.resolve('web')
-  } catch (error) {
-    thrown = error
-  }
-  check('the Host * bastion is still honoured: resolve() refuses', thrown !== null, thrown === null ? 'resolve() returned a descriptor' : '')
-  check('...and the refusal names the jump host',
-    thrown !== null && /jump host|ProxyCommand/u.test(String(thrown.message)), String(thrown?.message))
+  // A `Match` body selecting nobody means its `ProxyJump none` does not
+  // cancel the catch-all bastion. The host must therefore route THROUGH the
+  // bastion — not connect directly, which is what reading that `none` would do.
+  const resolved = store.resolve('web')
+  check('the Host * bastion is still honoured', resolved.jump?.kind === 'chain',
+    JSON.stringify(resolved.jump))
+  check('...and the chain names the jump host',
+    resolved.jump?.hops?.[0]?.host === 'bastion', JSON.stringify(resolved.jump))
 
   const listing = store.listing()
-  check('the host does not become a directly-connectable row',
-    listing.rows.every(row => row.alias !== 'web'), JSON.stringify(listing.rows.map(row => row.alias)))
-  check('...it is reported as skipped with the proxy reason',
-    listing.skipped.some(entry => entry.alias === 'web' && /jump host/u.test(entry.reason)),
+  check('the host is listed', listing.rows.some(row => row.alias === 'web'),
+    JSON.stringify(listing.rows.map(row => row.alias)))
+  check('...and nothing is skipped for a proxy reason', (listing.skipped ?? []).length === 0,
     JSON.stringify(listing.skipped))
 }
 
@@ -211,14 +209,10 @@ console.log('[2] O-17: a Match body cannot leak into the previous Host')
     '  ProxyJump bastion',
     '',
   ].join('\n'))
-  let thrown = null
-  try {
-    store.resolve('web')
-  } catch (error) {
-    thrown = error
-  }
-  check('a Match naming the alias does not cancel the bastion', thrown !== null,
-    thrown === null ? 'resolve() returned a descriptor' : '')
+  const resolved = store.resolve('web')
+  check('a Match naming the alias does not cancel the bastion',
+    resolved.jump?.kind === 'chain' && resolved.jump.hops[0]?.host === 'bastion',
+    JSON.stringify(resolved.jump))
 }
 
 {

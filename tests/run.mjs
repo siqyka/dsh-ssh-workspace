@@ -78,6 +78,8 @@ const SUITES = [
   'probe',
   'lifecycle',
   'phase6',
+  'jump-chain',
+  'jump-transport',
   'watch-lifecycle',
   'watch-recovery',
   'store-lock',

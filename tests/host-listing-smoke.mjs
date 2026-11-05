@@ -76,22 +76,25 @@ console.log('\n[1] a genuinely empty configuration has nothing to report')
   check('rows() still answers the bare list', store.rows().length === 0, JSON.stringify(store.rows()))
 }
 
-console.log('\n[2] an unusable config block is reported, not silently dropped')
+console.log('\n[2] a config block this engine cannot honor is reported, not dropped')
 {
-  // A Host block with a jump host: documented as unsupported, so it must not
-  // become a row — but the reason has to reach the user.
+  // `ProxyCommand` is the one transport that stays REFUSED — it is arbitrary
+  // local command execution, and a config file can arrive from a repository.
+  // The reason has to reach the user rather than the host vanishing.
   const { store, dir } = storeWith({
-    configText: 'Host jumpbox\n  HostName jump.example\n  ProxyJump bastion\n',
+    configText: 'Host viacmd\n  HostName via.example\n  ProxyCommand ssh -W %h:%p bastion\n',
   })
   track(dir)
   const listing = store.listing()
-  check('the unusable block does not become a row',
-    listing.rows.every(row => row.alias !== 'jumpbox'), JSON.stringify(listing.rows))
-  check('the unusable block is reported as skipped',
+  check('the refused block does not become a row',
+    listing.rows.every(row => row.alias !== 'viacmd'), JSON.stringify(listing.rows))
+  check('the refused block is reported as skipped',
     (listing.skipped ?? []).length === 1, JSON.stringify(listing.skipped))
-  check('the skip names the alias', listing.skipped[0]?.alias === 'jumpbox', JSON.stringify(listing.skipped))
+  check('the skip names the alias', listing.skipped[0]?.alias === 'viacmd', JSON.stringify(listing.skipped))
   check('the skip explains why',
-    /jump host|ProxyCommand/u.test(listing.skipped[0]?.reason ?? ''), String(listing.skipped[0]?.reason))
+    /ProxyCommand/u.test(listing.skipped[0]?.reason ?? ''), String(listing.skipped[0]?.reason))
+  check('and says what to use instead',
+    /ProxyJump/u.test(listing.skipped[0]?.reason ?? ''), String(listing.skipped[0]?.reason))
 }
 
 console.log('\n[3] an unreadable store is an ERROR, not an empty list')
@@ -158,6 +161,52 @@ console.log('\n[4] a usable store entry is still a row')
   check('a complete listing reports nothing skipped', (listing.skipped ?? []).length === 0, JSON.stringify(listing.skipped))
 }
 
+console.log('\n[4b] a store entry carries its jump chain too')
+{
+  // The ssh-config half of this is covered above. The STORE half is a separate
+  // code path (`storeDescriptor`), and it was the one that once read a jump
+  // host as "none" — so an assertion that only exercises the config parser
+  // leaves the panel-editable shape unguarded.
+  const entry = {
+    alias: 'behind',
+    host: 'behind.example',
+    port: 22,
+    user: 'tester',
+    auth: { kind: 'agent' },
+    proxyJump: ['jump1', 'deploy@jump2:2222'],
+  }
+  const { store, dir } = storeWith({ entries: [entry] })
+  track(dir)
+  const resolved = store.resolve('behind')
+  check('a store entry resolves to a chain', resolved.jump?.kind === 'chain',
+    JSON.stringify(resolved.jump))
+  check('with both hops in order', resolved.jump?.hops?.map(hop => hop.host).join(',') === 'jump1,jump2',
+    JSON.stringify(resolved.jump?.hops))
+  check('and the per-hop user and port survive',
+    resolved.jump?.hops?.[1]?.user === 'deploy' && resolved.jump?.hops?.[1]?.port === 2222,
+    JSON.stringify(resolved.jump?.hops?.[1]))
+  check('the listing still shows the host', store.listing().rows.some(row => row.alias === 'behind'),
+    JSON.stringify(store.listing().rows.map(row => row.alias)))
+
+  // `ProxyJump: []` is what the store writes for "no jump host" — it must not
+  // become an empty chain that then fails to connect.
+  const plain = { alias: 'plainbox', host: 'p.example', port: 22, user: 't', auth: { kind: 'agent' }, proxyJump: [] }
+  const plainStore = storeWith({ entries: [plain] })
+  track(plainStore.dir)
+  check('an empty proxyJump array means direct',
+    plainStore.store.resolve('plainbox').jump?.kind === 'direct',
+    JSON.stringify(plainStore.store.resolve('plainbox').jump))
+
+  // A store entry with a self-reference is refused, not silently dialed.
+  const selfRef = { alias: 'loop', host: 'l.example', port: 22, user: 't', auth: { kind: 'agent' }, proxyJump: ['loop'] }
+  const loopStore = storeWith({ entries: [selfRef] })
+  track(loopStore.dir)
+  let thrown
+  try { loopStore.store.resolve('loop') } catch (error) { thrown = error }
+  check('a store entry that jumps through itself is refused', thrown !== undefined,
+    thrown === undefined ? 'resolved' : '')
+}
+
 console.log('\n[5] `none` cancels a proxy instead of configuring one')
 {
   // The override idiom: `Host *` carries the jump host, one host cancels it.
@@ -175,12 +224,20 @@ console.log('\n[5] `none` cancels a proxy instead of configuring one')
     aliases.includes('cleared'), JSON.stringify(aliases))
   check('ProxyCommand none is listed as a direct host',
     aliases.includes('cmdCleared'), JSON.stringify(aliases))
-  check('a real jump host is still refused',
-    !aliases.includes('stillJumps'), JSON.stringify(aliases))
-  check('exactly the jump-host block is reported as skipped',
-    (listing.skipped ?? []).length === 1, JSON.stringify(listing.skipped))
-  check('the skip names the jump host, not the cancelled ones',
-    listing.skipped[0]?.alias === 'stillJumps', JSON.stringify(listing.skipped))
+  check('a real jump host is LISTED, not refused',
+    aliases.includes('stillJumps'), JSON.stringify(aliases))
+  check('and nothing is skipped for a proxy reason',
+    (listing.skipped ?? []).length === 0, JSON.stringify(listing.skipped))
+  // The route matters: a listed host that silently connects DIRECTLY is the
+  // O-17 bug (it bypasses the bastion the config requires). The chain is part
+  // of the descriptor precisely so the panel and the status tool can say which
+  // route a connection will take.
+  const jumped = store.resolve('stillJumps')
+  check('the resolved descriptor carries the chain',
+    jumped.jump?.kind === 'chain' && jumped.jump.hops[0]?.host === 'bastion',
+    JSON.stringify(jumped.jump))
+  check('while a cancelled host resolves as direct',
+    store.resolve('cleared').jump?.kind === 'direct', JSON.stringify(store.resolve('cleared').jump))
   // `none` must also survive resolve(), not just listing(): a listed host that
   // throws on resolve is a row the user can click and then cannot use.
   const resolved = store.resolve('cleared')
@@ -198,11 +255,11 @@ console.log('\n[6] a jump host in a wildcard block still applies')
   })
   track(dir)
   const listing = store.listing()
-  check('a host covered only by `Host *` is not listed',
-    !listing.rows.some(row => row.alias === 'viaStar'), JSON.stringify(listing.rows))
-  check('it is reported as skipped, with the jump-host reason',
-    (listing.skipped ?? []).some(entry => entry.alias === 'viaStar' && /jump host/u.test(entry.reason)),
-    JSON.stringify(listing.skipped))
+  check('a host covered only by `Host *` is listed',
+    listing.rows.some(row => row.alias === 'viaStar'), JSON.stringify(listing.rows))
+  check('and it carries the catch-all jump host',
+    store.resolve('viaStar').jump?.hops?.[0]?.host === 'bastion',
+    JSON.stringify(store.resolve('viaStar').jump))
 }
 
 console.log('\n[7] per-host values win over a later catch-all, as in OpenSSH')
@@ -218,8 +275,11 @@ console.log('\n[7] per-host values win over a later catch-all, as in OpenSSH')
   const listing = store.listing()
   check('the earlier `ProxyJump none` still wins for its host',
     listing.rows.some(row => row.alias === 'direct'), JSON.stringify(listing.rows))
+  check('so that host connects directly',
+    store.resolve('direct').jump?.kind === 'direct', JSON.stringify(store.resolve('direct').jump))
   check('a host with no earlier value inherits the catch-all jump host',
-    !listing.rows.some(row => row.alias === 'plain'), JSON.stringify(listing.rows))
+    store.resolve('plain').jump?.hops?.[0]?.host === 'bastion',
+    JSON.stringify(store.resolve('plain').jump))
 }
 
 console.log('\n[8] a negated pattern exempts a host from a wildcard block')
@@ -231,6 +291,9 @@ console.log('\n[8] a negated pattern exempts a host from a wildcard block')
   const listing = store.listing()
   check('the exempted host is listed',
     listing.rows.some(row => row.alias === 'exempt'), JSON.stringify(listing.rows))
+  check('and connects directly, because `!exempt` kept it out of the block',
+    store.resolve('exempt').jump?.kind === 'direct',
+    JSON.stringify(store.resolve('exempt').jump))
   check('a `!name` pattern never becomes a row of its own',
     !listing.rows.some(row => row.alias === '!exempt'), JSON.stringify(listing.rows))
   check('nothing else is skipped for a proxy reason',

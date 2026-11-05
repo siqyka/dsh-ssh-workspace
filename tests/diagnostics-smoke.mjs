@@ -136,7 +136,9 @@ console.log('\n[the Host drops logger.debug, so this log is the reachable one]')
 const engineSource = readFileSync(path.join(pluginRoot, 'lib', 'engine.js'), 'utf8')
 check(
   'the engine records connection events into this log',
-  /diagnostics\.record\(KINDS\.connect/.test(engineSource)
+  // Whitespace-tolerant on purpose: the call is wrapped across lines, and this
+  // assertion is about the fact being recorded, not about how it is laid out.
+  /diagnostics\.record\(\s*KINDS\.connect/u.test(engineSource)
 )
 check(
   'the engine does not rely on logger.debug for connection events',

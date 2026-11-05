@@ -54,13 +54,14 @@ console.log('[three verdicts, and they are not interchangeable]')
 }
 
 {
-  // ProxyJump is NOT in the audit, because the audit only covers hosts that
-  // WERE listed. A host with a jump host is refused outright and reported
-  // through `skipped` instead — one problem, one place. Reporting it in both
-  // would make a user see the same sentence twice and wonder which one to fix.
+  // ProxyJump is SUPPORTED now: the engine builds the chain, so it is adopted
+  // rather than refused. An adopted keyword produces no audit row — the audit
+  // reports what had no effect, and this did have one.
   const entries = auditConfigText('Host web\n  ProxyJump bastion\n', 'web')
-  check('a ProxyJump is not duplicated into the audit', entries.length === 0, JSON.stringify(entries))
-  check('...because the resolver refuses the host instead', KNOWN_UNSUPPORTED.proxyjump?.verdict === 'refused')
+  check('a ProxyJump is not reported as a problem', entries.length === 0, JSON.stringify(entries))
+  check('...because it is supported', SUPPORTED_KEYWORDS.has('proxyjump'))
+  check('...and no longer carries a refusal verdict', KNOWN_UNSUPPORTED.proxyjump === undefined,
+    JSON.stringify(KNOWN_UNSUPPORTED.proxyjump))
 }
 
 {
@@ -121,11 +122,14 @@ console.log('\n[supported keywords are not reported]')
 }
 
 {
-  // `ProxyJump` is in SUPPORTED_KEYWORDS because the resolver READS it — in
-  // order to refuse. Reporting it twice (once as supported, once as refused)
-  // would be noise; reporting it as supported-with-no-effect would be a lie.
-  check('the resolver-read keywords are declared supported', SUPPORTED_KEYWORDS.has('proxyjump') && SUPPORTED_KEYWORDS.has('hostname'))
-  check('ProxyJump still has a refusal verdict in the table', KNOWN_UNSUPPORTED.proxyjump?.verdict === 'refused')
+  // `ProxyJump` is in SUPPORTED_KEYWORDS because the resolver really does read
+  // and act on it. `ProxyCommand` is also read — in order to refuse — which is
+  // why it is listed as supported rather than as an ignored keyword: the
+  // refusal IS its effect, and reporting it twice would be noise.
+  check('the resolver-read keywords are declared supported',
+    SUPPORTED_KEYWORDS.has('proxyjump') && SUPPORTED_KEYWORDS.has('hostname') && SUPPORTED_KEYWORDS.has('proxycommand'))
+  check('ProxyCommand still carries a refusal verdict',
+    KNOWN_UNSUPPORTED.proxycommand?.verdict === 'refused', JSON.stringify(KNOWN_UNSUPPORTED.proxycommand))
 }
 
 // ---------------------------------------------------------------------------
@@ -239,8 +243,13 @@ console.log('\n[the listing carries the audit per host]')
   check('a usable host with a lost keyword is still listed', web !== undefined)
   check('...and carries the audit', Array.isArray(web.unsupported) && web.unsupported.length === 1, JSON.stringify(web?.unsupported))
   check('...with the lost verdict', web.unsupported[0].verdict === 'lost', web.unsupported[0].verdict)
-  check('a refused host is not a row', listing.rows.every(row => row.alias !== 'jump'), JSON.stringify(listing.rows.map(r => r.alias)))
-  check('...it is reported as skipped with a reason', listing.skipped.some(entry => entry.alias === 'jump'), JSON.stringify(listing.skipped))
+  // A `ProxyJump` host is now a real route, so it IS a row — and it must
+  // carry the audit for the jump too, because the bastion's own unsupported
+  // keywords matter just as much as the target's.
+  const jump = listing.rows.find(row => row.alias === 'jump')
+  check('a jump host is listed', jump !== undefined, JSON.stringify(listing.rows.map(r => r.alias)))
+  check('...and nothing is skipped for a proxy reason',
+    !(listing.skipped ?? []).some(entry => entry.alias === 'jump'), JSON.stringify(listing.skipped))
   check('a host with nothing unsupported has no audit field',
     listing.rows.filter(row => row.unsupported !== undefined).length === 1,
     JSON.stringify(listing.rows.map(row => row.alias)))

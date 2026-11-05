@@ -31,11 +31,26 @@
  *  - `port`            — where to connect.
  *  - `fingerprint`     — the SHA256 of its host key, for pinning assertions.
  *  - `connections`     — count of accepted connections.
+ *  - `liveConnections` — how many are still open (for teardown assertions).
  *  - `sessions`        — count of opened sessions (channels).
  *  - `dropAll()`       — destroy every live socket, as a network blip would.
  *  - `setHostKey(key)` — swap the key a *new* connection presents (O-08).
+ *  - `forwardRequests` — every `direct-tcpip` request (destination and port).
+ *  - `forwardedChannels` — how many of them became a live tunnel.
+ *  - `peerPorts`       — source port of each accepted connection.
+ *  - `forwardSourcePorts` — local port each tunnel left from. Comparing the two
+ *    proves a connection came THROUGH a hop: on loopback the addresses are
+ *    identical, but the ports are not.
  *  - `rejectNext(n)`   — refuse the next `n` connections before auth.
  *  - `close()`         — stop listening and drop everything.
+ *
+ * `bindHost` (default `127.0.0.1`) is what a suite uses to make a server
+ * reachable from ONE address and not another — the difference between a jump
+ * chain that really tunnels and one that merely could have.
+ *
+ * `direct-tcpip` (what `ProxyJump` uses) is accepted only when the suite opts in
+ * with `allowForwarding: true`, because "this server refuses to forward" is a
+ * real configuration and a suite must be able to exercise it.
  *
  * The drop is `socket.destroy()`, not a graceful `end()`: a lid close or a
  * Wi-Fi switch does not send FIN, and a server that ended cleanly would exercise
@@ -46,6 +61,7 @@
 
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
+import net from 'node:net'
 
 // `createServer` from node:net is unused: ssh2.Server owns its own listener.
 // Kept out of the import list so the linter's unused-import rule stays satisfied.
@@ -106,7 +122,7 @@ export async function startFakeSshServer (options = {}) {
   let closed = false
   let boundPort = 0
   const clients = new Set()
-  const state = { connections: 0, sessions: 0, execs: [], sftpChannels: 0, agentRequests: 0 }
+  const state = { connections: 0, sessions: 0, execs: [], sftpChannels: 0, agentRequests: 0, forwardRequests: [], forwardedChannels: 0, peerPorts: [], forwardSourcePorts: [] }
 
   /**
    * Build and listen on one ssh2 Server.
@@ -146,6 +162,36 @@ export async function startFakeSshServer (options = {}) {
         ctx.reject()
       })
       client.on('ready', () => {
+        // `direct-tcpip` is what a jump chain uses: the client asks THIS server
+        // to open a TCP connection to some address, and then speaks SSH down
+        // the resulting stream. Without a handler ssh2 rejects the channel,
+        // which is precisely how a server with forwarding disabled behaves —
+        // so a suite that wants a working chain must see it accepted.
+        //
+        // The tunnel is a real TCP connection to the requested address, so a
+        // chain built on top of it reaches the NEXT fake server (or the target)
+        // exactly as it would through a real bastion.
+        client.on('tcpip', (acceptTcpip, rejectTcpip, info) => {
+          state.forwardRequests.push({ destIP: info.destIP, destPort: info.destPort })
+          if (options.allowForwarding !== true) {
+            rejectTcpip()
+            return
+          }
+          const upstream = net.connect(info.destPort, info.destIP)
+          upstream.once('connect', () => {
+            // The LOCAL port this tunnel leaves from. Comparing it with what
+            // the destination saw is the only way to prove a connection
+            // arrived THROUGH a hop rather than beside it: both sides are on
+            // loopback, so addresses cannot tell them apart, but ports can.
+            state.forwardSourcePorts.push(upstream.localPort)
+            const channel = acceptTcpip()
+            state.forwardedChannels += 1
+            channel.pipe(upstream).pipe(channel)
+            channel.on('close', () => { try { upstream.destroy() } catch { /* gone */ } })
+            upstream.on('close', () => { try { channel.close() } catch { /* gone */ } })
+          })
+          upstream.once('error', () => { try { upstream.destroy() } catch { /* gone */ } })
+        })
         client.on('session', (accept) => {
           state.sessions += 1
           const session = accept()
@@ -189,6 +235,9 @@ export async function startFakeSshServer (options = {}) {
     })
 
     server.on('connection', (connection) => {
+      // Who dialed us, as an ephemeral port. See `forwardSourcePorts`.
+      const peerPort = connection._sock?.remotePort
+      if (typeof peerPort === 'number') state.peerPorts.push(peerPort)
       // ssh2 forwards its inner net server's `connection` event, but the
       // argument it forwards is the ssh2 `Connection`, not a socket — so
       // nothing here can be destroyed directly. The raw socket is reached
@@ -203,7 +252,7 @@ export async function startFakeSshServer (options = {}) {
 
     await new Promise((resolve, reject) => {
       server.once('error', reject)
-      server.listen(port, '127.0.0.1', () => {
+      server.listen(port, options.bindHost ?? '127.0.0.1', () => {
         server.removeListener('error', reject)
         resolve()
       })
@@ -229,7 +278,24 @@ export async function startFakeSshServer (options = {}) {
     get sftpChannels () { return state.sftpChannels },
     /** Count of per-channel agent-forwarding requests seen. */
     get agentRequests () { return state.agentRequests },
+    /** Every `direct-tcpip` request seen, in order. */
+    get forwardRequests () { return [...state.forwardRequests] },
+    /** How many of them became a live tunnel. */
+    get forwardedChannels () { return state.forwardedChannels },
+    /** Source port of each accepted connection (who dialed this server). */
+    get peerPorts () { return [...state.peerPorts] },
+    /** Local port each forwarded tunnel left from. */
+    get forwardSourcePorts () { return [...state.forwardSourcePorts] },
     get execs () { return [...state.execs] },
+    /**
+     * How many client connections are open RIGHT NOW.
+     *
+     * The distinguishability that matters for a jump chain's teardown: the
+     * target's socket is one, and each bastion's is another. A record closed
+     * without closing its hops leaves this above zero with nothing to show for
+     * it — exactly the leak a "the workspace looks closed" check would miss.
+     */
+    get liveConnections () { return clients.size },
     /** Every live connection destroyed, as a network blip would. */
     dropAll () {
       for (const client of clients) drop(client)
