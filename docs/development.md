@@ -14,8 +14,8 @@
 | HTTP routes | 25 | `lib/routes.js` |
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 35 | directory listing |
-| test suites | 49 | `tests/run.mjs` |
+| modules under `lib/` | 36 | directory listing |
+| test suites | 50 | `tests/run.mjs` |
 | passing assertions (sampled) | 1943 | measured 2026-11-05 |
 
 <!-- doc-numbers:end -->
@@ -196,6 +196,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `watch-recovery-smoke` | 无 | 28 | 变更监视在断线后**不死**：策略表（连接健康 / 无重连循环 / 循环已放弃 → 上报；断线且循环在跑 → 重试）逐条执行而非 grep，退避阶梯有上限，真实 `watch()` 在链路断开时继续尝试、恢复后补一次重扫，而健康链路上的失败仍然上报并停止轮询 |
 | `jump-chain-smoke` | 无 | 46 | `ProxyJump` 的解析与拒绝：`user@host:port`、IPv6 字面量的方括号、`a,b` 多跳与顺序、未写端口时**继承**该主机的端口而不是假定 22、store 的数组形状与 config 的字符串形状、`none`（任意大小写）表示直连而混进列表是错误、超 8 跳拒绝、自引用与重复跳（按主机判重）拒绝、描述句 |
 | `jump-transport-smoke` | 真 ssh2（假 SSH 服务器） | 34 | `ProxyJump` 真的走了跳板机：一跳与两跳拓扑下逐个核对 bastion 的 `direct-tcpip` 目的地、**用源端口证明目标看到的连接来自 bastion 的隧道而不是本机直连**（环回上地址无法区分，端口可以）、每跳各自认证并固定自己的主机密钥（换掉 bastion 的密钥会拒绝整条链，而目标的记录不受影响）、bastion 拒绝转发时大声失败且目标一个连接都没收到、关闭记录与建链失败都收掉全部跳的会话 |
+| `reverse-forward-smoke` | 真 ssh2（假 SSH 服务器） | 32 | `ssh -R`：远端真的绑了端口、连接从远端进来并到达本机服务、字节双向往返；关闭时**远端监听被取消**（服务端状态，真往返）；本地目标已死时远端通道**及时关闭**（按耗时区分"关闭"与"超时"，空负载分不出来）；host 拒绝绑定时大声失败；非环回绑定被标为 exposed 且写进诊断；`isExposedBind` 单独执行 |
 | `store-lock-smoke` | 无 | 15 | 主机存储的跨进程写锁：互斥与降级、死锁接管、并发 `mutateHosts` 不丢条目、`save()` 的替换语义 |
 | `transfer-smoke` | 无 | 43 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去） |
 | `mode-gate-smoke` | 无 | 119 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |

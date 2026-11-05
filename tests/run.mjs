@@ -80,6 +80,7 @@ const SUITES = [
   'phase6',
   'jump-chain',
   'jump-transport',
+  'reverse-forward',
   'watch-lifecycle',
   'watch-recovery',
   'store-lock',

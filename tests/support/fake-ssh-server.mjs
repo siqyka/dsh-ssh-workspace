@@ -37,6 +37,9 @@
  *  - `setHostKey(key)` — swap the key a *new* connection presents (O-08).
  *  - `forwardRequests` — every `direct-tcpip` request (destination and port).
  *  - `forwardedChannels` — how many of them became a live tunnel.
+ *  - `reverseRequests` — every `tcpip-forward` (what the client asked to bind).
+ *  - `reversePorts`    — ports this server listens on because the client asked.
+ *  - `reverseConnections` — connections that arrived on those listeners.
  *  - `peerPorts`       — source port of each accepted connection.
  *  - `forwardSourcePorts` — local port each tunnel left from. Comparing the two
  *    proves a connection came THROUGH a hop: on loopback the addresses are
@@ -50,7 +53,10 @@
  *
  * `direct-tcpip` (what `ProxyJump` uses) is accepted only when the suite opts in
  * with `allowForwarding: true`, because "this server refuses to forward" is a
- * real configuration and a suite must be able to exercise it.
+ * real configuration and a suite must be able to exercise it. `tcpip-forward`
+ * (what `ssh -R` uses) has its own switch, `allowReverseForwarding`, for the
+ * same reason: a hardened server refuses both, and the two refusals are
+ * different code paths.
  *
  * The drop is `socket.destroy()`, not a graceful `end()`: a lid close or a
  * Wi-Fi switch does not send FIN, and a server that ended cleanly would exercise
@@ -122,7 +128,7 @@ export async function startFakeSshServer (options = {}) {
   let closed = false
   let boundPort = 0
   const clients = new Set()
-  const state = { connections: 0, sessions: 0, execs: [], sftpChannels: 0, agentRequests: 0, forwardRequests: [], forwardedChannels: 0, peerPorts: [], forwardSourcePorts: [] }
+  const state = { connections: 0, sessions: 0, execs: [], sftpChannels: 0, agentRequests: 0, forwardRequests: [], forwardedChannels: 0, peerPorts: [], forwardSourcePorts: [], reverseListeners: new Map(), reverseConnections: 0, reverseRequests: [] }
 
   /**
    * Build and listen on one ssh2 Server.
@@ -162,6 +168,72 @@ export async function startFakeSshServer (options = {}) {
         ctx.reject()
       })
       client.on('ready', () => {
+        // `tcpip-forward` is `ssh -R`: the CLIENT asks THIS server to listen,
+        // and connections arriving on that port are pushed back to the client
+        // as `forwarded-tcpip` channels. Without a handler ssh2 answers
+        // FAILURE, which is what a server with `AllowTcpForwarding no` does —
+        // so a suite that wants a working reverse tunnel opts in.
+        //
+        // The listener is a real net.Server, so a suite can connect to the
+        // assigned port the way a remote process would and watch the tunnel
+        // carry the bytes.
+        client.on('request', (acceptReq, rejectReq, name, data) => {
+          if (name === 'tcpip-forward') {
+            if (options.allowReverseForwarding !== true) {
+              rejectReq()
+              return
+            }
+            const bindPort = data.bindPort
+            state.reverseRequests.push({ bindAddr: data.bindAddr, bindPort })
+            const server = net.createServer((remoteSocket) => {
+              state.reverseConnections += 1
+              // `boundAddr`/`boundPort` are the address the CLIENT asked this
+              // server to listen on — ssh2 on the client side looks the pair up
+              // in its own `_forwarding` table and drops the channel when it
+              // does not match. Reporting the address the socket actually
+              // arrived on instead is the natural mistake, and it produces a
+              // tunnel that accepts connections and then silently never
+              // delivers them.
+              client.forwardOut(
+                data.bindAddr,
+                boundPort,
+                remoteSocket.remoteAddress ?? '127.0.0.1',
+                remoteSocket.remotePort ?? 0,
+                (error, stream) => {
+                  if (error !== undefined && error !== null) {
+                    remoteSocket.destroy()
+                    return
+                  }
+                  remoteSocket.pipe(stream).pipe(remoteSocket)
+                  remoteSocket.on('error', () => { try { stream.destroy() } catch { /* gone */ } })
+                  stream.on('error', () => remoteSocket.destroy())
+                  stream.on('close', () => remoteSocket.destroy())
+                },
+              )
+            })
+            let boundPort
+            server.once('error', () => rejectReq())
+            server.listen(bindPort, '127.0.0.1', () => {
+              boundPort = server.address().port
+              state.reverseListeners.set(`${data.bindAddr}:${boundPort}`, server)
+              acceptReq(boundPort)
+            })
+            return
+          }
+          if (name === 'cancel-tcpip-forward') {
+            const key = `${data.bindAddr}:${data.bindPort}`
+            const server = state.reverseListeners.get(key)
+            if (server !== undefined) {
+              state.reverseListeners.delete(key)
+              try { server.close() } catch { /* already closed */ }
+              acceptReq()
+              return
+            }
+            rejectReq()
+            return
+          }
+          rejectReq()
+        })
         // `direct-tcpip` is what a jump chain uses: the client asks THIS server
         // to open a TCP connection to some address, and then speaks SSH down
         // the resulting stream. Without a handler ssh2 rejects the channel,
@@ -284,6 +356,12 @@ export async function startFakeSshServer (options = {}) {
     get forwardedChannels () { return state.forwardedChannels },
     /** Source port of each accepted connection (who dialed this server). */
     get peerPorts () { return [...state.peerPorts] },
+    /** Every `tcpip-forward` request: what the client asked this host to bind. */
+    get reverseRequests () { return [...state.reverseRequests] },
+    /** Ports this server is listening on BECAUSE the client asked (ssh -R). */
+    get reversePorts () { return [...state.reverseListeners.keys()].map(key => Number(key.split(':').pop())) },
+    /** How many connections arrived on those listeners. */
+    get reverseConnections () { return state.reverseConnections },
     /** Local port each forwarded tunnel left from. */
     get forwardSourcePorts () { return [...state.forwardSourcePorts] },
     get execs () { return [...state.execs] },
@@ -323,6 +401,14 @@ export async function startFakeSshServer (options = {}) {
     async close () {
       if (closed) return
       closed = true
+      // Reverse listeners are separate net.Servers holding the event loop open.
+      // Leaving them behind makes a suite that prints every PASS hang instead
+      // of exiting — a failure mode reported as "no result" rather than as a
+      // wrong one, which is strictly harder to diagnose.
+      for (const [, listener] of state.reverseListeners) {
+        try { listener.close() } catch { /* already closed */ }
+      }
+      state.reverseListeners.clear()
       for (const client of clients) drop(client)
       clients.clear()
       await new Promise((resolve) => server.close(resolve))
