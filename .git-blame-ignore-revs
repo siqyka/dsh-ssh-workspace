@@ -1,0 +1,7 @@
+# Commits listed here are skipped by `git blame --ignore-revs-file`.
+# They change formatting only (line endings, escaped control characters),
+# so attributing lines to them would hide who actually wrote the code.
+#
+# Enable it in this clone with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+8c11354072f6a1954a86bf457551ed13f7e0d473
