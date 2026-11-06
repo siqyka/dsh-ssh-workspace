@@ -208,14 +208,15 @@ PowerShell），无法驱动远端主机，因此本插件单独提供这个工�
 | `direction` | 是 | `upload`（本机 → 远端）或 `download`（远端 → 本机） |
 | `localPath` | 是 | 本机绝对路径（上传的源 / 下载的目标） |
 | `remotePath` | 是 | 远端绝对路径（上传的目标 / 下载的源） |
-| `recursive` | 否 | 上传整个本地目录树（仅 `upload`） |
+| `recursive` | 否 | 整个目录树，任方向都支持（下载时树内的 symlink 只列出不跟随） |
 
-返回 `ok`、`bytes`、`files`（递归时）、`error`。
+返回 `ok`、`bytes`、`files`（递归时）、`skippedFiles`、`skippedLinks`、`error`。
 
 上传**先写同级暂存名再 rename 发布**：目标文件在被替换之前，读到的始终是旧
 内容或完整新内容，不会是半截文件。上传失败会清掉暂存文件并保留目标原内容。
 下载读至 EOF 而非依赖 stat 时的长度，因此传输期间变长的文件会被完整取回。
-单文件上限 1 GiB。
+单文件上限 1 GiB，**对工具与浏览器两条路由是同一个数**（`transfer.js` 导出、`routes.js`
+引用；超限回答 413 而不是 500）。
 
 上传的落点与 `write` 工具受**同一套**围栏约束，且在任何字节发出之前判定：
 

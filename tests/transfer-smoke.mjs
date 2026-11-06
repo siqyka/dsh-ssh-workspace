@@ -15,7 +15,7 @@
  */
 
 import path from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -1059,6 +1059,239 @@ try {
   try { outcome = await waiting } catch (error) { outcome = error.message }
   check('a failing write stream settles the wait instead of hanging',
     /ENOSPC/u.test(String(outcome)), String(outcome))
+}
+
+// --- a tree upload HONOURS the conflict policy ---------------------------
+//
+// Measured before this: `uploadTree` accepted `onConflict` and never read it,
+// so a tree upload overwrote existing remote files even with
+// `onConflict: 'refuse'` — it reported success and the destination held the new
+// bytes. `downloadTree` had decided per file since it was written, so the two
+// halves of one feature disagreed about the one thing a caller cannot undo.
+//
+// Each policy is exercised against a destination that already exists, because
+// a test that only uses a FREE destination passes with the policy ignored.
+{
+  const { mkdir } = await import('node:fs/promises')
+  const tree = path.join(scratch, 'conflict-tree')
+  await mkdir(path.join(tree, 'nested'), { recursive: true })
+  await writeFile(path.join(tree, 'taken.txt'), 'NEW')
+  await writeFile(path.join(tree, 'fresh.txt'), 'FRESH')
+  await writeFile(path.join(tree, 'nested', 'deep.txt'), 'DEEP')
+
+  /** Run one tree upload against a host that already holds `taken.txt`. */
+  const upload = async (onConflict) => {
+    const { sftp, files } = fakeSftp({
+      files: [['/srv/ct/taken.txt', Buffer.from('OLD')]],
+      dirs: ['/srv', '/srv/ct'],
+    })
+    let error
+    let result
+    try {
+      result = await uploadTree(fakeEngine(sftp), {
+        alias: 'test',
+        localPath: tree,
+        remotePath: '/srv/ct',
+        ...(onConflict === undefined ? {} : { onConflict }),
+      })
+    } catch (caught) { error = caught }
+    return { error, result, files }
+  }
+
+  {
+    const { error, files } = await upload('refuse')
+    check('a tree upload refuses before overwriting', error !== undefined && /refuse/u.test(error.message), error?.message)
+    check('refuse left the existing remote file untouched',
+      files.get('/srv/ct/taken.txt')?.toString() === 'OLD', JSON.stringify(files.get('/srv/ct/taken.txt')?.toString()))
+    // A refusal on the FIRST colliding file is not a licence to have written the
+    // others: the walk is sorted, `fresh.txt` < `taken.txt`, so this also pins
+    // that the failure is a real abort rather than "continue and report".
+    check('refuse did not publish the files that sorted after it',
+      files.has('/srv/ct/nested/deep.txt') === false, JSON.stringify([...files.keys()]))
+  }
+
+  {
+    const { error, result, files } = await upload('skip')
+    check('a tree upload skips the colliding file', error === undefined && result.skipped === 1, JSON.stringify(result))
+    check('skip left the existing remote file untouched',
+      files.get('/srv/ct/taken.txt')?.toString() === 'OLD', JSON.stringify(files.get('/srv/ct/taken.txt')?.toString()))
+    check('skip still uploaded the files that did not collide',
+      files.get('/srv/ct/fresh.txt')?.toString() === 'FRESH' && files.get('/srv/ct/nested/deep.txt')?.toString() === 'DEEP',
+      JSON.stringify([...files.keys()]))
+    check('skip did not count the skipped file as transferred', result.files === 2, JSON.stringify(result))
+  }
+
+  {
+    const { error, result, files } = await upload('rename')
+    check('a tree upload renames rather than overwrite', error === undefined && result.files === 3, JSON.stringify(result))
+    check('rename left the original remote file untouched',
+      files.get('/srv/ct/taken.txt')?.toString() === 'OLD', JSON.stringify(files.get('/srv/ct/taken.txt')?.toString()))
+    check('rename wrote the new bytes beside it',
+      files.get('/srv/ct/taken.1.txt')?.toString() === 'NEW', JSON.stringify([...files.keys()]))
+  }
+
+  {
+    const { error, files } = await upload('overwrite')
+    check('the default policy still overwrites', error === undefined, error?.message)
+    check('and the destination holds the new bytes',
+      files.get('/srv/ct/taken.txt')?.toString() === 'NEW', JSON.stringify(files.get('/srv/ct/taken.txt')?.toString()))
+  }
+
+  // An omitted policy must behave like the documented default, not like
+  // "no policy at all" — that spelling is what a caller who never read the
+  // option uses.
+  {
+    const { error, files } = await upload(undefined)
+    check('an omitted tree policy defaults to overwrite', error === undefined
+      && files.get('/srv/ct/taken.txt')?.toString() === 'NEW', JSON.stringify(files.get('/srv/ct/taken.txt')?.toString()))
+  }
+
+  // A tree that collides in a NESTED directory is decided the same way: the
+  // check has to run inside `walk`, not once at the root.
+  {
+    const nestedTree = path.join(scratch, 'nested-tree')
+    await mkdir(path.join(nestedTree, 'a', 'b'), { recursive: true })
+    await writeFile(path.join(nestedTree, 'a', 'b', 'deep.txt'), 'NEW-DEEP')
+    const { sftp, files } = fakeSftp({
+      files: [['/srv/nt/a/b/deep.txt', Buffer.from('OLD-DEEP')]],
+      dirs: ['/srv', '/srv/nt'],
+    })
+    const result = await uploadTree(fakeEngine(sftp), {
+      alias: 'test',
+      localPath: nestedTree,
+      remotePath: '/srv/nt',
+      onConflict: 'skip',
+    })
+    check('a nested collision is skipped too', result.skipped === 1 && result.files === 0, JSON.stringify(result))
+    check('the nested destination kept its old bytes',
+      files.get('/srv/nt/a/b/deep.txt')?.toString() === 'OLD-DEEP',
+      JSON.stringify(files.get('/srv/nt/a/b/deep.txt')?.toString()))
+  }
+
+  // The pre-pass is a LOOK, so it cannot be the last word: something can create
+  // the destination between the look and the write (another process, another
+  // client, an editor saving). The per-file decision therefore has to stay in
+  // place as the authoritative check, and this is the only way to reach it now
+  // that the pre-pass catches the ordinary case.
+  //
+  // The window is made real rather than simulated: the double starts reporting
+  // `taken.txt` as existing only AFTER the pre-pass has already asked, which is
+  // exactly the interleaving a second writer produces.
+  {
+    const raceTree = path.join(scratch, 'race-tree')
+    await mkdir(raceTree, { recursive: true })
+    await writeFile(path.join(raceTree, 'taken.txt'), 'NEW-RACE')
+    const { sftp, files } = fakeSftp({ dirs: ['/srv', '/srv/rt'] })
+
+    let statsForTaken = 0
+    const statInner = sftp.stat.bind(sftp)
+    sftp.stat = (target, callback) => {
+      if (target === '/srv/rt/taken.txt') {
+        statsForTaken += 1
+        // The 1st ask is the pre-pass; every later ask is the per-file decision.
+        if (statsForTaken === 1) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
+        files.set('/srv/rt/taken.txt', Buffer.from('APPEARED-DURING-TRANSFER'))
+        callback(null, { isFile: () => true, isDirectory: () => false, size: 24, mode: 0o644, mtime: 0 })
+        return
+      }
+      statInner(target, callback)
+    }
+
+    let error
+    try {
+      await uploadTree(fakeEngine(sftp), {
+        alias: 'test',
+        localPath: raceTree,
+        remotePath: '/srv/rt',
+        onConflict: 'refuse',
+      })
+    } catch (caught) { error = caught }
+    check('a destination that appears after the pre-pass still aborts a refuse upload',
+      error !== undefined && /refuse/u.test(error.message), error?.message)
+    check('and it was not overwritten',
+      files.get('/srv/rt/taken.txt')?.toString() === 'APPEARED-DURING-TRANSFER',
+      JSON.stringify(files.get('/srv/rt/taken.txt')?.toString()))
+    check('the race actually went through the per-file decision', statsForTaken >= 2, `${statsForTaken} stat(s)`)
+  }
+
+  // A `refuse` collision that lives ONLY in a nested directory must still abort
+  // before anything is published. Without this the pre-pass could look at the
+  // top level only and still pass every assertion above, because the flat
+  // fixture collides at the root.
+  {
+    const deepTree = path.join(scratch, 'deep-tree')
+    await mkdir(path.join(deepTree, 'x', 'y'), { recursive: true })
+    await writeFile(path.join(deepTree, 'aaa.txt'), 'AAA')
+    await writeFile(path.join(deepTree, 'x', 'y', 'zzz.txt'), 'ZZZ')
+    const { sftp, files } = fakeSftp({
+      files: [['/srv/dt/x/y/zzz.txt', Buffer.from('OLD-ZZZ')]],
+      dirs: ['/srv', '/srv/dt'],
+    })
+    let error
+    try {
+      await uploadTree(fakeEngine(sftp), {
+        alias: 'test',
+        localPath: deepTree,
+        remotePath: '/srv/dt',
+        onConflict: 'refuse',
+      })
+    } catch (caught) { error = caught }
+    check('a nested collision aborts a refuse tree upload', error !== undefined && /refuse/u.test(error.message), error?.message)
+    // `aaa.txt` sorts BEFORE `x/y/zzz.txt`, so a per-file decision would already
+    // have published it by the time the collision was found.
+    check('and the earlier file was never published',
+      files.has('/srv/dt/aaa.txt') === false, JSON.stringify([...files.keys()]))
+    check('and the nested destination kept its old bytes',
+      files.get('/srv/dt/x/y/zzz.txt')?.toString() === 'OLD-ZZZ',
+      JSON.stringify(files.get('/srv/dt/x/y/zzz.txt')?.toString()))
+  }
+}
+
+// --- one limit, both doors -----------------------------------------------
+//
+// `docs/features.md` states "单文件上限 1 GiB" as a property of the plugin.
+// Measured before this: the agent's tool enforced it and both browser routes did
+// not, so the same 2 GiB file was refused through one door and accepted through
+// the other. These checks pin the constant's VALUE and that every door reads the
+// same one — a duplicated `1024 ** 3` in routes.js would drift silently.
+{
+  const { DEFAULT_MAX_BYTES, oversizeMessage } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
+  const routesSource = readFileSync(path.join(pluginRoot, 'lib/routes.js'), 'utf8')
+  const transferSource = readFileSync(path.join(pluginRoot, 'lib/transfer.js'), 'utf8')
+
+  check('the shared limit is 1 GiB', DEFAULT_MAX_BYTES === 1024 * 1024 * 1024, String(DEFAULT_MAX_BYTES))
+  check('routes.js imports the limit instead of hard-coding it',
+    /import \{[^}]*DEFAULT_MAX_BYTES[^}]*\} from '\.\/transfer\.js'/u.test(routesSource), 'not imported')
+  check('routes.js hard-codes no gigabyte literal',
+    !/1024\s*\*\s*1024\s*\*\s*1024/u.test(routesSource), 'a second copy of the limit exists')
+  check('transfer.js states the limit once',
+    (transferSource.match(/const DEFAULT_MAX_BYTES/gu) ?? []).length === 1, 'duplicated constant')
+  check('the refusal message names the number and the limit',
+    oversizeMessage('upload', 5000) === 'refusing to upload 5000 bytes (limit 1073741824)',
+    oversizeMessage('upload', 5000))
+  // Both browser doors must consult it; a limit defined and unused is the
+  // "looks enforced, is not" shape this repository keeps finding.
+  check('the browser upload route bounds the running total',
+    /written > DEFAULT_MAX_BYTES/u.test(routesSource), 'no running-total check')
+  check('the browser upload route also pre-checks the declared length',
+    /declared > DEFAULT_MAX_BYTES/u.test(routesSource), 'no declared-length check')
+  check('the browser download route bounds the file size',
+    /size > DEFAULT_MAX_BYTES/u.test(routesSource), 'no size check')
+  // A 200 with an error body is indistinguishable from content once the headers
+  // are out, so the download refusal must happen before `writeHead`.
+  {
+    const headAt = routesSource.indexOf("'content-type': 'application/octet-stream'")
+    const checkAt = routesSource.indexOf('size > DEFAULT_MAX_BYTES')
+    check('the download refusal precedes the response headers',
+      checkAt > 0 && headAt > 0 && checkAt < headAt, `check@${checkAt} head@${headAt}`)
+  }
+  // BOTH status mappers need the case, and counting occurrences is what makes
+  // this assertion able to fail: one shared regex over the whole file matches
+  // either occurrence, so mutating one mapper to 500 left the other one green.
+  const tooLarge413 = (routesSource.match(/case 'FS_TOO_LARGE': return 413/gu) ?? []).length
+  check('an oversize transfer maps to 413 in BOTH status mappers', tooLarge413 === 2, `${tooLarge413} mapping(s)`)
+  check('no status mapper answers an oversize transfer with 500',
+    !/case 'FS_TOO_LARGE': return 500/u.test(routesSource), 'a mapper sends 500')
 }
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
