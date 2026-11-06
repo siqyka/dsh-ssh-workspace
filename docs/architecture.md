@@ -493,6 +493,12 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   门外（浏览器半边始终携带该头，不受影响）。
   `upload` 是唯一例外：它按 `application/octet-stream` 接收原始字节，因此另行
   自行施加回环与 `Host` 双重校验（`download` / `upload` 都不走 `guard`）。
+  同一条写路径还有第二个门 `upload-chunk`：它走普通 JSON（因此走 `guard`），
+  文件以 base64 分片到达、按 `uploadId` 派生暂存名、末片 rename 发布。存在的原因
+  是**打包成桌面应用后 `dsh-app://` 承载不了 Blob 请求体**——在那里 `upload`
+  的请求在网络层就失败（`net::ERR_UNEXPECTED`），handler 根本没跑过；JSON 请求
+  却能穿过同一层，所以分片版才是桌面里真正可用的那条路。客户端按
+  `location.protocol` 二选一。
 - **停用围栏**横跨所有缝：`engine.disabledWorkspaces` 是唯一真相，
   `ctx.fs`、内建 fs 桥、`ctx.shell`、`ctx.subprocess`、终端接管层与
   `transfer` / `download` / `upload` 在建立连接之前统一拒绝。

@@ -207,10 +207,11 @@ Host web
 **右键任务菜单的 `role` 是装饰性的**：`openTaskMenu`（`:4374`）设 `role="menu"`、`:4382` 设 `role="menuitem"`，但整段（`:4368-4460`）没有焦点管理、没有方向键、没有 Home/End，也没有接 `useMenuKeyboard`；触发方式只有 `contextmenu`（`:4611`），键盘用户打不开。**虚假语义比没有语义更糟**——读屏器会宣告"菜单"，用户却进不去。而它恰是"下载 / 上传 / 加入任务"的唯一入口。
 
 **错误提示 3.5 秒后自行消失，且无重试**：`:2050` 与 `:4072` 都是 `setTimeout(..., 3500)`，传输失败只经 toast 告知（`:4158`、`:4211`），3.5 秒后连错误文本一起消失，没有重试按钮、没有详情留存、不能复制。错误用 `role="status"`（polite）而不是 `alert`，读屏可能还没读完就被移除。
+（**2026-11-06 后续**：`role` 已改成 `alert`（见上表 C-01 的修复）；"永久保留"这半个决定也已**撤销**——成功与失败现在共用同一个 **7 秒**窗口（`TOAST_DISMISS_MS`），指针停在提示上时暂停、移开重计满，到期时把焦点交还来源元素。理由是单槽 toast：一条永久失败会把后面那条"重试成功了"藏起来。仍未做的只有重试按钮 / 详情留存 / 复制。）
 
 **建议**：把 `client-shape-smoke:354` 的 `=== 3` 改成"每个对话框组件都必须调用钩子"的枚举断言（或直接断 `count(对话框组件) === count(useDialogA11y 调用点)`），这样第 5 个对话框漏接也会红；给条目行加 `tabIndex={0}`、`role="button"` 与 Enter/Space 处理；`DirectoryBrowser` 接入 `useDialogA11y`；右键菜单接入键盘（复用 `nextMenuIndex` 的索引算术，DOM 版需抽出共享计算）；`ls` 加 `limit` + `offset` 并在超阈值时给出"已截断"提示；错误 toast 不自动消失或延长到可读完，并提供重试。
 
-**验收**：`DirectoryBrowser` 满足与其余三个对话框相同的断言；纯键盘能在文件浏览器里进入目录、下载文件、关闭对话框并回到触发元素；右键菜单可用键盘打开并选择；`ls` 超限时有明确提示；错误 toast 在用户操作前不消失；断言 `useDialogA11y` 的调用点数与对话框组件数相等，而不是等于一个字面量。
+**验收**：`DirectoryBrowser` 满足与其余三个对话框相同的断言；纯键盘能在文件浏览器里进入目录、下载文件、关闭对话框并回到触发元素；右键菜单可用键盘打开并选择；`ls` 超限时有明确提示；错误 toast 在 7 秒窗口内可读（悬停暂停）、且过期不把焦点丢到 `<body>`；断言 `useDialogA11y` 的调用点数与对话框组件数相等，而不是等于一个字面量。
 
 ### C-02 O-12 的"前提不成立"只对了一半，第三选项确实存在
 
@@ -317,7 +318,7 @@ O-17 与 O-18 的共同根因不是支持字段太少，而是同一份配置被
 | 其他 ssh_config 语义 | 同上，逐个临时配置 | `Include` **不被跟随**（主文件的 `HostName` 生效，被包含文件被忽略）；重复 `Host` 块 first-wins（取 `first`）；`Host WEB` 查 `web` → 拒绝（大小写敏感，与 OpenSSH 一致）；单独 `ProxyCommand` → 拒绝；`Host * !web` 的 `ProxyJump` **不**作用于 `web`（否定模式正确） |
 | C-01 第 4 个对话框 | 读 `lib/client.js` + `tests/client-shape-smoke.mjs:354` | 4 个对话框只有 3 个调用 `useDialogA11y`，`DirectoryBrowser`（`:1446`）没有；测试断言 `=== 3`，所以漏接恒通过 |
 | C-01 条目与菜单 | 读 `:1661-1686`、`:4374`、`:4368-4460` | 条目是 `div`+`onClick`，无 `tabIndex`/`role`/keydown；右键菜单有 `role="menu"` 但该区间 `Arrow`/`focus` 命中 0 |
-| C-01 错误 toast | 读 `:2050`、`:4072` | 两处 `setTimeout(..., 3500)`，失败原因 3.5 秒后消失，无重试 |
+| C-01 错误 toast | 读 `:2050`、`:4072` | 两处 `setTimeout(..., 3500)`，失败原因 3.5 秒后消失，无重试。**2026-11-06 后续**：改为两类共用的 **7 秒**窗口 + 悬停暂停 + 到期交还焦点，见 C-01 段末 |
 | C-02 职责地图 | 读 `:11-44` 与实际 banner 标题 | 地图 10 条中，"Forwarding panel" 与 "Directory flow" **无对应分节**；Locale 实际在 CSS 之前；实际 18 个带标题分节，漏列 8 个。**后续（2026-11-05 同日）已重写为 17 条并加自动校验**，见 C-02 的推进结果 |
 | C-02 chunk 通道 | 从 `app.asar` 解出 `dsh-client-modules` 并读源码 | `:600` `CLIENT_CHUNK`、`:704` `registration.chunk`、`:842-847` `require.async`、`:852-877` `importChunk` 均在；**未实机验证加载** |
 | F-08 词典守卫 | `node tests/locale-register-smoke.mjs` | 21 项通过，含"没有 key 原样渲染"；文件浏览器内 `multiple`/`onDrop`/`selected`/`checkbox` 命中 0 |
