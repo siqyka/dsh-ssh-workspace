@@ -15,6 +15,11 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// The DOM-level toasts are lifted from the shipped bundle and driven for real;
+// the harness is shared with `archive-smoke` so the two suites cannot describe
+// two different implementations.
+import { makeToastDom } from './support/toast-dom.mjs'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
 
@@ -824,22 +829,35 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
    * construct live code" — for the region that actually matters.
    */
   const bodyOf = (name) => {
-    // `async function` is matched too. The first version keyed only on
-    // `function name (`, so every async helper sliced to '' and `liveIn`
-    // returned false for code that existed — and, worse, an assertion written
-    // as `!liveIn(...)` would have passed on nothing at all.
-    const asyncStart = source.indexOf('async function ' + name + ' (')
-    const start = asyncStart >= 0 ? asyncStart : source.indexOf('function ' + name + ' (')
-    if (start < 0) return ''
-    const nextPlain = source.indexOf('\n    function ', start + 1)
-    const nextAsync = source.indexOf('\n    async function ', start + 1)
-    const next = [nextPlain, nextAsync].filter(index => index >= 0).sort((a, b) => a - b)[0]
-    const slice = source.slice(start, next === undefined ? start + 12000 : next)
-    return slice
-      .replace(/\/\*[\s\S]*?\*\//gu, ' ')
-      .replace(/\/\/[^\n]*/gu, ' ')
+    // Three declaration shapes, and each needs its own end boundary. The
+    // original keyed only on `function name (`; adding `async function` fixed
+    // half the cases, but a `const name = async () =>` helper still sliced to
+    // '' — and a `liveIn` on it returned false for code that existed, while a
+    // `!liveIn` assertion would have passed on nothing at all. Every form
+    // therefore also records where its body ends.
+    const forms = [
+      { prefix: 'async function ' + name + ' (', ends: ['\n    function ', '\n    async function ', '\n    const '] },
+      { prefix: 'function ' + name + ' (', ends: ['\n    function ', '\n    async function ', '\n    const '] },
+      { prefix: 'const ' + name + ' = ', ends: ['\n    const ', '\n    function ', '\n    async function '] },
+    ]
+    for (const form of forms) {
+      const start = source.indexOf(form.prefix)
+      if (start < 0) continue
+      const nexts = form.ends.map(end => source.indexOf(end, start + 1)).filter(index => index >= 0)
+      const end = nexts.length === 0 ? start + 12000 : Math.min(...nexts)
+      return source.slice(start, end)
+        .replace(/\/\*[\s\S]*?\*\//gu, ' ')
+        .replace(/\/\/[^\n]*/gu, ' ')
+    }
+    return ''
   }
   const liveIn = (name, re) => re.test(bodyOf(name))
+
+  // The slicer is the thing every assertion below trusts, so it gets its own
+  // check: a name it cannot find must never read as "the code is absent".
+  check('the body slicer finds arrow-function helpers too',
+    bodyOf('handleUpload').includes('const handleUpload = ') && bodyOf('runUploadJob').includes('async function runUploadJob'),
+    'an arrow helper slices to nothing, so every assertion about it is vacuous')
 
   check('the browser dialog claims the dialog role',
     liveIn('DirectoryBrowser', /useDialogA11y\(\{/u) &&
@@ -882,6 +900,41 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       (bodyOf('installTreeMenuBridge').match(/openForRow\(row, /gu) ?? []).length === 2,
     'the keyboard path would place the menu at a different spot than the pointer path')
 
+  // The empty space below the rows is the gesture whose default is "nothing
+  // happens": the button carrying the alias and remote path lives in the panel
+  // HEADER, which is a sibling of the scrolled list, so the narrowest container
+  // holding the pointer need not hold the button either. The search must widen
+  // outward — pointer container, then the whole page, then the document — and
+  // stop at the first scope that has one. The old `?? document` fallback never
+  // fired, because a container DID match (the navigator) and simply held no
+  // button, which is why right-clicking the blank area still answered nothing.
+  check('the blank-area menu widens its search instead of giving up',
+    liveIn('installTreeMenuBridge', /if \(page !== null && page !== narrow\) holders\.push\(page\)/u) &&
+      liveIn('installTreeMenuBridge', /holders\.push\(document\)/u),
+    'a single-container lookup answers nothing whenever the header is a sibling of the list')
+  check('...and stops at the first scope that carries the button',
+    liveIn('installTreeMenuBridge', /if \(button !== null\) break/u),
+    'a later, wider scope would override the panel the pointer is actually in')
+
+  // A browser refuses to elaborate on a request that died on the wire: every
+  // cause arrives as the same four words. Both upload paths must translate that
+  // into something actionable, and the translation must stay narrow — a
+  // refusal or a remote error already carries a real sentence and must be
+  // passed through untouched.
+  check('the dialog upload queues instead of posting bytes itself',
+    liveIn('handleUpload', /const split = enqueueUploads\(alias, path, files\)/u) &&
+      liveIn('handleUpload', /oversizeTransferText\(split\.rejected\)/u),
+    'a second upload path would bypass the queue, its progress and its cancel')
+  check('...and the queue worker explains a network-level failure',
+    liveIn('runUploadJob', /describeNetworkError\(err, startedAt\)/u),
+    'the toast repeats `Failed to fetch`')
+  check('...naming the elapsed time, and telling an instant failure from a timeout',
+    liveIn('describeNetworkError', /'transfer\.networkFailFast' : 'transfer\.networkFail'/u),
+    'the message cannot distinguish a dead socket from a five-minute cut-off')
+  check('...while passing a real server sentence through unchanged',
+    liveIn('describeNetworkError', /if \(!isNetworkFailure\(err\)\) return message/u),
+    'a 403 reason would be replaced by a generic network message')
+
   // F-08's two path actions. Both are asserted at the point where correctness
   // lives, not by "the string exists somewhere". Note these helpers are
   // `async function`, which the `bodyOf` slicer (keyed on `function name (`)
@@ -915,28 +968,54 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       /const handleMount = async \(\) => \{[\s\S]{0,400}?fetchJson\(API\.mount,/u.test(source),
     'two mount implementations would drift')
 
-  // An error is the only report a failed tree transfer produces, so it must not
-  // expire before it can be read — and it must interrupt, not wait its turn.
-  check('an error toast does not time out',
-    liveIn('notifyUser', /if \(!failed\) domToastTimer = setTimeout\(\(\) => el\.remove\(\), 3500\)/u),
-    'the failure text vanishes after 3.5 seconds')
-  check('...and is announced as an alert rather than a status',
-    liveIn('notifyUser', /el\.setAttribute\('role', failed \? 'alert' : 'status'\)/u),
+  // The toast window (2026-11): ONE seven-second window for every kind.
+  //
+  // The old rule kept failures until they were clicked, on the sound observation
+  // that a failed tree transfer's toast is its ONLY report. What did not
+  // survive: a one-slot toast. A failure left standing hides the next message
+  // behind itself — including the success of the retry that just fixed it — so
+  // "still on screen" read as "still broken".
+  //
+  // Everything the old rule protected has to survive the change: the alert
+  // role, the keyboard path, and the focus that makes it reachable. Those are
+  // asserted against `armToast` now, because `notifyUser` delegates to it
+  // instead of carrying a second copy of the rules.
+  const windowMatch = /const TOAST_DISMISS_MS = (\d+)/u.exec(source)
+  const windowMs = windowMatch === null ? null : Number(windowMatch[1])
+  check('one constant owns the toast window, and it is seven seconds',
+    windowMs === 7000,
+    windowMatch === null ? 'TOAST_DISMISS_MS is not defined' : `ms=${windowMs}`)
+  check('no toast path still carries the old 3.5-second split',
+    !source.includes('3500') && !/toast\.kind !== 'ok'/u.test(source),
+    'a literal 3500 or a `kind !== ok` guard survives, so one path was missed')
+  check('the tree-gesture toast expires on that constant',
+    liveIn('armToast', /domToastTimer = setTimeout\(dismiss, TOAST_DISMISS_MS\)/u),
+    'the DOM path uses a different (or no) window')
+  check('...and the panel toast expires on it too, for every kind',
+    /if \(toast === null \|\| toastHeld\) return undefined/u.test(source) &&
+      /setTimeout\(\(\) => setToast\(null\), TOAST_DISMISS_MS\)/u.test(source),
+    'the effect still short-circuits a failure kind, or hardcodes a window')
+  check('the pointer resting on a notice holds its clock',
+    liveIn('armToast', /addEventListener\('mouseenter'/u) &&
+      /onMouseEnter: \(\) => setToastHeld\(true\)/u.test(source),
+    'the sentence being read can expire under the cursor')
+  check('...and leaving restarts the window rather than resuming the remainder',
+    liveIn('armToast', /addEventListener\('mouseleave'/u),
+    'a paused notice would resume with almost no time left')
+  check('...and the panel hold cannot outlive the toast it belongs to',
+    /if \(toast === null\) setToastHeld\(false\)/u.test(source),
+    'a click under the pointer leaves a stale hold, freezing every later toast')
+  check('an expiring failure still interrupts, and still says why',
+    liveIn('armToast', /el\.setAttribute\('role', failed \? 'alert' : 'status'\)/u),
     'a polite announcement can be removed mid-sentence')
-  check('...while the connection-test failure also stays',
-    /if \(toast === null \|\| toast\.kind !== 'ok'\) return undefined/u.test(source),
-    'a failed test expires before the reason can be read')
-  // A message that never expires must be clearable without a mouse, and the
-  // keyboard path has to be reachable: focusable but never focused is the same
-  // as unreachable. The comment claimed "click, or Esc" before the handler
-  // existed, which is exactly the kind of claim this suite should not let pass.
-  check('...and a persisting error can be dismissed from the keyboard',
-    liveIn('notifyUser', /event\.key !== 'Escape' && event\.key !== 'Enter'/) ||
-      liveIn('notifyUser', /event\.key === 'Escape' \|\| event\.key === 'Enter'/u),
-    'no Esc/Enter dismissal on the error toast')
-  check('...and that path is reachable, because the toast takes focus',
-    liveIn('notifyUser', /if \(failed\) el\.focus\(\)/u),
-    'a focusable toast that is never focused cannot be dismissed by keyboard')
+  check('...and stays dismissible without a mouse',
+    liveIn('armToast', /event\.key !== 'Escape' && event\.key !== 'Enter'/) &&
+      liveIn('armToast', /if \(failed\) el\.focus\(\)/u),
+    'the keyboard path exists but nothing focuses the toast')
+  check('...and hands focus back when it expires',
+    liveIn('armToast', /document\.activeElement === el/u) &&
+      liveIn('armToast', /returnFocus\.focus\(\)/u),
+    'removing the focused node drops focus to <body>')
 }
 
 
@@ -1043,6 +1122,311 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
   // An unrecognised label must stay visible rather than rendering blank.
   check('an unknown kind falls through to the raw value',
     /return label\.kind/u.test(source), 'no fallthrough')
+}
+
+// --- upload: transport failures are retried once and described honestly ---
+//
+// A dead request is reported by the browser as the same four words (`Failed to
+// fetch`) whatever killed it, and those four words were what the user saw —
+// with no hint whether the app was restarting or the server had given up on the
+// body. Two properties keep that from coming back: a transport death is retried
+// ONCE (the server stages and renames, so a repeat is idempotent), and the
+// sentence is chosen by how long the request lasted.
+{
+  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const routes = readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')
+  check('the chunked sender retries a transport death once',
+    client.includes('for (let attempt = 1; attempt <= maxAttempts; attempt += 1)'), 'no retry loop')
+  check('the retry is gated on a network-level failure, never on a JSON verdict',
+    /!isNetworkFailure\(err\) \|\| attempt === maxAttempts/u.test(client), 'retry gate missing')
+  check('the retry gate is a shared predicate, not a second copy of the regex',
+    /function isNetworkFailure \(err\)/u.test(client), 'no predicate')
+  check('an instant failure is not described as a timeout',
+    /transfer\.networkFailFast/u.test(client), 'fast-failure wording missing')
+  // Every entry (dialog, panel header, tree row) hands its files to the same
+  // queue worker, and that worker calls the same sender — checked as plain
+  // source matches because each spelling is unique, and because a body-slice
+  // helper is only in scope inside the block that defines it.
+  check('every browser upload goes through the one chunked sender',
+    /async function postFileInChunks \(alias, dir, file, hooks = \{\}\)/u.test(client) &&
+      /await postFileInChunks\(alias, dir, file, \{/u.test(client),
+    'a second upload path would report neither progress nor cancellation')
+  check('...and no upload posts a File as a request body',
+    (client.match(/body: file,/gu) ?? []).length === 0,
+    'a Blob/File body is still posted somewhere')
+  check('...while the raw streaming route stays declared server-side',
+    routes.includes('path: ROUTES.upload') && routes.includes("guardRaw(req, res, 'POST')"),
+    'the streaming route was removed, not merely left unused by the browser')
+  for (const key of ['transfer.networkFailFast', 'transfer.retried']) {
+    const count = client.split(`'${key}'`).length - 1
+    check(`${key} is defined in both locales`, count >= 2, `found ${count}`)
+  }
+}
+
+// --- upload: the chunked transport is the only browser door ---------------
+//
+// The queue needs a byte count after every chunk and a place to stop between
+// chunks. A `File` request body provides neither: `fetch` has no upload-progress
+// event, and a body stream cannot be paused. One transport therefore remains,
+// and it is the one that also crosses the packaged shell's `dsh-app://` origin.
+{
+  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const routes = readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')
+  check('the browser no longer chooses an upload transport by page origin',
+    !/canCarryBinaryBody|postFileAsBody/u.test(client),
+    'a raw-body path is still branchable, so progress and cancel depend on the origin')
+  check('the chunked transport takes the queue\'s progress and cancel hooks',
+    /async function postFileInChunks \(alias, dir, file, hooks = \{\}\)/u.test(client) &&
+      /hooks\?\.isCancelled/u.test(client) && /hooks\?\.onProgress/u.test(client),
+    'the transport cannot report bytes or be stopped')
+  check('...and stops BETWEEN chunks, where an abort leaves no staged bytes',
+    /if \(isCancelled\(\)\) throw transferCancelledError\(\)/u.test(client),
+    'no cancellation point before the next chunk')
+  check('the chunked path posts JSON, not bytes',
+    /url: API\.uploadChunk|fetch\(API\.uploadChunk/u.test(client) &&
+      /body: JSON\.stringify\(request\)/u.test(client),
+    'chunked request is not JSON')
+  // The server reads at most 4 MiB of JSON; base64 inflates by 4/3. The margin
+  // is asserted numerically so a future chunk-size bump fails here rather than
+  // as a 400 from `readJsonBody` in the field.
+  const chunkMatch = client.match(/const UPLOAD_CHUNK_BYTES = (\d+) \* 1024 \* 1024/u)
+  const chunkBytes = chunkMatch === null ? 0 : Number(chunkMatch[1]) * 1024 * 1024
+  check('a chunk exists and base64 of it fits the server\'s 4 MiB JSON cap',
+    chunkBytes > 0 && chunkBytes * 4 / 3 < 4 * 1024 * 1024,
+    `chunk=${chunkBytes}`)
+  check('a zero-byte file still sends exactly one chunk',
+    /const end = Math\.min\(total, offset \+ UPLOAD_CHUNK_BYTES\)/u.test(client) &&
+      /const final = end >= total/u.test(client),
+    'the loop would send nothing for an empty file')
+  check('a final chunk is never replayed (its rename would already be done)',
+    /request\.final === true \|\| request\.abort === true \? 1 : 2/u.test(client),
+    'a lost response after a successful publish would be reported as failure')
+  check('a failed upload aborts its staged part instead of leaving it behind',
+    /abort: true/u.test(client), 'no cleanup request')
+  // The two halves must agree about the path; a typo here is a 401 from the
+  // host, which reaches the user as "upload failed" with no cause.
+  const routePath = routes.match(/uploadChunk: '([^']+)'/u)
+  const apiPath = client.match(/uploadChunk: '([^']+)'/u)
+  check('the client and the route table name the same chunk endpoint',
+    routePath !== null && apiPath !== null && routePath[1] === apiPath[1],
+    `route=${routePath?.[1]} api=${apiPath?.[1]}`)
+  // The encoder is extracted from the shipped source and run, rather than
+  // retyped here: a hand-written copy would prove nothing about the code that
+  // actually encodes the bytes. `String.fromCharCode.apply` over a whole 2 MiB
+  // chunk overflows the argument stack, which is why the real one is sliced —
+  // so the size sweep deliberately crosses the slice boundary.
+  const encoderMatch = client.match(/function bytesToBase64 \(bytes\) \{[\s\S]*?\n    \}/u)
+  check('the base64 encoder is present in the shipped source', encoderMatch !== null, 'not found')
+  if (encoderMatch !== null) {
+    const make = new Function('btoa', `${encoderMatch[0]}; return bytesToBase64`)
+    const encode = make(globalThis.btoa)
+    const sizes = [0, 1, 2, 3, 7, 0x8000, 0x8001, 100000]
+    const mismatches = sizes.filter((size) => {
+      const bytes = Uint8Array.from({ length: size }, (_, index) => (index * 37 + 11) % 256)
+      return encode(bytes) !== Buffer.from(bytes).toString('base64')
+    })
+    check('the shipped encoder produces the same base64 Node does, across slice boundaries',
+      mismatches.length === 0, `mismatched sizes: ${mismatches.join(',')}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// --- transfer queue: one store, one notice, one width ---------------------
+//
+// The queue is the single truth for "what is moving": the Files-panel badge,
+// the popover rows, the dialog strip and the completion toast all read the same
+// store. These pin the shape that makes that true, and the places where a
+// helpful-looking alternative would quietly become a second truth.
+{
+  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const transfer = readFileSync(path.join(packageRoot, 'lib', 'transfer.js'), 'utf8')
+
+  check('there is exactly one queue store',
+    (client.match(/let transferQueueState = /gu) ?? []).length === 1,
+    'a second counter drifts the moment two views exist')
+  check('...subscribed through React\'s external-store seat',
+    /React\.useSyncExternalStore\(subscribeTransferQueue, transferQueueSnapshot/u.test(client),
+    'a component-local copy is the second truth this feature exists to remove')
+  check('the scheduler is pure and takes its clock from the action',
+    /function queueReduce \(state, action\)/u.test(client) &&
+      /const at = typeof action\?\.at === 'number'/u.test(client),
+    'a reducer that reads Date.now cannot be replayed by a test')
+  check('same host: one transfer at a time; all hosts: two',
+    /const TRANSFER_QUEUE_LIMIT_TOTAL = 2/u.test(client) &&
+      /const TRANSFER_QUEUE_LIMIT_PER_HOST = 1/u.test(client),
+    'the two ceilings are not stated as constants')
+  check('the browser\'s 1 GiB pre-check restates the server\'s own constant',
+    /const TRANSFER_QUEUE_UPLOAD_LIMIT = 1024 \* 1024 \* 1024/u.test(client) &&
+      /export const DEFAULT_MAX_BYTES = 1024 \* 1024 \* 1024/u.test(transfer),
+    'a drift here is a 413 after sending bytes the picker should have refused')
+  check('oversized picks are refused as a list, before the queue',
+    /function splitOversizeFiles \(files, limit/u.test(client) &&
+      /const split = splitOversizeFiles\(files\)/u.test(client),
+    'a batch would discover the limit one failure at a time')
+  check('progress cannot move backwards in the store',
+    /bytes <= item\.bytesDone/u.test(client) && /capped <= item\.bytesDone/u.test(client),
+    'a late report could rewind the bar')
+  check('a percentage is only shown for a known total',
+    /if \(total === null \|\| total <= 0\) return null/u.test(client),
+    'an archive would read as 0% instead of "bytes received"')
+
+  // Speed and the rule under the row. Both are readings of the STORE, never of
+  // render timing: a rate guessed inside a component differs on every frame.
+  check('each row carries a light-blue progress rule under its name',
+    /className: 'sshwsp-queuebar-fill'/u.test(client) &&
+      /sshwsp-queuebar\$\{live/u.test(client) &&
+      /'aria-hidden': 'true'/u.test(client),
+    'a bar with no text equivalent would be the only carrier of the number')
+  check('...filled from the known percentage, full for done, sweeping when unknown',
+    /const fillPercent = item\.status === 'done' \? 100 : \(percent \?\? 0\)/u.test(client) &&
+      /sshwsp-queuebar-live/u.test(client),
+    'an archive would otherwise claim 0% or a made-up width')
+  check('the rate is measured by the reducer from the action clock',
+    /function transferQueueNextSpeed \(item, done, at\)/u.test(client) &&
+      /TRANSFER_QUEUE_SPEED_RESET_GAP/u.test(client),
+    'a rate measured in the component would differ on every frame')
+  const metaStart = client.indexOf('function queueItemMetaText (item, percent, t)')
+  const metaRunning = client.indexOf("if (item.status === 'running')", metaStart)
+  const metaDone = client.indexOf("if (item.status === 'done')", metaStart)
+  check('a rate is shown only while the transfer runs',
+    metaStart > 0 && metaRunning > 0 && metaDone > 0 &&
+      client.indexOf('queue.perSecond', metaRunning) > metaRunning &&
+      client.indexOf('queue.perSecond', metaRunning) < metaDone,
+    'a settled row would print a rate it no longer has')
+
+  // Distinguishable degradation: the slot either fires (ready) or a grace
+  // period turns silence into one readable line. A control that vanishes with
+  // no explanation is the failure mode this catches.
+  check('the Files-panel slot records that its callback ran',
+    /setTransferActionsSlotState\('ready'\)/u.test(client),
+    'an absent declaration stays indistinguishable from a broken entry')
+  check('...and a missing declaration becomes a sentence, not silence',
+    /setTransferActionsSlotState\('missing'\)/u.test(client) &&
+      /queue\.slotMissing/u.test(client),
+    'the entry would simply never render and nobody would know why')
+
+  // One notice for the batch, updated in place: a second toast is what resets
+  // the first one's clock and hides the result worth reading.
+  check('the queue draws its toast through the shared transferNotice',
+    /function transferNotice \(text\)/u.test(client) &&
+      (client.match(/transferNotice\(/gu) ?? []).length === 1,
+    'a second toast owner would remove the first node under it')
+  check('...and a finished batch is one merged sentence',
+    /function transferQueueSummary \(tracked\)/u.test(client) &&
+      /queue\.summaryPartial/u.test(client) && /queue\.summaryDone/u.test(client),
+    'a toast per file would reset each other on the way out')
+
+  // The popover must be dismissible by Esc and by a click outside, through the
+  // same a11y contract as the dialogs rather than a third implementation.
+  check('the progress popover reuses the dialog a11y contract',
+    /function TransferQueuePanel \(\{ anchor, onClose, t \}\)/u.test(client) &&
+      /useDialogA11y\(\{ onClose, label: t\('queue\.title'\) \}\)/u.test(client),
+    'a custom popover would lack Esc, the focus trap and focus return')
+  check('...and is anchored to its button, not to a fixed corner',
+    /getBoundingClientRect\(\)/u.test(client) && /addEventListener\('resize', measure\)/u.test(client),
+    'a collapsed or moved panel would leave the popover pointing at nothing')
+  // Every remote listing shows the entry, empty queue included, so "empty" is
+  // a state the panel must render. The old auto-close existed only because the
+  // entry itself used to disappear with the queue; keeping it would make the
+  // button open a panel that shut itself on the next frame.
+  check('the progress entry is not gated on a transfer being in flight',
+    !/queue\.items\.length > 0 && jsx\('button'/u.test(client),
+    'hiding the only progress surface while idle is what made it look missing')
+  check('...and a local listing keeps DSH\'s own header',
+    /if \(remote === null\) return null/u.test(client) &&
+      /const remote = remoteTargetOf\(absolutePath\)/u.test(client),
+    'the queue is a remote-workspace control; a local folder has no alias to carry')
+  check('...and an empty queue shows its empty state rather than closing the popover',
+    !/if \(queue\.items\.length === 0\) onClose\(\)/u.test(client) &&
+      /'queue\.empty'/u.test(client),
+    'an always-present entry would open a panel that immediately closed')
+}
+
+console.log('\n[the toast window, measured on the code that ships]')
+//
+// The shape assertions above say the constant is used; these say what USING it
+// means. Both DOM implementations are lifted out of the bundle and driven
+// against a fake DOM and a fake clock, because "a timer exists" is also true of
+// one that removes the wrong node, and of one a hover does not cancel.
+{
+  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+
+  {
+    const dom = makeToastDom()
+    const { notifyUser } = dom.build(client)
+    notifyUser('boom: remote write refused', 'err')
+    check('an error notice arms exactly one timer',
+      dom.live().length === 1, `${dom.live().length} live timer(s)`)
+    check('...for the whole seven seconds',
+      dom.live()[0]?.ms === 7000, `ms=${dom.live()[0]?.ms}`)
+    dom.tick()
+    check('...after which the node is gone',
+      dom.nodes.length === 0, `${dom.nodes.length} node(s) left`)
+  }
+
+  {
+    const dom = makeToastDom()
+    const { notifyUser } = dom.build(client)
+    notifyUser('reading this', 'err')
+    const node = dom.nodes[0]
+    node.emit('mouseenter')
+    check('resting the pointer on the notice cancels its clock, without removing it',
+      dom.live().length === 0 && dom.nodes.length === 1,
+      `${dom.live().length} live timer(s), ${dom.nodes.length} node(s)`)
+    node.emit('mouseleave')
+    check('...and leaving restarts the FULL window, not the remainder',
+      dom.live().length === 1 && dom.live()[0]?.ms === 7000,
+      `ms=${dom.live()[0]?.ms}`)
+  }
+
+  {
+    // An expiring notice that took focus has to give it back: removing the
+    // focused node drops focus to <body>, and the next Tab starts over.
+    const dom = makeToastDom()
+    const { notifyUser } = dom.build(client)
+    const previous = dom.document.createElement()
+    previous.focus()
+    notifyUser('focus goes here', 'err')
+    check('an error takes focus so Esc/Enter reach it at all',
+      dom.document.activeElement === dom.nodes[0], 'the toast never took focus')
+    dom.tick()
+    check('...and hands it back when it expires',
+      dom.document.activeElement === previous,
+      'focus fell to the document, so the keyboard restarts at the top of the page')
+  }
+
+  {
+    const dom = makeToastDom()
+    const { notifyUser } = dom.build(client)
+    notifyUser('click me', 'ok')
+    dom.nodes[0].emit('click')
+    check('clicking dismisses before the window ends', dom.nodes.length === 0)
+
+    const second = makeToastDom()
+    const { notifyUser: notifyAgain } = second.build(client)
+    notifyAgain('esc me', 'err')
+    second.nodes[0].emit('keydown', { key: 'Escape', preventDefault () {} })
+    check('...and so does Escape', second.nodes.length === 0)
+  }
+
+  {
+    const dom = makeToastDom()
+    const { notifyUser, transferNotice } = dom.build(client)
+    notifyUser('done', 'ok')
+    check('a success uses the same seven-second window',
+      dom.live().length === 1 && dom.live()[0]?.ms === 7000,
+      `ms=${dom.live()[0]?.ms}`)
+
+    const transfers = makeToastDom()
+    const { transferNotice: notice } = transfers.build(client)
+    const handle = notice('Uploading a.zip…')
+    check('an in-flight notice has no clock to outlive it',
+      transfers.live().length === 0, `${transfers.live().length} live timer(s)`)
+    handle.done('Uploaded a.zip')
+    check('...the OUTCOME starts one, on the same window',
+      transfers.live().length === 1 && transfers.live()[0]?.ms === 7000,
+      `ms=${transfers.live()[0]?.ms}`)
+  }
 }
 
 // A numeric summary, in the same `=== N passed, M failed ===` shape every other

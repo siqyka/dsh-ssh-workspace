@@ -32,6 +32,10 @@ const pluginRoot = path.resolve(here, '..')
 
 const { BLOCK, splitTarName, tarHeader, tarPadding, tarStream } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tar.js')).href)
 const { globToRegExp, relativeForRule, treeFilter } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tree-filter.js')).href)
+// The toast helpers are lifted from the shipped bundle by a shared harness so
+// this suite and `client-shape-smoke` drive the SAME code rather than two
+// retyped copies.
+const { liftToasts } = await import(pathToFileURL(path.join(pluginRoot, 'tests', 'support', 'toast-dom.mjs')).href)
 // `transfer.js` reaches the shared SFTP primitives, which resolve the DSH peer
 // packages — so only the part of this suite that drives `downloadTreeAsTar`
 // needs an assembled tree. The tar writer and the rule matcher are pure and run
@@ -450,7 +454,8 @@ console.log('\n[the completion notice is ONE element, edited in place]')
   const client = await readFile(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
 
   /**
-   * Lift `transferNotice` out of the bundle and run it against a fake DOM.
+   * Lift the toast helpers out of the bundle and run the REAL `transferNotice`
+   * against a fake DOM.
    *
    * This is the assertion that matters, and the source-text checks below are
    * only its shadow: "the handle exists" is satisfied by a handle nobody uses,
@@ -458,21 +463,11 @@ console.log('\n[the completion notice is ONE element, edited in place]')
    * distinguishes a correct one is that the in-flight node and the outcome node
    * are the SAME object, so its dismissal timer starts when the outcome is
    * known — not when the transfer began.
+   *
+   * The fake DOM records the DELAY too. Since the 2026-11 change a failure
+   * expires as well, so "a timer was armed" no longer says everything: when it
+   * fires is the point.
    */
-  const start = client.indexOf('function transferNotice (text) {')
-  if (start < 0) throw new Error('client.js does not define transferNotice()')
-  let depth = 0
-  let end = start
-  for (let i = client.indexOf('{', start); i < client.length; i += 1) {
-    if (client[i] === '{') depth += 1
-    else if (client[i] === '}') {
-      depth -= 1
-      if (depth === 0) { end = i + 1; break }
-    }
-  }
-  const body = client.slice(start, end)
-
-  /** A DOM double that records nodes, removals and timers. */
   function makeDom () {
     const nodes = []
     const timers = []
@@ -485,27 +480,23 @@ console.log('\n[the completion notice is ONE element, edited in place]')
           textContent: '',
           tabIndex: -1,
           parent: null,
-          classes: [],
           setAttribute (name, value) { this[name] = value },
           addEventListener (name, handler) { listeners.set(name, handler) },
           listeners,
-          focus () { /* recorded by the caller when it matters */ },
+          focus () { /* focus is client-shape's subject, not this suite's */ },
           remove () { const at = nodes.indexOf(this); if (at >= 0) nodes.splice(at, 1) },
         }
-        node.classList = { add (name) { node.classes.push(name) } }
         return node
       },
       querySelectorAll: () => [...nodes],
     }
-    const setTimeout = (fn) => { timers.push(fn); return timers.length }
+    const setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length }
     const clearTimeout = () => {}
-    // `transferNotice` shares the module-level `domToastTimer` with
-    // `notifyUser`, so the closure it is evaluated in must supply that binding:
-    // the whole point of the handle is that finishing CLEARS the pending timer
-    // before arming its own, and without this the lift is not the real code.
-    // eslint-disable-next-line no-new-func
-    const factory = new Function('document', 'setTimeout', 'clearTimeout', 'domToastTimer', `${body}; return transferNotice`)
-    return { transferNotice: factory(document, setTimeout, clearTimeout, null), nodes, timers, document }
+    // The lift brings its own `domToastTimer` binding and `armToast`: the whole
+    // point of the handle is that finishing CLEARS the pending timer before
+    // arming its own, and a copy that skipped that would not be the real code.
+    const build = liftToasts(client).build(document, setTimeout, clearTimeout)
+    return { transferNotice: build.transferNotice, nodes, timers, document }
   }
 
   {
@@ -518,7 +509,7 @@ console.log('\n[the completion notice is ONE element, edited in place]')
     check('finishing does NOT add a second node', dom.nodes.length === 1, String(dom.nodes.length))
     check('...it edits the same one', live.textContent === 'Uploaded a.zip (1.0 KB)', live.textContent)
     check('...and only NOW starts the dismissal timer', dom.timers.length === 1, String(dom.timers.length))
-    check('...marking it as a success', live.classes.includes('sshwsp-toast-ok'), JSON.stringify(live.classes))
+    check('...marking it as a success', live.className.includes('sshwsp-toast-ok'), live.className)
   }
 
   {
@@ -528,7 +519,12 @@ console.log('\n[the completion notice is ONE element, edited in place]')
     const node = dom.nodes[0]
     check('a failure turns the same node into an error', node.textContent === 'Upload failed: no space left', node.textContent)
     check('...with role="alert", because it must interrupt', node.role === 'alert', node.role)
-    check('...and NO dismissal timer, so it stays', dom.timers.length === 0, String(dom.timers.length))
+    // The window is seven seconds for BOTH kinds now. The old rule kept failures
+    // until clicked; a single-slot toast made a sticky failure hide the message
+    // that followed it, so the permanence went and the wording stayed.
+    check('...and it also expires, on the one seven-second window',
+      dom.timers.length === 1 && dom.timers[0].ms === 7000,
+      `${dom.timers.length} timer(s), ms=${dom.timers.map(timer => timer.ms).join(',')}`)
     check('...and it is focusable for keyboard dismissal', node.tabIndex === 0, String(node.tabIndex))
   }
 
@@ -548,41 +544,40 @@ console.log('\n[the completion notice is ONE element, edited in place]')
   // The source checks below say WHERE the handle is used; the behaviour above
   // says what using it means.
   check('a transfer handle exists', /function transferNotice \(/u.test(client))
-  check('the in-flight notice is turned into the result, not replaced',
-    /const notice = transferNotice\(/u.test(client) && /notice\.done\(/u.test(client) && /notice\.failed\(/u.test(client))
-  // The two checks above are satisfied by a call site that ALSO opens a separate
-  // toast first — `notifyUser('Uploading…')` followed by `transferNotice(…)` —
-  // which reintroduces exactly the timer-reset problem the handle exists to
-  // remove. So the upload must NOT call `notifyUser` for its own progress line.
-  const upload = client.slice(
-    client.indexOf('async function sendTreeUpload ('),
-    client.indexOf('\n    /**', client.indexOf('async function sendTreeUpload (')),
+  check('the queue turns the in-flight notice into the result, in place',
+    /notice\.handle\.done\(summary\.line, summary\.kind\)/u.test(client) &&
+      /notice\.handle\.text\(line\)/u.test(client))
+  // One toast owner: the queue opens the notice once per batch, and no upload
+  // path opens a competing `notifyUser` progress line — that second toast is
+  // exactly what resets the batch notice's dismissal clock.
+  const noticeSection = client.slice(
+    client.indexOf('function openTransferQueueNotice ('),
+    client.indexOf('\n    /**', client.indexOf('function openTransferQueueNotice (')),
   )
-  check('the upload does not open a second, competing toast',
-    upload.includes('transferNotice(') && !upload.includes('notifyUser('),
-    `${(upload.match(/notifyUser\(/gu) ?? []).length} notifyUser call(s)`)
+  check('the transfer batch opens exactly one notice',
+    (client.match(/transferNotice\(/gu) ?? []).length === 1,
+    `${(client.match(/transferNotice\(/gu) ?? []).length} call(s)`)
+  check('...and it does not open a second, competing toast',
+    noticeSection.includes('transferNotice(') && !noticeSection.includes('notifyUser('),
+    `${(noticeSection.match(/notifyUser\(/gu) ?? []).length} notifyUser call(s)`)
   check('a download reports its size', /translate\('transfer\.doneDownload', \{ name: [^)]*size:/u.test(client))
   // The upload's completion line must name the SERVER's byte count, and the
-  // assertion has to be about the VALUE that reaches the message rather than
-  // about the expression existing: `formatSize(file.size)` and
-  // `formatSize(size)` differ by a few characters and by everything the user
-  // reads.
-  //
-  // The two upload sites report through DIFFERENT surfaces on purpose — the
-  // directory browser writes a line inside its modal (`setTransferDone`), the
-  // tree row turns a toast into the result (`notice.done`) — so they are
-  // checked separately rather than required to be identical.
-  const uploadSizes = [...client.matchAll(/const size = typeof parsed\?\.bytes === 'number' \? parsed\.bytes : file\.size/gu)]
-  check('both upload paths read the server\'s byte count', uploadSizes.length === 2, `${uploadSizes.length} site(s)`)
-  check('the browser dialog announces the server\'s count',
-    /setTransferDone\(t\('browser\.doneUpload', \{ name: file\.name, size: formatSize\(size\) \}\)\)/u.test(client))
-  check('the tree-row toast announces it too',
-    /notice\.done\(translate\('transfer\.doneUpload', \{ name: file\.name, size: formatBytes\(size\) \}\)\)/u.test(client))
-  check('the directory browser announces completion in the dialog, not behind a backdrop',
-    /transferDone && jsx\('div'/u.test(client))
-  // A completion notice that never clears is the previous transfer's news
-  // attached to the next one.
-  check('navigating clears the previous completion', /setTransferDone\(null\)/u.test(client))
+  // assertion is about the VALUE that reaches the message rather than about
+  // the expression existing: `formatBytes(file.size)` and `formatBytes(landed)`
+  // differ by a few characters and by everything the user reads.
+  check('the upload reads the server\'s byte count',
+    /const landed = typeof parsed\?\.bytes === 'number' && Number\.isFinite\(parsed\.bytes\) \? parsed\.bytes : file\.size/u.test(client))
+  check('...and the queue\'s completion line names it',
+    /note: translate\('transfer\.doneUpload', \{ name: file\.name, size: formatBytes\(landed\) \}\)/u.test(client))
+  check('the directory browser shows the queue inside its modal',
+    /jsx\(TransferQueueInline, \{ t \}\)/u.test(client))
+  // Queue entries survive navigation: a transfer belongs to the plugin, not to
+  // the directory the user happens to be looking at. The old per-dialog
+  // `transferDone` string was cleared on navigation because it described the
+  // dialog; the queue's rows must NOT disappear with the listing.
+  check('navigating does not discard the transfer queue',
+    !/setTransferDone\(null\)/u.test(client) &&
+      client.includes('jsx(TransferQueueInline, { t })'))
 }
 
 // ------------------------------------------------- where a download lands

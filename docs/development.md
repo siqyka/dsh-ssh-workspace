@@ -11,12 +11,12 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 26 | `lib/routes.js` |
-| model-facing tools | 10 | `lib/tools.js` |
+| HTTP routes | 27 | `lib/routes.js` |
+| model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 45 | directory listing |
-| test suites | 61 | `tests/run.mjs` |
-| passing assertions (sampled) | 2659 | measured 2026-11-06 |
+| modules under `lib/` | 46 | directory listing |
+| test suites | 63 | `tests/run.mjs` |
+| passing assertions (sampled) | 2873 | measured 2026-11-06 |
 
 <!-- doc-numbers:end -->
 
@@ -194,11 +194,12 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `replay-smoke` | 无 | 34 | 失败重放策略：写类 SFTP 操作失败后**不重放**（第一次可能已经在服务器上落地，重放就是执行两次），改标 `outcome: 'unknown'`并保留原始报错文本；远端命令走显式 `replay: 'safe'` 才重试；连接中断记成 `disconnect` 而不是 `reconnect` |
 | `host-key-smoke` | 无 | 18 | 主机密钥固定与**落盘失败的区分**：首次连接记下指纹；不一致直接拒绝；写不进 `knownHosts` 时连接仍成功，但必须记 `degraded` 诊断并在状态里列 `unpinnedHostKeys`，后来固定成功时自动清除——「警告写进无人读的日志」等于用户以为密钥已固定 |
 | `host-listing-smoke` | 无 | 32 | 主机列表把「真的空」与「读不出来」分开：空配置不带提示，被跳过的 `~/.ssh/config` 块带原因列在 `skipped`，存储读失败带 `storeError`——两种完全不同的问题不能都长成「没有主机」 |
-| `client-shape-smoke` | 无 | 180 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径 |
-| `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
+| `client-shape-smoke` | 无 | 260 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径。**提示窗口**一组：7 秒常量被面板与树手势两个实现共用、旧 3.5 秒与「失败不消失」的分支不得残留、悬停暂停且移开重计满、到期时把焦点交还来源元素；行为断言从**真实 bundle** 切出函数、配假 DOM 与假时钟驱动，五个反向变异（窗口改 3000 / 去掉悬停 / 去掉焦点交还 / 恢复按 kind 分支 / DOM 路径硬编码 3500）全部变红。**传输队列**一组：只有一个 store 且经 `useSyncExternalStore` 订阅、调度器不读时钟、两个并发常量、浏览器 1 GiB 预检与 `transfer.js` 的同一数字、越限一次列全、进度不回退且无总量不画百分比、宿主槽缺失变成一句可读的话、批量只开一个共享提示节点、弹层复用对话框的 a11y、上传只剩分块一条路径（浏览器不再发 File 请求体，原始路由仍留在服务端） |
+| `backdrop-dismiss-smoke` | 无 | 31 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁（目录浏览器的门禁现在只拦挂载，因为传输归队列所有、关掉对话框不中断它）、**传输进度弹层是第五个遮罩使用者**且同一判据、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
-| `tree-transfer-smoke` | 无 | 56 | 目录树上传、原子发布、递归与失败路径 |
-| `archive-smoke` | 无（tar 与规则部分）；`DSH_CORE_ROOT`（远端树部分） | 103 | tar 头的八进制字段（用真实读者校验）、排除规则、目录打包下载、完成提醒的单一节点行为、**下载只在看得见保存时才声称已保存**（目标先于请求被选、取消不耗字节、权限拒绝不得被报成取消、写失败必须 abort 而非 close） |
+| `tree-transfer-smoke` | 无 | 64 | 目录树上传、原子发布、递归与失败路径；浏览器两半都改为经队列：下载复用流式路由、目录走归档路由、上传只走分块 JSON 传输（原始字节路由仍在服务端，只是浏览器不再使用） |
+| `archive-smoke` | 无（tar 与规则部分）；`DSH_CORE_ROOT`（远端树部分） | 89 | tar 头的八进制字段（用真实读者校验）、排除规则、目录打包下载、完成提醒的单一节点行为（成功与失败都在同一个 7 秒窗口内到期，不再是"失败永久保留"）、**批量结果合并成一条就地改写**（一次 `transferNotice` 调用，上传与队列共用）、**下载只在看得见保存时才声称已保存**（目标先于请求被选、取消不耗字节、权限拒绝不得被报成取消、写失败必须 abort 而非 close） |
+| `zip-smoke` | 无（纯模块）；`python` 有 `zipfile` 时可做真实读者校验 | 25 | zip 中央目录签名与字段偏移、CRC-32（含跨块折叠与文献校验值 `0xCBF43926`）、数据描述符流式写法、DOS 时间不进位、**用 Python `zipfile` 真实打开并逐个校验 CRC**、压缩率与截断、声明尺寸不符必须抛错 |
 | `insert-once-smoke` | 无 | 18 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
 | `caret-after-insert-smoke` | 无 | 17 | 插入后光标必须落在 chip **之后**：用假 DOM + 假 Lexical 复现「裸 `input.focus()` 把 DOM 光标写到文档开头 → `selectionchange` 覆盖模型选区 → `editor.focus()` 忠实地恢复这个已被移到开头的光标」，并断言修复后 DOM 焦点从不发生在 Lexical 写选区之前；无 Lexical 句柄时仍聚焦输入框、零可见输入卡或两张卡时都不抢焦点 |
 | `locale-register-smoke` | 无 | 21 | 中英词典注册、重复注册不污染、`translate` 回落 |
@@ -221,6 +222,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `resume-smoke` | 无 | 45 | 断点续传的判定：源身份由 size+mtime 组成、暂存名**确定性**（否则无可续写之处）、**源变了就不续**（同尺寸不同 mtime 也必须重传，把新尾巴接在旧头上会产出长度恰好正确、内容毫无关系的文件）、暂存文件比源还大时不续（天真的 `offset = partialSize` 会越界）、已满尺寸时只需发布、无 sidecar 或 sidecar 描述的是别的源时丢弃、sidecar 解析的六种拒绝（坏 JSON / 版本不符 / 无身份 / 数组 / 字符串）、**每一种拒绝都从 0 重来，没有一种会追加** |
 | `store-lock-smoke` | 无 | 15 | 主机存储的跨进程写锁：互斥与降级、死锁接管、并发 `mutateHosts` 不丢条目、`save()` 的替换语义 |
 | `transfer-smoke` | 无 | 114 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去）、**冲突策略真的被 `transferFile` 采用**（skip 不动目标且标 skipped / refuse 抛且一个字节没写 / rename 写在旁边且原文件保留 / 默认仍然覆盖）、**校验如实报告**（无工具时 `verified: false` 且传输本身仍成功 / 摘要不匹配时报 mismatch）、**目录下载**（形状保留、嵌套目录、**空的远端目录在本地也要出现**——只有遍历能造出它，文件路径自带父目录、symlink 只列出不跟随、冲突按**每个文件**判定而不是整棵树） |
+| `transfer-queue-smoke` | 无 | 92 | 浏览器传输队列的纯状态机与驱动（都从 `client.js` 切出，与发货代码同一段）：同主机串行 / 跨主机上限 2 / 让位不饿死后面空闲主机的条目、成功与失败都释放槽位、取消排队项立即生效而取消运行项要等 worker 确认、完成与取消竞态以完成为真、进度单调且被总量夹住、未知总量不产出百分比、`total` 可中途到达、`started` 标记在 settle 时保留（浏览器保存型下载不得被总结成"已传输"）、清空只删终态、无效动作返回同一 state（不唤醒订阅者）、越限文件一次列全（边界大小放行、未知大小交给服务端）、文件名按码点截断（emoji 不劈开）、百分比向下取整；**驱动层**用可控 promise 与假 toast 驱动：一批只开一个提示、逐项推进时同一提示改写计数、全部结束只产生一句合并结果、取消穿过 worker context 且确认前不释放槽位、失败批次合并成一句并取报警面、浏览器保存型批量说"已开始"；**分块发送器**用假 fetch 驱动：2 MiB 分块的偏移与 final 标志、逐块进度、cancel 变成 `abort` 请求（不发 final）、零字节仍发一个 final、final 失败不重放 |
 | `mode-gate-smoke` | 无 | 119 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
 | `shell-smoke` | 无 | 35 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
 | `terminal-smoke` | 无 | 23 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原 |

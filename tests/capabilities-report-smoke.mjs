@@ -145,9 +145,19 @@ console.log('\n[every promised capability is actually wired]')
     .replace(/(?:from|import|require\()\s*(['"])[^'"\n]*\1/gu, '')
     .replace(/\.tar\b/gu, '')
   for (const spec of UNPROBED_CAPABILITIES) {
+    // A string literal that is EXACTLY the tool name is an enum value, not an
+    // invocation: `format === 'tar'` selects which archive this plugin writes
+    // itself, and `UNPROBED_CAPABILITIES` spelling `downloading a whole
+    // directory` as `.tar` says nothing about a tar binary on the host.
+    //
+    // Stripping only the exact literal is deliberate. A real invocation is
+    // either a bare identifier (`tar`) or part of a longer command string
+    // (`sh -c "tar -xf …"`), and both still match below — so this does not
+    // weaken the check into "the word never appears".
+    const invoked = code.replace(new RegExp(`(['"\`])${spec.tool}\\1`, 'gu'), '')
     check(
       `unprobed tool '${spec.tool}' is never invoked in lib/`,
-      !new RegExp(`(?:^|[^\\w-])${spec.tool}(?:$|[^\\w-])`, 'u').test(code),
+      !new RegExp(`(?:^|[^\\w-])${spec.tool}(?:$|[^\\w-])`, 'u').test(invoked),
       spec.reason,
     )
   }

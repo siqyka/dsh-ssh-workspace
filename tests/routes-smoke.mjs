@@ -14,6 +14,7 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { createServer } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -195,12 +196,39 @@ function fakeEngine (files, directories = new Set()) {
             callback(null, { __content: Buffer.alloc(0), __write: true, __target: target })
             return
           }
+          // `r+` is a WRITE open too — it keeps the bytes already there and
+          // publishes them on close. The chunked upload transport depends on
+          // exactly that: chunk N reopens the staging file its predecessor
+          // closed, appends at an offset, and the last one renames it. A double
+          // that treated `r+` as read-only would deliver a file holding only the
+          // first chunk, which is the silent truncation this suite exists to
+          // catch.
+          if (flags.includes('r+')) {
+            const existing = files.get(target)
+            if (existing === undefined) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
+            callback(null, { __content: existing, __write: true, __target: target })
+            return
+          }
           const content = files.get(target)
           if (content === undefined) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
           callback(null, { __content: content, __position: 0 })
         },
         write (handle, buffer, offset, length, position, callback) {
-          handle.__content = Buffer.concat([handle.__content, buffer.subarray(offset, offset + length)])
+          // `position` is honoured, not appended. The stub used to do
+          // `handle.__content = concat([__content, ...])`, which IGNORES the
+          // offset — so a route that wrote every chunk at offset 0 (the real bug
+          // that shipped: a 700 MB upload landed as one 64 KiB chunk while the
+          // response said `ok: true`) produced a correct-looking file here. A
+          // double that cannot represent the bug cannot catch it.
+          const start = typeof position === 'number' && position >= 0 ? position : handle.__content.length
+          const end = start + length
+          if (handle.__content.length < end) {
+            const grown = Buffer.alloc(end)
+            handle.__content.copy(grown, 0)
+            handle.__content = grown
+          }
+          buffer.copy(handle.__content, start, offset, offset + length)
+          state.writes = [...(state.writes ?? []), { position: start, length }]
           callback(null)
         },
         read (handle, buffer, offset, length, position, callback) {
@@ -314,6 +342,102 @@ check('the transfer route is registered', routes.some(route => route.path === RO
     engine.state.holdsDuringStream >= 1, String(engine.state.holdsDuringStream))
   check('the pin is released once the stream ends',
     (engine.state.record?.holds ?? -1) === 0, String(engine.state.record?.holds))
+}
+
+// --- download: a file name node refuses to put in a header ----------------
+//
+// The failure being guarded is node's own, not ours: `res.writeHead` throws
+// `ERR_INVALID_CHAR` for any byte outside Latin-1 in a header value, and a
+// remote file name is UTF-8. A request double cannot reproduce that — `fakeRes`
+// accepts everything it is handed — so this block runs the real handler on a
+// REAL http server and lets node judge the header. That is the only way the
+// assertion below can fail for the reason it claims to.
+//
+// Measured before the fix, against the running app: a 149 605-byte
+// `dzfp_…_戚盈凯_….pdf` answered 500 with
+// `{"error":"Invalid character in header content [\"content-disposition\"]"}`.
+{
+  const name = 'dzfp_20260602_戚盈凯_发票.pdf'
+  const payload = Buffer.from('%PDF-1.4\n% remote invoice\n')
+  const files = new Map([[`/srv/${name}`, payload]])
+  const localEngine = fakeEngine(files)
+  const localRoutes = makeRoutes({ engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined } })
+  const route = localRoutes.find(entry => entry.path === ROUTES.download)
+  const server = createHttpServer((req, res) => {
+    // The handler answers its own failures; a throw here would be the bug.
+    route.handler(req, res).catch(() => { try { res.writeHead(599); res.end() } catch { /* closed */ } })
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  try {
+    const result = await httpGetOnce(port, `/download?alias=a&path=${encodeURIComponent(`/srv/${name}`)}`)
+    check('a non-ASCII name downloads instead of throwing ERR_INVALID_CHAR',
+      result.status === 200, `status=${result.status} body=${result.body.toString('utf8').slice(0, 160)}`)
+    check('the bytes arrive whole', result.body.equals(payload),
+      `${result.body.length} of ${payload.length}`)
+    const disposition = String(result.headers['content-disposition'] ?? '')
+    check('every byte of the disposition is ASCII',
+      /^[\x20-\x7e]*$/u.test(disposition), JSON.stringify(disposition))
+    const star = /filename\*=UTF-8''([^;]+)/u.exec(disposition)?.[1]
+    check('the real name travels in the extended form',
+      star !== undefined && decodeURIComponent(star) === name, String(star))
+    const plain = /filename="([^"]*)"/u.exec(disposition)?.[1]
+    check('the ASCII fallback keeps the extension',
+      /^[\x20-\x7e]*[.]pdf$/u.test(plain ?? ''), String(plain))
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+  }
+
+  // A remote name carrying CRLF must not become a header line. Either outcome
+  // is safe — a refusal keeps the bytes off the wire — so both are accepted,
+  // but a 200 that SHIPPED a line break is not. The name's own text (here
+  // "x-injected") is not evidence of anything: it travels inside a quoted
+  // string when the header is well formed.
+  const hostile = 'evil\r\nx-injected: yes.txt'
+  files.set(`/srv/${hostile}`, Buffer.from('x'))
+  const server2 = createHttpServer((req, res) => {
+    route.handler(req, res).catch(() => { try { res.writeHead(599); res.end() } catch { /* closed */ } })
+  })
+  await new Promise(resolve => server2.listen(0, '127.0.0.1', resolve))
+  const port2 = server2.address().port
+  try {
+    const result = await httpGetOnce(port2, `/download?alias=a&path=${encodeURIComponent(`/srv/${hostile}`)}`)
+    const disposition = String(result.headers['content-disposition'] ?? '')
+    check('a CRLF in the remote name never reaches the headers',
+      result.status !== 200 || (!/[\r\n]/u.test(disposition) && /^[\x20-\x7e]*$/u.test(disposition)),
+      `status=${result.status} disposition=${JSON.stringify(disposition)}`)
+    check('the two halves of the name are not run together',
+      result.status !== 200 || /evil__x-injected/u.test(disposition),
+      `status=${result.status} disposition=${JSON.stringify(disposition)}`)
+  } finally {
+    await new Promise(resolve => server2.close(resolve))
+  }
+}
+
+/**
+ * One GET against a live server, collecting status, headers and body.
+ *
+ * @param {number} port - the listening port.
+ * @param {string} urlPath - path plus query.
+ * @returns {Promise<{ status: number, headers: object, body: Buffer }>} the reply.
+ */
+function httpGetOnce (port, urlPath) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      host: '127.0.0.1',
+      port,
+      path: urlPath,
+      method: 'GET',
+      headers: { host: `localhost:${port}`, connection: 'close' },
+    }, (response) => {
+      const chunks = []
+      response.on('data', chunk => chunks.push(chunk))
+      response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks) }))
+      response.on('error', reject)
+    })
+    request.on('error', reject)
+    request.end()
+  })
 }
 
 {
@@ -567,6 +691,314 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
     body.remotePath === '/srv/app/artifact.bin', String(body.remotePath))
 }
 
+// --- upload: an empty file is still a real upload -------------------------
+//
+// A zero-byte file is not a no-op: the staging file must be created, published
+// by rename and reported as `bytes: 0`. Reported from the field as a failure,
+// so it is pinned here — `for await` over a stream with no chunk must still
+// reach the publish step instead of falling through as "nothing to send".
+{
+  const files = new Map()
+  const emptyEngine = fakeEngine(files)
+  const emptyRoutes = makeRoutes({
+    engine: emptyEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
+  })
+  const emptyUpload = emptyRoutes.find(route => route.path === ROUTES.upload)
+  const { res, state } = fakeRes()
+  await emptyUpload.handler(fakeUploadReq({
+    url: `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv/app')}&name=${encodeURIComponent('empty.txt')}`,
+    chunks: [],
+  }), res)
+  const body = JSON.parse(state.body)
+  check('a zero-byte upload succeeds', body.ok === true && body.bytes === 0, state.body)
+  check('a zero-byte upload reports the destination path',
+    body.remotePath === '/srv/app/empty.txt', String(body.remotePath))
+  check('a zero-byte upload still publishes by rename',
+    emptyEngine.state.renamed.length === 1 && emptyEngine.state.renamed[0][1] === '/srv/app/empty.txt',
+    JSON.stringify(emptyEngine.state.renamed))
+  check('a zero-byte upload leaves an empty file at the destination',
+    files.get('/srv/app/empty.txt')?.length === 0, String(files.get('/srv/app/empty.txt')?.length))
+}
+
+// --- upload: the chunked JSON transport -----------------------------------
+//
+// The desktop shell serves the panel from `dsh-app://app/`, where a request
+// body that is a Blob never reaches a handler: the network service fails it
+// with `net::ERR_UNEXPECTED` ("请求在 0 秒后中断" in the panel) before any code of
+// ours runs. JSON bodies are what every other action already posts through that
+// scheme, so the same bytes travel base64-encoded, one bounded chunk per
+// request. These pin the APPEND semantics, which is where a silent truncation
+// would live: chunk 2 must add to chunk 1 rather than replace it.
+const chunkRoute = routes.find(route => route.path === ROUTES.uploadChunk)
+check('the chunked upload route is registered', chunkRoute !== undefined)
+
+async function postChunk (route, body, chunks = []) {
+  const { res, state } = fakeRes()
+  await route.handler(fakeReq({
+    method: 'POST',
+    url: ROUTES.uploadChunk,
+    headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+    body,
+  }), res)
+  return state
+}
+{
+  const files = new Map()
+  const chunkEngine = fakeEngine(files)
+  const chunkRoutes = makeRoutes({ engine: chunkEngine, router: {}, forwards, shells, ctx: { get: () => undefined } })
+  const route = chunkRoutes.find(entry => entry.path === ROUTES.uploadChunk)
+  const dir = '/srv/chunked'
+  const name = 'three-chunks.bin'
+  const uploadId = 'a'.repeat(32)
+  const parts = [Buffer.from('abc'), Buffer.from('de'), Buffer.from('fghi')]
+  let offset = 0
+  for (const [index, part] of parts.entries()) {
+    const state = await postChunk(route, {
+      alias: 'a',
+      path: dir,
+      name,
+      uploadId,
+      offset,
+      data: Buffer.from(part).toString('base64'),
+      final: index === parts.length - 1,
+    })
+    check(`chunk ${index} is accepted`, JSON.parse(state.body).ok === true, state.body)
+    offset += part.length
+  }
+  check('the chunks are concatenated in order, not overwritten',
+    files.get(`${dir}/${name}`)?.toString() === 'abcdefghi', String(files.get(`${dir}/${name}`)))
+  check('the chunked upload publishes exactly once',
+    chunkEngine.state.renamed.length === 1 && chunkEngine.state.renamed[0][1] === `${dir}/${name}`,
+    JSON.stringify(chunkEngine.state.renamed))
+  check('the first chunk truncates any previous attempt for the same id',
+    chunkEngine.state.openFlags[0]?.flags === 'w', String(chunkEngine.state.openFlags[0]?.flags))
+  check('later chunks reopen the staging file for appending',
+    chunkEngine.state.openFlags.slice(1).every(entry => entry.flags === 'r+'),
+    JSON.stringify(chunkEngine.state.openFlags.slice(1)))
+  check('a zero-byte file still lands when sent as one empty chunk', await (async () => {
+    const emptyFile = await postChunk(route, {
+      alias: 'a', path: dir, name: 'empty.bin', uploadId: 'b'.repeat(32), offset: 0, data: '', final: true,
+    })
+    return JSON.parse(emptyFile.body).ok === true && files.get(`${dir}/empty.bin`)?.length === 0
+  })() === true)
+  check('a chunk whose staging file is gone is refused, not written mid-file', await (async () => {
+    const missing = await postChunk(route, {
+      alias: 'a', path: dir, name: 'orphan.bin', uploadId: 'c'.repeat(32), offset: 0, data: '', final: false,
+    })
+    const second = await postChunk(route, {
+      alias: 'a', path: dir, name: 'orphan.bin', uploadId: 'd'.repeat(32), offset: 3, data: 'AAAA', final: false,
+    })
+    return JSON.parse(missing.body).ok === true && JSON.parse(second.body).ok !== true
+  })() === true)
+  check('an abort removes the staged part and publishes nothing', await (async () => {
+    const before = chunkEngine.state.unlinked.length
+    const abort = await postChunk(route, {
+      alias: 'a', path: dir, name: 'aborted.bin', uploadId: 'e'.repeat(32), offset: 0, data: '', final: false, abort: true,
+    })
+    return JSON.parse(abort.body).aborted === true && chunkEngine.state.unlinked.length === before + 1 &&
+      !files.has(`${dir}/aborted.bin`)
+  })() === true)
+  for (const [label, body] of [
+    ['a name with a separator', { name: '../escape.txt' }],
+    ['a non-hex upload id', { uploadId: '../../etc' }],
+    ['an offset past the size limit', { offset: 2 * 1024 * 1024 * 1024 }],
+    ['a non-integer offset', { offset: 1.5 }],
+    ['data that is not base64', { data: 'not base64 !!!' }],
+  ]) {
+    const state = await postChunk(route, {
+      alias: 'a', path: dir, name: 'x.bin', uploadId: 'f'.repeat(32), offset: 0, data: '', final: false, ...body,
+    })
+    check(`the chunked route refuses ${label}`, state.status === 400, `status=${state.status} ${state.body}`)
+  }
+}
+
+// --- upload: the host's whole-request deadline ----------------------------
+//
+// The DSH web server builds `node:http` with DEFAULT options, so
+// `requestTimeout` is 300 000 ms — a deadline on receiving the ENTIRE request,
+// not on idleness. A browser sending a large file is cut off mid-body once five
+// minutes pass and reports it as `Failed to fetch`, a message that names
+// neither the size nor the deadline. The route raises the deadline for the
+// duration of the body read and restores it when the last upload ends.
+//
+// Every case here is a property of the WINDOW, not of a particular file size:
+// what can be asserted without waiting five minutes is that the value is raised
+// while a body is arriving, restored afterwards, and never left raised.
+{
+  const server = { requestTimeout: 300_000, setTimeout () {} }
+  const gated = makeRoutes({
+    engine: fakeEngine(new Map()),
+    router: {},
+    forwards,
+    shells,
+    ctx: { get: (name) => (name === 'webServer' ? { server } : undefined) },
+  })
+  const gatedUpload = gated.find(route => route.path === ROUTES.upload)
+  const ask = (name) => `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv/app')}&name=${encodeURIComponent(name)}`
+
+  {
+    const { res, state } = fakeRes()
+    // Not awaited yet: the window opens synchronously at the top of the
+    // handler, which is the only instant at which the raised value is
+    // observable without holding a real socket open.
+    const running = gatedUpload.handler(fakeUploadReq({ url: ask('big.bin'), chunks: [Buffer.from('x')] }), res)
+    check('an upload raises the host request deadline while its body is arriving',
+      server.requestTimeout === 7_200_000, String(server.requestTimeout))
+    await running
+    check('the raised deadline is restored when that upload ends',
+      server.requestTimeout === 300_000, String(server.requestTimeout))
+    check('raising the deadline does not disturb the upload itself',
+      JSON.parse(state.body).ok === true, state.body)
+  }
+
+  {
+    // Two uploads overlap, and one finishes FIRST. The deadline must stay
+    // raised until BOTH finish: restoring on the first would cut the second off
+    // at what it believes is a five-minute limit while a body is still
+    // arriving. The bodies are gated so the interleaving is real rather than
+    // merely microtask-scheduled.
+    let openFirst
+    let openSecond
+    const firstGate = new Promise((resolve) => { openFirst = resolve })
+    const secondGate = new Promise((resolve) => { openSecond = resolve })
+    const gatedReq = (url, gate) => {
+      let sent = false
+      return {
+        method: 'POST',
+        url,
+        headers: { host: 'localhost:4074', 'content-type': 'application/octet-stream' },
+        socket: { remoteAddress: '127.0.0.1', localPort: 4074 },
+        on () {},
+        [Symbol.asyncIterator] () {
+          return {
+            async next () {
+              if (sent) return { done: true, value: undefined }
+              sent = true
+              await gate
+              return { done: false, value: Buffer.from('x') }
+            },
+          }
+        },
+      }
+    }
+    const first = gatedUpload.handler(gatedReq(ask('one.bin'), firstGate), fakeRes().res)
+    const second = gatedUpload.handler(gatedReq(ask('two.bin'), secondGate), fakeRes().res)
+    openFirst()
+    await first
+    check('the deadline stays raised while a second upload is still open',
+      server.requestTimeout === 7_200_000, String(server.requestTimeout))
+    openSecond()
+    await second
+    check('the deadline is restored once the last upload ends',
+      server.requestTimeout === 300_000, String(server.requestTimeout))
+  }
+
+  {
+    // The primary source. Node puts the `http.Server` on every accepted socket,
+    // so the route can raise the deadline from the response alone — without
+    // depending on the host exposing its server through a service field whose
+    // name we would otherwise have to guess. This deployment's `webServer`
+    // service documents `host` and `protocol`; whether it also carries the node
+    // server is not something the plugin should bet an upload on.
+    const socketServer = { requestTimeout: 300_000, setTimeout () {} }
+    const { res, state } = fakeRes()
+    res.socket = { server: socketServer }
+    const viaSocket = makeRoutes({
+      engine: fakeEngine(new Map()),
+      router: {},
+      forwards,
+      shells,
+      ctx: { get: () => undefined },
+    }).find(route => route.path === ROUTES.upload)
+    const running = viaSocket.handler(fakeUploadReq({ url: ask('sock.bin'), chunks: [Buffer.from('s')] }), res)
+    check('the deadline is raised from the response socket alone',
+      socketServer.requestTimeout === 7_200_000, String(socketServer.requestTimeout))
+    await running
+    check('...and restored on that same server',
+      socketServer.requestTimeout === 300_000, String(socketServer.requestTimeout))
+    check('...while the upload still succeeds',
+      JSON.parse(state.body).ok === true, state.body)
+  }
+
+  {
+    // alone: writing a number over it would impose a limit that was
+    // deliberately absent, turning a working deployment into a failing one.
+    const disabled = { requestTimeout: 0, setTimeout () {} }
+    const routesFor = makeRoutes({
+      engine: fakeEngine(new Map()),
+      router: {},
+      forwards,
+      shells,
+      ctx: { get: (name) => (name === 'webServer' ? { server: disabled } : undefined) },
+    }).find(route => route.path === ROUTES.upload)
+    await routesFor.handler(fakeUploadReq({ url: ask('x.bin'), chunks: [Buffer.from('x')] }), fakeRes().res)
+    check('a host with the deadline disabled keeps it disabled',
+      disabled.requestTimeout === 0, String(disabled.requestTimeout))
+  }
+
+  {
+    // A deployment with no web server service (the route mounted elsewhere)
+    // must still serve the upload — the window is an optimisation, not a
+    // requirement.
+    const headless = makeRoutes({
+      engine: fakeEngine(new Map()),
+      router: {},
+      forwards,
+      shells,
+      ctx: { get: () => undefined },
+    }).find(route => route.path === ROUTES.upload)
+    const { res, state } = fakeRes()
+    await headless.handler(fakeUploadReq({ url: ask('y.bin'), chunks: [Buffer.from('y')] }), res)
+    check('an upload still succeeds when the web server service is unavailable',
+      JSON.parse(state.body).ok === true, state.body)
+  }
+
+  check('the deadline is restored to the host value at the end of the block',
+    server.requestTimeout === 300_000, String(server.requestTimeout))
+}
+
+{
+  // A MULTI-CHUNK upload must land its bytes end to end.
+  //
+  // This is the regression the shipped route actually had: `sftpWriteHandle`
+  // defaults its file offset to 0, and the upload loop called it without one, so
+  // every chunk was written at offset 0 and each overwrote the last. The route
+  // still answered `{ok: true, bytes: <the whole size>}` and published the
+  // fragment under the destination name — silent truncation with a success
+  // response. Measured against a real host: 300000 bytes on the wire, 65536 on
+  // disk.
+  //
+  // The check above (`'hello remote'`) could never catch it: two 6-byte chunks
+  // happen to produce the right content when the second overwrites the first
+  // from offset 0, because the second chunk IS the whole answer. So the payload
+  // here is deliberately several DISTINCT chunks of unequal length.
+  const files = new Map()
+  const localEngine = fakeEngine(files)
+  const localRoutes = makeRoutes({
+    engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
+  })
+  const localUpload = localRoutes.find(route => route.path === ROUTES.upload)
+  const { res, state } = fakeRes()
+  const chunks = [Buffer.from('AAAA'), Buffer.from('BBBBBBBBB'), Buffer.from('CC')]
+  const expected = Buffer.concat(chunks).toString()
+  await localUpload.handler(fakeUploadReq({
+    url: `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv/app')}&name=multi.bin`,
+    chunks,
+  }), res)
+  const body = JSON.parse(state.body)
+  check('a multi-chunk upload reports the full byte count', body.bytes === expected.length, String(body.bytes))
+  check('a multi-chunk upload keeps EVERY chunk, not just the last',
+    files.get('/srv/app/multi.bin')?.toString() === expected,
+    JSON.stringify(String(files.get('/srv/app/multi.bin'))))
+  // Each chunk must be written at the offset it belongs at. Asserting the
+  // positions directly names the defect even if a future doppelganger appends
+  // instead of seeking.
+  const positions = (localEngine.state.writes ?? []).map(entry => entry.position)
+  check('each chunk is written at its own offset, starting at 0',
+    positions.length === 3 && positions[0] === 0 && positions[1] === 4 && positions[2] === 13,
+    JSON.stringify(positions))
+}
+
 {
   // A root-level destination must not produce a doubled slash.
   const files = new Map()
@@ -666,6 +1098,112 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
       // this fails if the timestamp-only token comes back.
       /\.dsh-up-\d+-[0-9a-z]+-[0-9a-f]{16}$/u.test(stagingOpen?.target ?? ''),
       String(stagingOpen?.target))
+  }
+}
+
+// --- the reverse-forward TOOL is registered and wired ---------------------
+//
+// The route half above can pass while no tool exists: a manager reachable from
+// the browser but not from the agent is half a feature, and the mutation that
+// unregistered the tool left every route assertion green. These two assertions
+// exist to make that impossible.
+{
+  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tools.js')).href)
+  const reverseStub = { list: () => [], open: async () => ({ id: 'rfwd-9' }), close: () => true }
+  const withReverse = workspaceTools({ get: () => undefined }, engine, {}, forwards, undefined, reverseStub)
+  const names = withReverse.map(tool => tool.name)
+  check('the agent is offered ssh_workspace_reverse_forward',
+    names.includes('ssh_workspace_reverse_forward'), JSON.stringify(names))
+
+  // Without the manager the tool must be ABSENT rather than present-and-broken:
+  // a tool that always throws teaches the agent to stop calling it.
+  const withoutReverse = workspaceTools({ get: () => undefined }, engine, {}, forwards, undefined, undefined)
+  check('no reverse tool is offered when the manager is absent',
+    !withoutReverse.map(tool => tool.name).includes('ssh_workspace_reverse_forward'),
+    JSON.stringify(withoutReverse.map(tool => tool.name)))
+
+  // unforward has to accept a reverse id: the local manager declines it.
+  const unforward = withReverse.find(tool => tool.name === 'ssh_workspace_unforward')
+  const closed = await unforward.execute({ id: 'rfwd-9' }, {})
+  check('ssh_workspace_unforward falls through to the reverse manager',
+    closed.ok === true && closed.closed === true, JSON.stringify(closed))
+}
+
+// --- reverse forwards through the SAME two routes -------------------------
+//
+// `ssh -R` reuses /forward and /unforward with `direction: 'reverse'` rather
+// than adding routes. What has to be proven here is the part the manager's own
+// suite cannot see: the ROUTE maps the request correctly, refuses a request it
+// cannot honour with a sentence the user can act on, and lets unforward close a
+// remote listener by its `rfwd-` id — the id space the local manager will
+// always decline.
+{
+  const calls = []
+  const reverseForwards = {
+    list: () => [{ id: 'rfwd-1', alias: 'a', localHost: '127.0.0.1', localPort: 9000, remoteHost: '127.0.0.1', remotePort: 9100, requestedRemotePort: 0, exposed: false, connections: 0 }],
+    open: async (alias, options) => {
+      calls.push({ alias, options })
+      return { id: 'rfwd-1', alias, localHost: options.localHost ?? '127.0.0.1', localPort: options.localPort, remoteHost: options.remoteHost ?? '127.0.0.1', remotePort: 9100, requestedRemotePort: options.remotePort, exposed: (options.remoteHost ?? '127.0.0.1') !== '127.0.0.1', connections: 0 }
+    },
+    close: (id) => id === 'rfwd-1',
+  }
+  const reverseRoutes = makeRoutes({
+    engine, router: {}, forwards: { list: () => [], open: async () => ({}), close: () => false }, reverseForwards, shells, ctx: { get: () => undefined },
+  })
+  const find = (routePath) => reverseRoutes.find(route => route.path === routePath)
+  const postTo = async (routePath, body) => {
+    const route = find(routePath)
+    const { res, state } = fakeRes()
+    await route.handler(fakeReq({ method: 'POST', url: routePath, headers: { host: 'localhost:4074', 'content-type': 'application/json' }, body }), res)
+    return { status: state.status, body: state.body === '' ? undefined : JSON.parse(state.body) }
+  }
+
+  {
+    const state = await postTo(ROUTES.forward, { alias: 'a', direction: 'reverse', localPort: 9000, remotePort: 0 })
+    check('POST /forward with direction=reverse reaches the reverse manager',
+      calls.length === 1 && calls[0].alias === 'a' && calls[0].options.localPort === 9000 && calls[0].options.remotePort === 0,
+      JSON.stringify(calls))
+    check('and the reply carries the forward it opened',
+      state.status === 200 && state.body?.ok === true && state.body?.forward?.id === 'rfwd-1',
+      JSON.stringify(state))
+  }
+
+  {
+    // remotePort 0 is legal here (the HOST picks), localPort 0 is not (there is
+    // nothing to dial). Naming which one is missing is the difference between a
+    // fixable message and "invalid request".
+    const state = await postTo(ROUTES.forward, { alias: 'a', direction: 'reverse', remotePort: 0 })
+    check('a reverse request without localPort is refused',
+      state.body?.ok === false && /localPort/iu.test(String(state.body?.error ?? '')),
+      JSON.stringify(state))
+  }
+
+  {
+    const state = await postTo(ROUTES.forward, { alias: 'a', direction: 'reverse', localPort: 9000, remotePort: 70000 })
+    check('a reverse request with an impossible port is refused',
+      state.body?.ok === false && /65535/u.test(String(state.body?.error ?? '')),
+      JSON.stringify(state))
+  }
+
+  {
+    const state = await postTo(ROUTES.unforward, { id: 'rfwd-1' })
+    check('POST /unforward closes a remote listener by its rfwd- id',
+      state.status === 200 && state.body?.ok === true && state.body?.closed === true,
+      JSON.stringify(state))
+  }
+
+  {
+    // Without the manager the route must say so rather than silently report
+    // success: an unreachable feature that answers 200 is indistinguishable
+    // from a working one until the user checks the remote host.
+    const noReverse = makeRoutes({ engine, router: {}, forwards: { list: () => [], open: async () => ({}), close: () => false }, shells, ctx: { get: () => undefined } })
+    const route = noReverse.find(candidate => candidate.path === ROUTES.forward)
+    const { res, state } = fakeRes()
+    await route.handler(fakeReq({ method: 'POST', url: ROUTES.forward, headers: { host: 'localhost:4074', 'content-type': 'application/json' }, body: { alias: 'a', direction: 'reverse', localPort: 9000, remotePort: 0 } }), res)
+    state.body = state.body === '' ? undefined : JSON.parse(state.body)
+    check('a build without the reverse manager refuses instead of pretending',
+      state.body?.ok === false && /unavailable/u.test(String(state.body?.error ?? '')),
+      JSON.stringify(state))
   }
 }
 

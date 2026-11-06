@@ -52,18 +52,19 @@ const EXPECTED_TOOLS = [
   'ssh_workspace_shell',
   'ssh_workspace_forward',
   'ssh_workspace_unforward',
+  'ssh_workspace_reverse_forward',
 ]
 // Route paths the browser half must expose. Kept in step with ROUTES in
 // lib/routes.js: hosts, host save/delete/forget-key/disconnect/reconnect,
 // test, ls, status, self-check, support-bundle, mount, unmount, enable,
 // forward, unforward, the six saved-forward routes
 // (save/toggle/delete/remember/probe/settings), transfer, download,
-// download-tree and upload.
+// download-tree, upload and upload-chunk.
 //
 // The number is pinned rather than derived on purpose: deriving it from ROUTES
 // would make "a route was added but never registered" pass, which is the thing
 // this assertion exists to notice.
-const EXPECTED_ROUTES = 26
+const EXPECTED_ROUTES = 27
 
 let failures = 0
 let passes = 0

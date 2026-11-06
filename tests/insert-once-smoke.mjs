@@ -133,7 +133,7 @@ check('the drag bridge removes every listener it added',
   `${(source.match(/document\.removeEventListener\('(dragstart|dragover|drop|dragend)'/g) ?? []).length} removal(s)`)
 check('the row menu removes its listener',
   source.includes("document.removeEventListener('contextmenu', onContextMenu, true)"))
-check('apply() returns the disposer', /return \(\) => \{\s*\n\s*detachBridges\(\)\s*\n\s*\}/.test(source))
+check('apply() returns the disposer', /return \(\) => \{\s*\n\s*clearTimeout\(transferActionsProbe\)\s*\n\s*detachBridges\(\)\s*\n\s*\}/.test(source))
 check('apply() keeps the installed disposer', source.includes('const detachBridges = installComposerBridges(ctx)'))
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)

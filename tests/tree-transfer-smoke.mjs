@@ -118,23 +118,52 @@ check('a directory download is a real action, not an apology',
   clientSource.includes("translate('transfer.downloadDir')") &&
     !clientSource.includes('downloadDirUnsupported'))
 check('the browser reuses the streaming download route',
-  clientSource.includes('fetch(`${API.download}?alias='))
+  clientSource.includes('const route = isDir ? API.downloadTree : API.download') &&
+    clientSource.includes('fetch(`${route}${query}`)'))
 check('a directory download goes to the archive route',
-  clientSource.includes('fetch(`${API.downloadTree}?alias=') &&
+  clientSource.includes('const route = isDir ? API.downloadTree : API.download') &&
     clientSource.includes('isDir ? API.downloadTree : API.download'))
-check('the browser reuses the streaming upload route',
-  clientSource.includes('API.upload}${query}'))
+check('the browser reuses the chunked upload route',
+  clientSource.includes('postFileInChunks(alias, dir, file, {') &&
+    clientSource.includes('fetch(API.uploadChunk'))
 
 console.log('\n[file-panel header]')
 
-check('an upload action is registered into DSH\'s file panel header',
+check('a transfer-queue action is registered into DSH\'s file panel header',
   clientSource.includes("slots.inject('sidebar.right.tab.files.actions'"))
 check('the header action reads the panel\'s own directory',
   clientSource.includes("typeof props?.absolutePath === 'string'"))
-check('the header action renders nothing for a non-remote listing',
-  clientSource.includes('if (remote === null) return null'))
-check('the header uploads into the listed directory',
-  clientSource.includes('sendTreeUpload(remote.alias, remote.remotePath, file)'))
+// The header used to hold an upload button too, competing with the one
+// control that has to stay reachable. The slice is the component itself: the
+// same keys legitimately appear in the row menu and the directory browser,
+// and only here is their absence the point.
+const headerSlice = clientSource.slice(
+  clientSource.indexOf('function FilePanelTransferActions (props)'),
+  clientSource.indexOf('let taskMenuEl = null'))
+check('the header no longer offers an upload button',
+  headerSlice.length > 0 &&
+    !headerSlice.includes("t('transfer.upload')") &&
+    !headerSlice.includes('enqueueUploads('),
+  'upload from the header is the control this change removed')
+check('...nor keeps the uploadability probe for a button that is gone',
+  headerSlice.length > 0 &&
+    !headerSlice.includes('uploadable') &&
+    !headerSlice.includes('API.ls'),
+  'a listing request whose verdict no remaining control consumes is dead work')
+check('the progress entry is not gated on a transfer being in flight',
+  headerSlice.length > 0 &&
+    !headerSlice.includes('queue.items.length > 0 &&') &&
+    !headerSlice.includes('if (remote === null && queue.items.length === 0) return null'),
+  'hiding the entry when the queue drains is what made it look broken')
+check('...and the entry belongs to a remote listing only',
+  headerSlice.length > 0 &&
+    headerSlice.includes('if (remote === null) return null') &&
+    headerSlice.includes('remoteTargetOf(absolutePath)'),
+  'a local directory has no host to transfer to, so the header keeps DSH\'s own controls')
+check('...and still publishes the directory for the empty-space menu',
+  headerSlice.includes("'data-sshwsp-dir': remote.remotePath") &&
+    headerSlice.includes("'data-sshwsp-alias': remote.alias"),
+  'the blank-area right-click would answer nothing again')
 check('the header offers no directory download',
   !clientSource.includes('downloadHere'))
 check('the post-upload refresh clicks the reload control, not auto-refresh',

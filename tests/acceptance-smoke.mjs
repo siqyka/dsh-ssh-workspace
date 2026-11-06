@@ -133,6 +133,7 @@ const EXPECTED_TOOLS = [
   'ssh_workspace_shell',
   'ssh_workspace_forward',
   'ssh_workspace_unforward',
+  'ssh_workspace_reverse_forward',
 ]
 const missingTools = EXPECTED_TOOLS.filter(name => !registry.tools.has(name))
 const extraTools = [...registry.tools.keys()].filter(name => !EXPECTED_TOOLS.includes(name))

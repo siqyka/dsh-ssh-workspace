@@ -180,6 +180,7 @@ const expectedTools = [
   'ssh_workspace_shell',
   'ssh_workspace_forward',
   'ssh_workspace_unforward',
+  'ssh_workspace_reverse_forward',
 ]
 for (const name of expectedTools) {
   check(`tool ${name} is registered`, registry.registered.has(name))

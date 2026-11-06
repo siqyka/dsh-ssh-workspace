@@ -192,8 +192,8 @@ check('no backdrop still dismisses on a raw onClick',
 check('every backdrop spreads backdropDismiss',
   backdrops.length === 4 && backdrops.every(line => line.includes('...backdropDismiss(')),
   backdrops.join(' | '))
-check('the helper is wired at exactly four call sites',
-  (source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length === 4,
+check('the helper is wired at every floating surface',
+  (source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length === 5,
   `${(source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length} call(s)`)
 
 console.log('\n[wiring: each dialog keeps its own busy guard]')
@@ -216,19 +216,27 @@ function guardOf (componentName) {
 
 {
   const browser = guardOf('DirectoryBrowser')
-  check('DirectoryBrowser refuses to be dismissed mid-transfer',
-    /const dismissBackdrop = \(\) => \{[\s\S]{0,160}?!mounting && !uploadBusy && transferBusy === undefined[\s\S]{0,40}?onClose\(\)/.test(browser))
-  // The spread now goes through a second layer that clears an in-progress
-  // SELECTION before closing, because closing on Escape there loses work that
-  // has no undo. The transfer guard is still the last word: the wrapper has to
-  // delegate to it, or Escape would close the dialog mid-transfer and hide the
-  // only row reporting the outcome.
+  // The dialog used to refuse dismissal while a transfer was in flight because
+  // the dialog itself held the only report of it. The queue now owns transfers:
+  // they keep running after the dialog closes and the Files panel shows their
+  // progress, so closing mid-transfer is allowed (and must not be blocked by a
+  // busy state the queue no longer needs).
+  check('DirectoryBrowser may be dismissed while a transfer runs',
+    /const dismissBackdrop = \(\) => \{[\s\S]{0,80}?if \(!mounting\) onClose\(\)/.test(browser) &&
+      !/uploadBusy|transferBusy/.test(browser),
+    'the dialog still blocks closing on a transfer the queue owns')
   check('DirectoryBrowser clears a selection before it closes',
     /const dismissOrClear = \(\) => \{[\s\S]{0,240}?if \(selectMode\)[\s\S]{0,200}?setSelected\(new Set\(\)\)[\s\S]{0,60}?return[\s\S]{0,40}?\}/.test(browser))
-  check('...and the wrapper still delegates to the transfer guard',
+  check('...and the wrapper still delegates to the dismissal guard',
     /const dismissOrClear = \(\) => \{[\s\S]{0,400}?dismissBackdrop\(\)/.test(browser))
   check('DirectoryBrowser spreads that guarded callback',
     browser.includes('...backdropDismiss(dismissOrClear)'))
+  // The queue popover is the fifth backdropDismiss site: it is anchored to a
+  // button rather than centred, but it is dismissed by the same rule — press
+  // AND release outside — so it must not grow a second implementation.
+  check('the transfer popover uses the same outside-click rule',
+    /function TransferQueuePanel[\s\S]{0,400}?\.\.\.backdropDismiss\(onClose\)/u.test(source) &&
+      /className: 'sshwsp-popbackdrop'[\s\S]{0,120}?\.\.\.backdropDismiss/u.test(source))
 }
 
 {
