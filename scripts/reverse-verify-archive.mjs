@@ -155,6 +155,46 @@ const MUTATIONS = [
     replace: "            false && jsx('div', {",
     suite: 'archive',
   },
+  {
+    // The whole point of asking first: activation is spent by the first network
+    // round trip, so a picker asked for afterwards fails exactly on the large
+    // transfers where a destination matters.
+    name: 'the destination is chosen AFTER the bytes arrive',
+    file: 'lib/client.js',
+    find: "      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return\n      const notice = transferNotice(",
+    replace: "      const notice = transferNotice(",
+    suite: 'archive',
+  },
+  {
+    name: 'a cancelled picker still fetches the file',
+    file: 'lib/client.js',
+    find: "      if (target.kind === 'canceled') return\n      const notice = transferNotice(",
+    replace: "      if (false) return\n      const notice = transferNotice(",
+    suite: 'archive',
+  },
+  {
+    // Closing instead of aborting publishes a truncated file under the name the
+    // user chose, which reads as a successful download.
+    name: 'a failed write CLOSES the file instead of aborting it',
+    file: 'lib/client.js',
+    find: '        try { await writable.abort() } catch { /* already closed */ }',
+    replace: '        try { await writable.close() } catch { /* already closed */ }',
+    suite: 'archive',
+  },
+  {
+    name: 'the fallback claims a save it cannot observe',
+    file: 'lib/client.js',
+    find: "      'transfer.downloadStarted': '已开始下载 {name}（{size}），保存位置由浏览器决定',",
+    replace: "      'transfer.downloadStarted': '已下载 {name}（{size}）',",
+    suite: 'archive',
+  },
+  {
+    name: 'a picker refusal is collapsed into a cancel',
+    file: 'lib/client.js',
+    find: "        if (err?.name === 'AbortError') return { kind: 'canceled' }\n        return { kind: 'unsupported' }",
+    replace: "        return { kind: 'canceled' }",
+    suite: 'archive',
+  },
 ]
 
 /** How many U+FFFD characters a file holds, as a UTF-8 damage witness. */

@@ -585,6 +585,125 @@ console.log('\n[the completion notice is ONE element, edited in place]')
   check('navigating clears the previous completion', /setTransferDone\(null\)/u.test(client))
 }
 
+// ------------------------------------------------- where a download lands
+console.log('\n[a download reports a save only when it can see one]')
+
+{
+  const client = await readFile(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+
+  /** Lift one top-level `async function` out of the bundle by brace matching. */
+  function lift (name) {
+    const start = client.indexOf(`async function ${name} (`)
+    if (start < 0) throw new Error(`client.js does not define ${name}()`)
+    let depth = 0
+    for (let i = client.indexOf('{', start); i < client.length; i += 1) {
+      if (client[i] === '{') depth += 1
+      else if (client[i] === '}') {
+        depth -= 1
+        if (depth === 0) {
+          // eslint-disable-next-line no-new-func
+          return new Function('window', `${client.slice(start, i + 1)}; return ${name}`)
+        }
+      }
+    }
+    throw new Error(`unbalanced braces in ${name}()`)
+  }
+
+  const pickFileTarget = lift('pickFileTarget')({})
+
+  // The three outcomes must stay apart. "You cancelled" and "this browser
+  // cannot ask" lead to opposite next steps, and collapsing them into a falsy
+  // return is exactly how a cancel gets reported as a failure — or worse, a
+  // failure gets silently treated as a cancel.
+  const unsupported = await pickFileTarget('a.txt')
+  check('no picker means "unsupported", not an error',
+    unsupported.kind === 'unsupported', JSON.stringify(unsupported))
+
+  const handle = { name: 'a.txt' }
+  const picked = await lift('pickFileTarget')({ showSaveFilePicker: async () => handle })('a.txt')
+  check('a chosen destination comes back as a handle',
+    picked.kind === 'handle' && picked.handle === handle, JSON.stringify(picked.kind))
+
+  const canceled = await lift('pickFileTarget')({
+    showSaveFilePicker: async () => { const err = new Error('closed'); err.name = 'AbortError'; throw err },
+  })('a.txt')
+  check('closing the picker is "canceled", a distinct outcome',
+    canceled.kind === 'canceled', JSON.stringify(canceled))
+
+  const refused = await lift('pickFileTarget')({
+    showSaveFilePicker: async () => { const err = new Error('denied'); err.name = 'SecurityError'; throw err },
+  })('a.txt')
+  check('a refusal is NOT reported as a cancel',
+    refused.kind === 'unsupported', JSON.stringify(refused))
+
+  // The ordering claim is the whole point of asking first: the picker needs the
+  // activation the click granted, and the first network `await` spends it. A
+  // source check is the only way to see it, and it is worth having because the
+  // alternative is a bug that shows up only on large files.
+  const row = client.slice(
+    client.indexOf('async function downloadTreeRow ('),
+    client.indexOf('async function sendTreeUpload (') === -1
+      ? undefined
+      : client.indexOf('async function sendTreeUpload ('),
+  )
+  const pickAt = row.indexOf('await pickFileTarget(')
+  const fetchAt = row.indexOf('await fetch(')
+  check('the destination is chosen BEFORE the request is made',
+    pickAt >= 0 && fetchAt > pickAt, `pick@${pickAt} fetch@${fetchAt}`)
+  check('a cancelled picker transfers no bytes at all',
+    row.includes('if (target.kind === \'canceled\') return'), 'the cancel branch is missing')
+
+  /** A writable double that records writes and whether it was closed. */
+  function makeWritable () {
+    const state = { chunks: [], closed: false, aborted: false }
+    state.write = async (chunk) => { state.chunks.push(chunk) }
+    state.close = async () => { state.closed = true }
+    state.abort = async () => { state.aborted = true }
+    return state
+  }
+
+  const streamIntoHandle = lift('streamIntoHandle')({})
+
+  {
+    const writable = makeWritable()
+    const seen = []
+    const response = new Response(new Uint8Array([1, 2, 3, 4, 5]))
+    const written = await streamIntoHandle(
+      { createWritable: async () => writable },
+      response,
+      (bytes) => { seen.push(bytes) },
+    )
+    check('the reported size is what the DISK accepted', written === 5, String(written))
+    check('...and the writable is closed, which is what publishes it', writable.closed === true)
+    check('...with progress reported as a running count',
+      seen.length > 0 && seen[seen.length - 1] === 5, JSON.stringify(seen))
+  }
+
+  {
+    // A failed write must ABORT: closing a short file publishes a truncated
+    // download under the name the user chose, which reads as success.
+    const writable = makeWritable()
+    writable.write = async () => { throw new Error('disk full') }
+    let threw = false
+    try {
+      await streamIntoHandle({ createWritable: async () => writable }, new Response(new Uint8Array([1, 2, 3])))
+    } catch { threw = true }
+    check('a failed write throws', threw)
+    check('...and ABORTS instead of closing a short file', writable.aborted === true && writable.closed === false,
+      `aborted=${writable.aborted} closed=${writable.closed}`)
+  }
+
+  // The anchor path can never know whether the file was saved, so it must not
+  // claim it. Both locales have to carry the honest wording, because the
+  // fallback is what most Chromium builds actually use inside a sandboxed frame.
+  const startedLines = [...client.matchAll(/'transfer\.downloadStarted': '([^']*)'/gu)].map(match => match[1])
+  check('both locales define the "started" wording', startedLines.length === 2, `${startedLines.length}`)
+  check('neither claims the file was saved',
+    startedLines.every(line => !/已下载|Downloaded/u.test(line)), JSON.stringify(startedLines))
+  check('the fallback says who chooses the location',
+    /浏览器/u.test(startedLines[0] ?? '') && /browser/iu.test(startedLines[1] ?? ''), JSON.stringify(startedLines))
+}
+
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {
   console.log('\nfailures:')

@@ -16,7 +16,7 @@
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 45 | directory listing |
 | test suites | 61 | `tests/run.mjs` |
-| passing assertions (sampled) | 2643 | measured 2026-11-06 |
+| passing assertions (sampled) | 2659 | measured 2026-11-06 |
 
 <!-- doc-numbers:end -->
 
@@ -146,15 +146,26 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 套件数量不再手写：它由 [doc-numbers](./development.md#规模) 那段生成表给出，改了 `tests/run.mjs`
 却忘了同步文档会让 `npm run check:docs` 变红。
 
-断言数按裸检出实测：`DSH_CORE_ROOT` / `DSH_WS_TEST_ALIAS` 未设置时，需要真实装配树或真实主机的
-套件整体 SKIP。裸检出下 **40 个套件实际运行、1905 项断言**（生成表里那行就是这个数，由
-`node scripts/doc-numbers.mjs --assertions N` 打时间戳）；`DSH_CORE_ROOT` 指向真实装配树时，
-`projection-real` / `lifecycle` / `tool-schemas` / `boot` 四个再跑起来，共 **2128 项**；
-再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，共 **2221 项**，
-46 个套件全部运行、零 SKIP。
+断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
+于是 **61 个套件里 55 个实际运行、2659 项断言**，其余 6 个整体 SKIP（需要真实装配树或真实主机）。
+生成表里那行就是这个数，由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳。
+
+**两处需要说清的口径**，此前这里写的数字已经过期而没人发现（旧文写「40 个套件、1905 项」，
+实际 61 个套件、2659 项；每个套件都在长，数字只会往下漂）：
+
+- `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` / `boot`
+  四个再跑起来，总数会再增加。**这一轮没有重新测**，因为本机没有可解析的 `@deepseek-ai/dsh-fs`
+  （见下），所以这里不给数字，而不是把旧数字留着。
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，61 个套件全部运行、
+  零 SKIP。**同样没有重新测**，理由同上。
+
+**关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
+`node_modules`** 目录。指向一个只有 `cosmokit` / `schemastery` 的 profile 目录时，10 个套件会以
+`cannot resolve the DSH peer package "@deepseek-ai/dsh-fs"` 退出——看起来像代码坏了，实际是根指错了。
+判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
 **统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以「逐套件
-`PASS` 行数」与「汇总行数字」两种算法给出同一个值（实测：裸检出 1905 = 1905，装配树 2128 = 2128）。
+`PASS` 行数」与「汇总行数字」两种算法给出同一个值（本轮实测：2659 = 2659，61 个套件）。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
 脚本会静默跳过一个套件甚至五个，得出看起来核对过、实际少掉数百项的数字（本文件曾因此写 1756，
@@ -187,7 +198,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 56 | 目录树上传、原子发布、递归与失败路径 |
-| `archive-smoke` | 无（tar 与规则部分）；`DSH_CORE_ROOT`（远端树部分） | 89 | tar 头的八进制字段（用真实读者校验）、排除规则、目录打包下载、完成提醒的单一节点行为 |
+| `archive-smoke` | 无（tar 与规则部分）；`DSH_CORE_ROOT`（远端树部分） | 103 | tar 头的八进制字段（用真实读者校验）、排除规则、目录打包下载、完成提醒的单一节点行为、**下载只在看得见保存时才声称已保存**（目标先于请求被选、取消不耗字节、权限拒绝不得被报成取消、写失败必须 abort 而非 close） |
 | `insert-once-smoke` | 无 | 18 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
 | `caret-after-insert-smoke` | 无 | 17 | 插入后光标必须落在 chip **之后**：用假 DOM + 假 Lexical 复现「裸 `input.focus()` 把 DOM 光标写到文档开头 → `selectionchange` 覆盖模型选区 → `editor.focus()` 忠实地恢复这个已被移到开头的光标」，并断言修复后 DOM 焦点从不发生在 Lexical 写选区之前；无 Lexical 句柄时仍聚焦输入框、零可见输入卡或两张卡时都不抢焦点 |
 | `locale-register-smoke` | 无 | 21 | 中英词典注册、重复注册不污染、`translate` 回落 |
