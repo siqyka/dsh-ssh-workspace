@@ -73,6 +73,7 @@ const SUITES = [
   'projection-real',
   'tree-transfer',
   'insert-once',
+  'caret-after-insert',
   'locale-register',
   'detach',
   'probe',

@@ -188,6 +188,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 40 | 目录树上传、原子发布、递归与失败路径 |
 | `insert-once-smoke` | 无 | 18 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
+| `caret-after-insert-smoke` | 无 | 17 | 插入后光标必须落在 chip **之后**：用假 DOM + 假 Lexical 复现「裸 `input.focus()` 把 DOM 光标写到文档开头 → `selectionchange` 覆盖模型选区 → `editor.focus()` 忠实地恢复这个已被移到开头的光标」，并断言修复后 DOM 焦点从不发生在 Lexical 写选区之前；无 Lexical 句柄时仍聚焦输入框、零可见输入卡或两张卡时都不抢焦点 |
 | `locale-register-smoke` | 无 | 21 | 中英词典注册、重复注册不污染、`translate` 回落 |
 | `detach-smoke` | 无 | 83 | 停用清单读写与脏数据退化、路径包含判定、`ctx.fs` 十个方法逐个断言被拒、重新启用两条路径、shell / terminal 拒绝且不拨号、工作区外照常可用、跨分区写入隔离、启用不得经过围栏探测、**沙箱模式围栏（`read-only` 拒写且不拨号）、三个围栏错误码的可分性、`/tmp` 对写围栏可达而对停用 / 探针仍按原始挂载根** |
 | `probe-smoke` | 无 | 20 | 内建桥三条身份探针无活连接时不拨号、挂载根外必须 `ENOENT`、有连接时取真实属性、broken 记录不算连接（直接数 `withSftp` / `acquire` 次数） |
