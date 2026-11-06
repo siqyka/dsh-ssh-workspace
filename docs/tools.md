@@ -209,6 +209,7 @@ PowerShell），无法驱动远端主机，因此本插件单独提供这个工�
 | `localPath` | 是 | 本机绝对路径（上传的源 / 下载的目标） |
 | `remotePath` | 是 | 远端绝对路径（上传的目标 / 下载的源） |
 | `recursive` | 否 | 整个目录树，任方向都支持（下载时树内的 symlink 只列出不跟随） |
+| `exclude` | 否 | 目录树传输要跳过的路径，**两个方向共用**；逗号或换行分隔。裸名匹配任意路径段（`node_modules`），`*` 不跨 `/` 而 `**` 跨，含 `/` 的规则从树根锚定（`build/output`），尾随 `/` 只匹配目录（`tmp/`），`!` 反选且**最后匹配的一条说了算**。不是 `.gitignore`，没有逐目录规则文件 |
 
 返回 `ok`、`bytes`、`files`（递归时）、`skippedFiles`、`skippedLinks`、`error`。
 

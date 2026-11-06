@@ -105,15 +105,23 @@ check('the row menu offers a download action', clientSource.includes("translate(
 check('the row menu offers an upload action', clientSource.includes("translate('transfer.upload')"))
 check('transfers are gated on a remote row', clientSource.includes('remoteTargetOf(absPath)'))
 check('downloads the row itself, not a guessed path',
-  clientSource.includes('downloadTreeRow(absPath)'))
+  clientSource.includes('downloadTreeRow(absPath, isDir)'))
 check('uploads beside the row',
   clientSource.includes('uploadTreeRow(absPath, isDir)'))
 check('upload targets the row\'s own directory when it is one',
   clientSource.includes('isDir ? parts.remotePath : remoteDirOf(parts.remotePath)'))
-check('a directory download is explained rather than silently missing',
-  clientSource.includes("translate('transfer.downloadDirUnsupported')"))
+// A directory download used to be DISABLED with "not supported yet", which was
+// true of the browser and false of the agent's own tool. It is now a real
+// action backed by the archive route, and the assertion says so rather than
+// checking for an apology.
+check('a directory download is a real action, not an apology',
+  clientSource.includes("translate('transfer.downloadDir')") &&
+    !clientSource.includes('downloadDirUnsupported'))
 check('the browser reuses the streaming download route',
-  clientSource.includes('API.download}${query}'))
+  clientSource.includes('fetch(`${API.download}?alias='))
+check('a directory download goes to the archive route',
+  clientSource.includes('fetch(`${API.downloadTree}?alias=') &&
+    clientSource.includes('isDir ? API.downloadTree : API.download'))
 check('the browser reuses the streaming upload route',
   clientSource.includes('API.upload}${query}'))
 

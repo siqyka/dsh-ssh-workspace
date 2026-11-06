@@ -342,6 +342,62 @@ check('the transfer route is registered', routes.some(route => route.path === RO
   check('download of a directory answers 400', state.status === 400, String(state.status))
 }
 
+// --- download-tree (the archive route) ------------------------------------
+//
+// A browser cannot be handed a folder, so "download this directory" is answered
+// as one tar archive. The route must refuse everything the single-file route
+// refuses, and must also refuse the case that route accepts (a plain file):
+// the two answer different questions, and a file sent through the archive route
+// would arrive as a tar the user did not ask for.
+const downloadTree = routes.find(route => route.path === ROUTES.downloadTree)
+check('the directory-archive route is registered', downloadTree !== undefined)
+
+{
+  const { res, state } = fakeRes()
+  await downloadTree.handler(fakeReq({ remoteAddress: '10.0.0.5' }), res)
+  check('a non-loopback archive request is refused', state.status === 403, String(state.status))
+}
+
+{
+  const { res, state } = fakeRes()
+  await downloadTree.handler(fakeReq({ headers: { host: 'evil.example:4074' } }), res)
+  check('a rebinding Host is refused for the archive route', state.status === 403, String(state.status))
+}
+
+{
+  const { res, state } = fakeRes()
+  await downloadTree.handler(fakeReq({ method: 'POST', headers: { host: 'localhost:4074' } }), res)
+  check('a non-GET archive request is refused', state.status === 405, String(state.status))
+}
+
+{
+  const { res, state } = fakeRes()
+  await downloadTree.handler(fakeReq({ url: `${ROUTES.downloadTree}?alias=a`, headers: { host: 'localhost:4074' } }), res)
+  check('an archive request without a path is refused', state.status === 400, String(state.status))
+}
+
+{
+  const { res, state } = fakeRes()
+  await downloadTree.handler(fakeReq({
+    url: `${ROUTES.downloadTree}?alias=a&path=${encodeURIComponent('/srv/missing')}`,
+    headers: { host: 'localhost:4074' },
+  }), res)
+  check('a missing remote directory answers 404', state.status === 404, String(state.status))
+}
+
+{
+  // A FILE through the archive route: the status line has to say so, because
+  // once headers are out the only signal left is a truncated archive.
+  const { res, state } = fakeRes()
+  await downloadTree.handler(fakeReq({
+    url: `${ROUTES.downloadTree}?alias=a&path=${encodeURIComponent('/srv/report.txt')}`,
+    headers: { host: 'localhost:4074' },
+  }), res)
+  check('a plain file is refused by the archive route', state.status === 400, String(state.status))
+  check('...and the refusal names the route that does handle it',
+    String(JSON.parse(state.body).error ?? '').includes('/download'), state.body)
+}
+
 // --- upload ---------------------------------------------------------------
 const upload = routes.find(route => route.path === ROUTES.upload)
 check('the upload route is registered', upload !== undefined)

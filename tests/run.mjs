@@ -72,6 +72,7 @@ const SUITES = [
   'projection-relax',
   'projection-real',
   'tree-transfer',
+  'archive',
   'insert-once',
   'caret-after-insert',
   'locale-register',

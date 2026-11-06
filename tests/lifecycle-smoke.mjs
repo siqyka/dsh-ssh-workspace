@@ -57,8 +57,13 @@ const EXPECTED_TOOLS = [
 // lib/routes.js: hosts, host save/delete/forget-key/disconnect/reconnect,
 // test, ls, status, self-check, support-bundle, mount, unmount, enable,
 // forward, unforward, the six saved-forward routes
-// (save/toggle/delete/remember/probe/settings), transfer, download, upload.
-const EXPECTED_ROUTES = 25
+// (save/toggle/delete/remember/probe/settings), transfer, download,
+// download-tree and upload.
+//
+// The number is pinned rather than derived on purpose: deriving it from ROUTES
+// would make "a route was added but never registered" pass, which is the thing
+// this assertion exists to notice.
+const EXPECTED_ROUTES = 26
 
 let failures = 0
 let passes = 0

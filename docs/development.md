@@ -11,12 +11,12 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 25 | `lib/routes.js` |
+| HTTP routes | 26 | `lib/routes.js` |
 | model-facing tools | 10 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 43 | directory listing |
-| test suites | 60 | `tests/run.mjs` |
-| passing assertions (sampled) | 2493 | measured 2026-11-06 |
+| modules under `lib/` | 45 | directory listing |
+| test suites | 61 | `tests/run.mjs` |
+| passing assertions (sampled) | 2643 | measured 2026-11-06 |
 
 <!-- doc-numbers:end -->
 
@@ -186,7 +186,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `client-shape-smoke` | 无 | 180 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径 |
 | `backdrop-dismiss-smoke` | 无 | 28 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
-| `tree-transfer-smoke` | 无 | 40 | 目录树上传、原子发布、递归与失败路径 |
+| `tree-transfer-smoke` | 无 | 56 | 目录树上传、原子发布、递归与失败路径 |
+| `archive-smoke` | 无（tar 与规则部分）；`DSH_CORE_ROOT`（远端树部分） | 89 | tar 头的八进制字段（用真实读者校验）、排除规则、目录打包下载、完成提醒的单一节点行为 |
 | `insert-once-smoke` | 无 | 18 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
 | `caret-after-insert-smoke` | 无 | 17 | 插入后光标必须落在 chip **之后**：用假 DOM + 假 Lexical 复现「裸 `input.focus()` 把 DOM 光标写到文档开头 → `selectionchange` 覆盖模型选区 → `editor.focus()` 忠实地恢复这个已被移到开头的光标」，并断言修复后 DOM 焦点从不发生在 Lexical 写选区之前；无 Lexical 句柄时仍聚焦输入框、零可见输入卡或两张卡时都不抢焦点 |
 | `locale-register-smoke` | 无 | 21 | 中英词典注册、重复注册不污染、`translate` 回落 |

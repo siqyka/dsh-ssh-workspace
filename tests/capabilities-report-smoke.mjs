@@ -110,8 +110,12 @@ console.log('\n[every promised capability is actually wired]')
 {
   const { readdirSync, readFileSync } = await import('node:fs')
   const libDir = path.join(pluginRoot, 'lib')
+  // `tar.js` is excluded from BOTH scans, and the reason is the same one that
+  // makes its `tar` row honest: it WRITES the archive format itself, so the host
+  // needs no `tar` binary. Its file name and its error messages ("a tar entry")
+  // are about the format, not about a command anything runs.
   const sources = readdirSync(libDir)
-    .filter(name => name.endsWith('.js') && name !== 'capabilities.js')
+    .filter(name => name.endsWith('.js') && name !== 'capabilities.js' && name !== 'tar.js')
     .map(name => readFileSync(path.join(libDir, name), 'utf8'))
     .join('\n')
   for (const spec of TOOL_CAPABILITIES) {
@@ -121,13 +125,32 @@ console.log('\n[every promised capability is actually wired]')
     const used = new RegExp(`\\b${spec.tool}\\b`, 'u').test(sources)
     check(`table row '${spec.tool}' is referenced outside the table`, used, spec.feature)
   }
-  check(
-    'no unprobed tool is referenced outside the table either',
-    UNPROBED_CAPABILITIES.every(spec => !new RegExp(`(?:^|[^\\w-])${spec.tool}(?:$|[^\\w-])`, 'u').test(
-      sources.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, ''),
-    )),
-    JSON.stringify(UNPROBED_CAPABILITIES.map(spec => spec.tool)),
-  )
+  // The unprobed list is the mirror claim: these tools must not be something the
+  // plugin DEPENDS ON, because a real dependency would belong in the probed
+  // table. What counts as a dependency is an invocation, not the spelling of a
+  // filename:
+  //
+  //  - `lib/tar.js` is a module this plugin OWNS (it writes the archive format
+  //    itself, so the host needs no `tar` binary at all);
+  //  - `x.tar` is an output filename;
+  //  - `import … from './tar.js'` is a module specifier.
+  //
+  // All three are removed before the search. Leaving them in would demand a
+  // probe for a tool nothing runs, which is the same category error in the
+  // opposite direction as the four fictional rows this table already had
+  // corrected.
+  const code = sources
+    .replace(/\/\*[\s\S]*?\*\//gu, '')
+    .replace(/^\s*\/\/.*$/gmu, '')
+    .replace(/(?:from|import|require\()\s*(['"])[^'"\n]*\1/gu, '')
+    .replace(/\.tar\b/gu, '')
+  for (const spec of UNPROBED_CAPABILITIES) {
+    check(
+      `unprobed tool '${spec.tool}' is never invoked in lib/`,
+      !new RegExp(`(?:^|[^\\w-])${spec.tool}(?:$|[^\\w-])`, 'u').test(code),
+      spec.reason,
+    )
+  }
 }
 
 // ---------------------------------------------------------------------------

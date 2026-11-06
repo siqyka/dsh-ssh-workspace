@@ -15,6 +15,7 @@
  */
 
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -110,6 +111,156 @@ for (const tool of tools) {
   for (const name of required) {
     check(`required parameter ${name} is declared in properties`, name in properties)
   }
+}
+
+// The RESULT schema is the other half, and it was wrong: `transfer`'s
+// recursive branch has always returned `skippedFiles` / `skippedLinks` while its
+// `output.schema` declared neither, under `additionalProperties: false`. A host
+// that validates results therefore either stripped them or refused the call —
+// and the caller never learned which files were skipped, which is the one piece
+// of information a tree transfer exists to report.
+//
+// This check is deliberately a SOURCE scan: the tools are built by
+// `defineTool(...)` inside a factory that needs the assembled host, so their
+// return values cannot be executed here. The scan therefore compares the keys
+// each `execute` RETURNS against the keys the sibling schema DECLARES.
+console.log('\n[returned keys are declared in the output schema]')
+{
+  const source = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
+
+  /**
+   * Slice out a balanced `{ … }` starting at `open`.
+   *
+   * A tool body contains nested objects, so a regex that stops at the first `}`
+   * would cut it in half — and a half body reports fewer returned keys, which
+   * reads as a pass.
+   */
+  function balanced (text, open) {
+    let depth = 0
+    for (let i = open; i < text.length; i += 1) {
+      if (text[i] === '{') depth += 1
+      else if (text[i] === '}') {
+        depth -= 1
+        if (depth === 0) return text.slice(open, i + 1)
+      }
+    }
+    return text.slice(open)
+  }
+
+  let checkedTools = 0
+  for (const match of source.matchAll(/defineTool\(\{/gu)) {
+    // `match[0]` already ends in `{`, so the body opens at its LAST character.
+    // `indexOf('{', match.index)` finds that same brace, but a later version of
+    // this scan used `indexOf('{')` from a shifted offset and silently measured
+    // the NEXT tool — which is how a check can report "all declared" while never
+    // looking at the tool it names.
+    const body = balanced(source, match.index + match[0].length - 1)
+    const nameMatch = /^\s*name: '([^']+)'/mu.exec(body)
+    if (nameMatch === null) continue
+    const name = nameMatch[1]
+
+    // The declared keys are the property names directly under
+    // `output.properties`, i.e. indented exactly ten spaces.
+    const outputAt = body.indexOf('output: {')
+    if (outputAt < 0) continue
+    const outputBody = balanced(body, body.indexOf('{', outputAt))
+    const propertiesAt = outputBody.indexOf('properties: {')
+    if (propertiesAt < 0) continue
+    const propertiesBody = balanced(outputBody, outputBody.indexOf('{', propertiesAt))
+    const declared = new Set([...propertiesBody.matchAll(/^\s+(\w+): \{/gmu)].map(entry => entry[1]))
+    if (declared.size === 0) continue
+
+    // The returned keys come from the tool's OWN `execute` body only. Scanning
+    // the whole tool would also catch `render:` closures and nested helper
+    // objects, whose keys are not part of the result.
+    const executeAt = body.indexOf('async execute (')
+    if (executeAt < 0) continue
+    const executeBody = balanced(body, body.indexOf('{', executeAt))
+    const returned = new Set()
+    for (const ret of executeBody.matchAll(/return \{/gu)) {
+      const object = balanced(executeBody, executeBody.indexOf('{', ret.index))
+      for (const key of topLevelKeys(object)) returned.add(key)
+      // Conditional fields are written as a spread, and their keys are part of
+      // the result:
+      //   `...(result.skipped === 0 ? {} : { skippedFiles: result.skipped })`
+      // They are collected in a SEPARATE pass because a spread contains its own
+      // braces and brackets, which the top-level walk correctly treats as
+      // nested. This is the shape the three undeclared fields had, so a scan
+      // that ignored spreads could never have caught them — which it did not.
+      for (const spread of object.matchAll(/\.\.\.[\s\S]*?\{ ([^}]*)\}/gu)) {
+        for (const key of spread[1].matchAll(/(?:^|,)\s*(\w+)\s*:/gu)) returned.add(key[1])
+      }
+    }
+    if (returned.size === 0) continue
+    checkedTools += 1
+    const undeclared = [...returned].filter(key => !declared.has(key) && key !== 'ok')
+    check(`${name}: every returned key is declared in its output schema`,
+      undeclared.length === 0,
+      `undeclared: ${JSON.stringify(undeclared)}`)
+  }
+  check('the scan actually found tool schemas to compare', checkedTools > 0, `${checkedTools} tool(s)`)
+}
+
+/**
+ * The keys directly inside an object literal, ignoring anything nested.
+ *
+ * A regex cannot do this: `{ a: { b: 1 } }` matches `b` at the same "indent" as
+ * `a` unless depth is tracked, and reporting a nested key as a returned one
+ * produces a failure that is not real — which is worse than no check, because
+ * the next person silences it.
+ *
+ * @param {string} object - an object literal INCLUDING its braces.
+ * @returns {string[]} the top-level property names.
+ */
+function topLevelKeys (object) {
+  const keys = []
+  let depth = 0
+  let inString = false
+  let quote = ''
+  /** Recorders for the current top-level slot: the text since the last `,`. */
+  let slot = ''
+  for (let i = 0; i < object.length; i += 1) {
+    const char = object[i]
+    if (inString) {
+      if (char === '\\') { slot += char; i += 1; slot += object[i] ?? ''; continue }
+      if (char === quote) inString = false
+      slot += char
+      continue
+    }
+    if (char === '\'' || char === '"' || char === '`') { inString = true; quote = char; slot += char; continue }
+    if (char === '{' || char === '[' || char === '(') {
+      depth += 1
+      if (depth === 1) { slot = ''; continue }
+      slot += char
+      continue
+    }
+    if (char === '}' || char === ']' || char === ')') {
+      depth -= 1
+      if (depth === 0) { record(slot, keys); return keys }
+      slot += char
+      continue
+    }
+    if (char === ',' && depth === 1) { record(slot, keys); slot = ''; continue }
+    if (depth === 1) slot += char
+  }
+  record(slot, keys)
+  return keys
+}
+
+/** Add one slot's key (if it has one) to the list, ignoring comments. */
+function record (slot, keys) {
+  const trimmed = slot.trim()
+  // A SPREAD is how a conditional field is written here:
+  // `...(result.skipped === 0 ? {} : { skippedFiles: result.skipped })`.
+  // The keys inside it reach the result, so they are returned keys — and
+  // skipping them (the first version of this scan did) made the check blind to
+  // exactly the three fields it was written to catch.
+  if (trimmed.startsWith('...')) {
+    for (const nested of trimmed.matchAll(/\{\s*(\w+)\s*:/gu)) keys.push(nested[1])
+    return
+  }
+  const match = /^(\w+)\s*:/u.exec(trimmed)
+  if (match !== null) keys.push(match[1])
 }
 
 // The render path must not throw on a realistic value shape, because a

@@ -218,8 +218,17 @@ function guardOf (componentName) {
   const browser = guardOf('DirectoryBrowser')
   check('DirectoryBrowser refuses to be dismissed mid-transfer',
     /const dismissBackdrop = \(\) => \{[\s\S]{0,160}?!mounting && !uploadBusy && transferBusy === undefined[\s\S]{0,40}?onClose\(\)/.test(browser))
+  // The spread now goes through a second layer that clears an in-progress
+  // SELECTION before closing, because closing on Escape there loses work that
+  // has no undo. The transfer guard is still the last word: the wrapper has to
+  // delegate to it, or Escape would close the dialog mid-transfer and hide the
+  // only row reporting the outcome.
+  check('DirectoryBrowser clears a selection before it closes',
+    /const dismissOrClear = \(\) => \{[\s\S]{0,240}?if \(selectMode\)[\s\S]{0,200}?setSelected\(new Set\(\)\)[\s\S]{0,60}?return[\s\S]{0,40}?\}/.test(browser))
+  check('...and the wrapper still delegates to the transfer guard',
+    /const dismissOrClear = \(\) => \{[\s\S]{0,400}?dismissBackdrop\(\)/.test(browser))
   check('DirectoryBrowser spreads that guarded callback',
-    browser.includes('...backdropDismiss(dismissBackdrop)'))
+    browser.includes('...backdropDismiss(dismissOrClear)'))
 }
 
 {
