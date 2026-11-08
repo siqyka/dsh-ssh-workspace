@@ -11,12 +11,12 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 27 | `lib/routes.js` |
+| HTTP routes | 30 | `lib/routes.js` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 46 | directory listing |
-| test suites | 63 | `tests/run.mjs` |
-| passing assertions (sampled) | 2873 | measured 2026-11-06 |
+| modules under `lib/` | 47 | directory listing |
+| test suites | 72 | `tests/run.mjs` |
+| passing assertions (sampled) | 3524 | measured 2026-11-07 |
 
 <!-- doc-numbers:end -->
 
@@ -49,7 +49,7 @@
 | `lib/forward-persist.js` | 已存映射：**意图**（`enabled`）与**事实**（`live`）分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径（后者逐条走前者） |
 | `lib/transfer.js` | 文件传输：本机 ↔ 远端的流式 SFTP 拷贝与目录树上传（原子发布） |
 | `lib/store.js` | `$DSH_HOME/dsh-ssh.json` 存储：校验、合并（保留未知字段）、原子写 |
-| `lib/routes.js` | 浏览器半边的 25 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / reconnect / test / ls / status / mount / unmount / enable / forward / unforward / forward-save / toggle / delete / remember / probe / settings / transfer / download / upload / self-check / support-bundle） |
+| `lib/routes.js` | 浏览器半边的 30 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / reconnect / test / ls / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete / mutation-policy / self-check / support-bundle） |
 | `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
 | `lib/tools.js` | 10 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → 各 profile → 部署自带树 |
@@ -147,17 +147,18 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **61 个套件里 55 个实际运行、2659 项断言**，其余 6 个整体 SKIP（需要真实装配树或真实主机）。
-生成表里那行就是这个数，由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳。
+于是 **72 个套件里 66 个实际运行、3288 项断言**，其余 6 个整体 SKIP（`projection-real` / `lifecycle` /
+`boot` / `tool-schemas` 缺真实装配树，`live` / `acceptance` 缺真实主机）。生成表里那一行是**另一口径**：
+带 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 时，`projection-real` / `lifecycle` /
+`tool-schemas` 三个再跑起来（`boot` 要真实主机，仍然跳过），**69 个套件实际运行、3532 项断言**、
+3 个 SKIP（`boot` / `live` / `acceptance`），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳。
 
-**两处需要说清的口径**，此前这里写的数字已经过期而没人发现（旧文写「40 个套件、1905 项」，
-实际 61 个套件、2659 项；每个套件都在长，数字只会往下漂）：
+**两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
 
-- `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` / `boot`
-  四个再跑起来，总数会再增加。**这一轮没有重新测**，因为本机没有可解析的 `@deepseek-ai/dsh-fs`
-  （见下），所以这里不给数字，而不是把旧数字留着。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，61 个套件全部运行、
-  零 SKIP。**同样没有重新测**，理由同上。
+- `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` 三个再跑起来，
+  总数 +244（3288 → 3532）。换一台机器、换一个宿主版本，这个增量就会变。
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，72 个套件全部运行、
+  零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
 `node_modules`** 目录。指向一个只有 `cosmokit` / `schemastery` 的 profile 目录时，10 个套件会以
@@ -165,7 +166,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
 **统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以「逐套件
-`PASS` 行数」与「汇总行数字」两种算法给出同一个值（本轮实测：2659 = 2659，61 个套件）。
+`PASS` 行数」与「汇总行数字」两种算法给出同一个值（本轮实测：3288 = 3288，72 个套件）。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
 脚本会静默跳过一个套件甚至五个，得出看起来核对过、实际少掉数百项的数字（本文件曾因此写 1756，
@@ -176,9 +177,9 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `SUITES` 里**——它们的 72 项断言从未在 `npm test` 中执行过。已补进列表。表格里的套件数与
 `tests/run.mjs` 的条目数应当逐一对得上，这一点也是查出来的，不是本来就成立。
 
-但尾行会写成 `41 passed, 3 skipped`，而不是 `42 passed, 2 skipped`：`boot-smoke` 本身跑了
-29 项，却会为自己那段需要真实主机的远端检查打一行 `SKIP`，而 runner 判定套件状态的唯一依据
-就是「输出里有没有 SKIP 行」。所以**「跳过套件数」与「SKIP 行数」是两个不同的量**，不要混用；
+**「跳过套件数」与「SKIP 行数」是两个不同的量**：runner 判定一个套件是否跳过的唯一依据是
+「输出里有没有 SKIP 行」，而不是它跑了几项断言。所以一个已经跑完自己断言的套件，只要它为某个
+需要真实主机的子检查补打一行 `SKIP`，整行也会被记成 SKIP；反过来，尾行只报套件状态，不报断言数。
 要看某个套件究竟跑没跑，读它自己那行 `=== N passed`，不要读汇总。
 
 下表各套件的「项数」就是它收尾行里的数字，与上文的加总口径一致。
@@ -194,8 +195,17 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `replay-smoke` | 无 | 34 | 失败重放策略：写类 SFTP 操作失败后**不重放**（第一次可能已经在服务器上落地，重放就是执行两次），改标 `outcome: 'unknown'`并保留原始报错文本；远端命令走显式 `replay: 'safe'` 才重试；连接中断记成 `disconnect` 而不是 `reconnect` |
 | `host-key-smoke` | 无 | 18 | 主机密钥固定与**落盘失败的区分**：首次连接记下指纹；不一致直接拒绝；写不进 `knownHosts` 时连接仍成功，但必须记 `degraded` 诊断并在状态里列 `unpinnedHostKeys`，后来固定成功时自动清除——「警告写进无人读的日志」等于用户以为密钥已固定 |
 | `host-listing-smoke` | 无 | 32 | 主机列表把「真的空」与「读不出来」分开：空配置不带提示，被跳过的 `~/.ssh/config` 块带原因列在 `skipped`，存储读失败带 `storeError`——两种完全不同的问题不能都长成「没有主机」 |
-| `client-shape-smoke` | 无 | 260 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径。**提示窗口**一组：7 秒常量被面板与树手势两个实现共用、旧 3.5 秒与「失败不消失」的分支不得残留、悬停暂停且移开重计满、到期时把焦点交还来源元素；行为断言从**真实 bundle** 切出函数、配假 DOM 与假时钟驱动，五个反向变异（窗口改 3000 / 去掉悬停 / 去掉焦点交还 / 恢复按 kind 分支 / DOM 路径硬编码 3500）全部变红。**传输队列**一组：只有一个 store 且经 `useSyncExternalStore` 订阅、调度器不读时钟、两个并发常量、浏览器 1 GiB 预检与 `transfer.js` 的同一数字、越限一次列全、进度不回退且无总量不画百分比、宿主槽缺失变成一句可读的话、批量只开一个共享提示节点、弹层复用对话框的 a11y、上传只剩分块一条路径（浏览器不再发 File 请求体，原始路由仍留在服务端） |
-| `backdrop-dismiss-smoke` | 无 | 31 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁（目录浏览器的门禁现在只拦挂载，因为传输归队列所有、关掉对话框不中断它）、**传输进度弹层是第五个遮罩使用者**且同一判据、源码接线不得退回 `onClick` |
+| `client-shape-smoke` | 无 | 275 | package.json 的 `dsh.client` / `exports` / `files`、bundle 装载约定、`node --check` 解析、停用工作区的会话收集行为、悬停提示文案，以及「诊断报告在面板内打开」的形状（那一节不得出现新窗口路径；报告自动换行、打开不全选、复制在窗口内）。**状态灯**一组：三态不折叠成两色、圆点不得写死成绿色、带 `role` 与读屏标签、findings 必须在面板里可读（按**守卫条件**断言，因为只断言类名与 `finding.detail` 出现时，把列表关掉的改法照样绿）、圆点读服务端判定而不是在浏览器里重算、面板提示不再包含「不会上传」。**自检分区**一组：开关是具名的单个值且当前为关、两处渲染点都带守卫、标题与展开卡片是**活代码而非注释**（`isLive` 用注释配平判定——本文件的断言全是 grep，注释掉的 JSX 会让它们全部保持绿色却什么都不渲染）、隐藏分区不影响其余三条可见路径。**提示窗口**一组：7 秒常量被面板与树手势两个实现共用、旧 3.5 秒与「失败不消失」的分支不得残留、悬停暂停且移开重计满、到期时把焦点交还来源元素；行为断言从**真实 bundle** 切出函数、配假 DOM 与假时钟驱动，五个反向变异（窗口改 3000 / 去掉悬停 / 去掉焦点交还 / 恢复按 kind 分支 / DOM 路径硬编码 3500）全部变红。**传输队列**一组：只有一个 store 且经 `useSyncExternalStore` 订阅、调度器不读时钟、两个并发常量、浏览器 1 GiB 预检与 `transfer.js` 的同一数字、越限一次列全、进度不回退且无总量不画百分比、宿主槽缺失变成一句可读的话、批量只开一个共享提示节点、弹层复用对话框的 a11y、上传只剩分块一条路径（浏览器不再发 File 请求体，原始路由仍留在服务端） |
+| `selection-smoke` | 无 | 51 | 共享选择 reducer 的逐条手势：单击目录只导航并清空选择/锚点、单击文件只选它**且仍然交给调用方激活**、Ctrl 点击切换且命中目录不进入、Shift 点击按锚点选区间且不移动锚点、Ctrl+Shift 追加、无锚点时 Shift 把锚点播种在落点（连续两次 Shift 即连选）、**右键（`point`）先选中再开菜单**（选中外收拢、选中内保留整批、Ctrl 切换、Shift 扩区间、一律不激活）、空白/Esc 清空（Esc 保留键盘光标）、Ctrl+A 含目录、方向键/Home/End/Ctrl+方向键/Shift+方向键、Enter 交给调用方打开、**空白区单击真的会发送 `blank`**（宿主树一处，且带 `target === currentTarget` 守卫，避免行点击冒泡时清掉刚建的选择）；并钉住越界夹取、重复动作稳定、空常量不被改写、未知动作不改状态。源码断言把 reducer 从**真实 bundle** 切出执行，注释掉的实现不会让断言变绿 |
+| `tree-select-smoke` | 无 | 62 | 宿主「文件」树的多选桥，用**真实 DOM** 驱动而不是 grep：把桥从 `lib/client.js` 切出，绑定到按宿主形状搭的 `[data-files-body]` + `li[data-files-entry][data-files-path]` 树上，派发真实 click / keydown。逐条钉住 ★ 手势：普通单击目录**到达宿主**（会展开）且清空选择、普通单击文件**既选中又仍然打开**（「点一下看看」是面板最老的手势，不能为了多选把它拿走）、Ctrl 单击目录只选中且**不进入**（宿主处理器调用数为 0）、Ctrl 再次点击取消、Shift 从锚点选区间且含中间目录、第二次 Shift 仍从原锚点；第一次 Shift 已播种锚点，连续两次 Shift+click 即可连选且宿主 0 次打开、Ctrl+Shift 追加、Esc / 空白清空、Ctrl+A 含目录、方向键首次按下选当前行、Ctrl+方向键只移光标、Shift+方向键扩展、Home/End、Space 被吞掉且不切换、Enter 打开光标行且不被误读为选择；**右键先选中再开菜单**（`point` 走同一个 reducer：选中之外的行收拢到它、选中之内的行保留整批、Ctrl 切换、Shift 扩区间，且一律不激活），并断言桥里 `point` 的调用位于 `openTaskMenu` **之前**，否则菜单会读到旧选择。选中任何行都**不创建浮动批量条**（按用户要求删掉）且 Esc 仍能清空；宿主移除的行会停止选中、切换根会清空、detach 后不再响应。反向验证：去掉「选择优先」的抑制 → 4 红；把 Ctrl 写死成 false → 6 红 |
+| `tree-rename-smoke` | 无 | 43 | 行内重命名与右键选中，都是**真实 DOM 驱动**：把 `inlineRenameDecision` / `renameAnchorOf` / `openInlineRename` 从 bundle 切出执行。纯判定三态：未改或清空 = **取消**（不是「名称不能为空」的报错）、含 `/` `\` `.` `..` = **拒绝且字段留在原地**并标 `aria-invalid`、其余提交（首尾空白先 trim）。锚点按**结构**取（最后一个有文字的 `span`），不得靠宿主 class——那些名字每次构建都会变，取错只会让编辑框跑到别处而不报错。编辑器 portal 到 `document.body`（React owns 宿主行的子节点，塞进去下次 commit 就没了），位置与宽度来自那一行自己的 name span。行为：Enter 提交 → 一次 `POST /rename`、一次面板刷新、一条提示；Esc 不写；未改的 Enter / blur 不写；blur 有改动则提交；重复打开只留一个编辑框；成功与失败的提示不混。调用点断言：右键菜单与 F2 都**把行交给**重命名（否则只剩模态兜底），且行查找发生在**动作时**而不是开菜单时（宿主重渲染后旧节点已失效）。`tests/support/tree-dom.mjs` 因此补了 `input.select()`，否则编辑框挂载时的 `focus+select` 会让每个用例抛错，看起来像产品 bug |
+| `batch-target-smoke` | 无 | 42 | 「一次选位置、整批入队」。★ 起因是用户报的**批量下载一个个弹窗**：批量曾经在页面不能写时带着 `{kind:'unsupported'}` 入队，而那个值的意思是「每一项各自开保存框」。现在 `pickDirTarget` 在浏览器 `showDirectoryPicker` 缺失或**被页面策略拒绝**时，回落到宿主自己的文件夹选择器（桌面 preload 桥优先，其次 `uiWorkspace.pickDirectory`），返回 `{kind:'path'}` —— 一个服务端能直接写的本地目录，字节不必经过页面。三种结局严格分开：用户取消是 `canceled`（原生对话框以**异常**报取消的平台也识别为取消）、平台没有选择器是 `unsupported`（调用方才退回逐项保存框）、真正的失败**不得**报成取消。批量侧 `enqueueDownloadsInto` 一次调用把同一个目录发给每一项，三种目标（handle / 本地路径 / 无）保持可区分。服务端：`/transfer` 的 `recursive` 现在**双向**成立（下载目录会走 `downloadTree` 落到本地路径），并断言取消信号挂在 **response** 上而不是 request（`req` 的 `close` 在请求体读完就触发，挂错会让每次传输一开始就中止），且 `res.writableFinished` 用来区分「答完了」与「对面走了」。另钉住**取消必须轮询**：`localDir` 那条路 await 的是「整棵树写完」这一个 promise，等服务返回再检查 `isCancelled()` 等于让停止键在它想取消的那份复制结束前毫无作用；断言 `setInterval(…stop…)` 存在、`finally` 里 `clearInterval`、以及中止确实发给了请求（服务端靠它停止遍历）。**第四轮**再加三件事：桌面壳的 preload 桥必须在页面选择器**之前**被问（真实回归：窗口刚打开后的第一次 `showDirectoryPicker()` 可能在原生对话框已接受后仍回 `AbortError`，被当成取消即整批静默）、桥拒绝（非取消）要留给页面选择器继续、取消必须**说出来**（两个批量入口各一条 `notifyUser(…, 'muted')`，并断言 toast 第三态存在：不染成功/失败色、`role="status"`、不抢焦点、仍 7 秒消失；翻译键在中英两表各一条） |
+| `download-icon-smoke` | 无 | 49 | 下载控件的图形与运行态。用 `new Function` 从**真实 bundle** 切出 icons 段（`TRAY_BASE_PATH` 到 Host card 注释）配一个极简 React stub 跑，断言不是 grep：`DownloadIcon`/`UploadIcon` 是 `0 0 16 16`、`stroke=currentColor`、三条路径（托盘一条 + 箭头两条，上传与下载共用同一个托盘）；`TransferProgressIcon` 是轨道圆 r=7.2 + `pathLength=100` 的弧 + `scale(0.675)` 居中的同一箭头，`42 → '42 100'`、`100 → '99.5 100'`（满圈封顶，圆头否则会叠出接缝）、`-3 → '0 100'`、未知总量 + 运行中 → `'30 100'`、未知总量 + 未运行 → `'0 100'`（排队中的空环）。另切出 `downloadQueueItemFor` 跑行为：空/畸形队列、只认 `direction==='download'`、异 host 同名路径不串、兄弟路径不串、done/failed/cancelled 释放、重试取**最后**一条、`queued` 也算进行中。`createMenuIcon` 配极简 `document` 双断言 download/upload/folder/file 四种路径，并钉住 `createTransferItem` 的 `glyph` 覆盖 `isDir`。源码断言（剥掉注释后）：bundle 里不再有 `'↓'`/`'↑'` 字形（三处调用点都已接上图标）、环形类名与 `prefers-reduced-motion` 停转、行按钮 busy 时 `opacity:1` 不被 `:disabled` 淡化、中英两表都已删掉 `browser.downloading`（对话框不再有下载控件）。另切出文件面板的进度入口，断言它读**一处**队列读数（`transferQueueProgress`）而不是逐帧重算：空闲渲染裸 `DownloadIcon`、进行中渲染带方向 / 百分比 / 旋转的 `TransferProgressIcon`、`sshwsp-fileaction-queue-active` 只在有排队或运行时出现、数量走进 `queue.openCount` 无障碍名称、`queue.short` 与角标元素都已消失；CSS 侧钉住图标座（`gap: 0; padding: 0 6px`）与「active 的 hover 保持蓝色」。反向验证：dasharray 改 `${known ?? 0} 100` → live 弧红；匹配器去掉 alias → 1 红；行内图标换回 `'↓'` → 1 红 |
+| `browser-rows-smoke` | 无 | 17 | 目录对话框列表的渲染回归：**块体 `.map` 回调漏写 `return` 会把每一行映射成 `undefined`**。用配平括号从真实 bundle 切出这个回调，配桩函数渲染文件行与目录行：文件行是 `div`（无 onClick、无 role、无 tabIndex），目录行是 `button` 且带 `sshwsp-entry-dir`，点击把目录名交给 `handleEntry`；文件行为图标 / 名称 / 大小三段，目录行为图标 / 名称两段；对话框切片内不得出现 DownloadIcon / TransferProgressIcon / enqueueUploads / pickFileTarget / TransferQueueInline / selectReduce / aria-selected / listbox。最后一条是**负向对照**：把两处 `return` 去掉后同一回调必须返回 `undefined`——否则这套断言分不清「代码对了」还是「断言根本没看见」 |
+| `host-card-smoke` | 无 | 25 | 「断开」只属于真实存在的连接。从真实 bundle 切出 `HostCard`，`React.useState` 绑无副作用桩后渲染，按 `key` 收按钮：connected 有「断开」且空闲可用、有在途操作时禁用并给 `hosts.disconnectBusy`；`broken` 与后台重连中（等待 / 连接中 / 已停止）**都不出现「断开」**（把旧守卫 `conn &&` 放回去时三条断言转红），改给「立即重连」；无记录时两者都没有、也不渲染连接徽标；ssh-config 主机仍无编辑 / 删除。同时钉住状态文案与圆点：connected / 已断开 / 重连中分别对应 ok / err / warn，`lastError` 非空才打印 |
+| `panel-ctx-smoke` | 无 | 14 | 面板上下文注入的回归：**缺一个绑定是 ReferenceError，不是 undefined**。从真实 bundle 切出 `main` slot 注册块，用假 slots 调用 `inject()`，断言它交出的 `ctx` 与 `translate` 是同一对象；切出 `RemoteWorkspacePage` 用 jsx stub 执行，断言面板元素收到同一 `ctx`/`t`；再按面板**真实签名**做 destructuring（`ctx` 与 `t` 各自独立 try/catch，一个缺失不连带误报另一个）；再切出 `browserAlias !== null && jsx(DirectoryBrowser, {…})` 这个调用，断言 props.ctx 同一、alias 透传；最后钉住面板体内 `ctx` 恰好出现两处（签名 + 对话框调用），多一处就意味着有人又在渲染期摸隐式全局。反向验证：删签名 / 删 inject / 删对话框 prop / 页面渲染丢 ctx 各变红一次。这个套件存在的理由是失败**不可见**——渲染期 ReferenceError 让宿主卸载整个 slot，页面只剩空白，不会弹错误框 |
+| `mutations-smoke` | 无（纯规则）；`DSH_CORE_ROOT`（路由行为） | 51 | 重命名/删除的纯规则与两条路由。纯规则：空名/空白/`.`/`..`/斜杠/反斜杠/NUL/超长被拒，根目录本身不可动，正在目录的删除文案说明含子目录，兄弟路径的共享前缀不误判。路由：远端围栏（挂载根外、根自身、只读会话、会话无法识别、名字非法、目标已存在 409）、软链只删链接本体、目录递归删除不跟随软链；本地边界**只取自会话/策略**——客户端送来的 `root` 仅是选取会话的选择器，没有会话拥有它就必须拒绝，发明根目录不得改变边界。反向变异见本轮报告 |
+| `backdrop-dismiss-smoke` | 无 | 30 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁（目录浏览器的门禁现在只拦挂载，因为传输归队列所有、关掉对话框不中断它）、**传输进度弹层是第五个遮罩使用者**且同一判据、源码接线不得退回 `onClick` |
 | `projection-relax-smoke` | 无 | 73 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 64 | 目录树上传、原子发布、递归与失败路径；浏览器两半都改为经队列：下载复用流式路由、目录走归档路由、上传只走分块 JSON 传输（原始字节路由仍在服务端，只是浏览器不再使用） |
 | `archive-smoke` | 无（tar 与规则部分）；`DSH_CORE_ROOT`（远端树部分） | 89 | tar 头的八进制字段（用真实读者校验）、排除规则、目录打包下载、完成提醒的单一节点行为（成功与失败都在同一个 7 秒窗口内到期，不再是"失败永久保留"）、**批量结果合并成一条就地改写**（一次 `transferNotice` 调用，上传与队列共用）、**下载只在看得见保存时才声称已保存**（目标先于请求被选、取消不耗字节、权限拒绝不得被报成取消、写失败必须 abort 而非 close） |
@@ -222,7 +232,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `resume-smoke` | 无 | 45 | 断点续传的判定：源身份由 size+mtime 组成、暂存名**确定性**（否则无可续写之处）、**源变了就不续**（同尺寸不同 mtime 也必须重传，把新尾巴接在旧头上会产出长度恰好正确、内容毫无关系的文件）、暂存文件比源还大时不续（天真的 `offset = partialSize` 会越界）、已满尺寸时只需发布、无 sidecar 或 sidecar 描述的是别的源时丢弃、sidecar 解析的六种拒绝（坏 JSON / 版本不符 / 无身份 / 数组 / 字符串）、**每一种拒绝都从 0 重来，没有一种会追加** |
 | `store-lock-smoke` | 无 | 15 | 主机存储的跨进程写锁：互斥与降级、死锁接管、并发 `mutateHosts` 不丢条目、`save()` 的替换语义 |
 | `transfer-smoke` | 无 | 114 | 单文件传输的流式拷贝、原子替换、失败清理、`ssh_workspace_transfer` 的模式门禁（上传被拒 / 下载放行 / 无策略服务 / 策略解析失败 / **读不懂的模式也拒**）、**上传的范围判定**（会话工作区内放行 / 工作区外拒绝 / `danger-full-access` 放行）与**上传的可达性围栏**（挂载根外拒绝且不落一字节 / 父目录 symlink 逃逸拒绝 / 服务内放行 / `/tmp` 放行 / 工具把 `router.roots` 真正传下去）、**冲突策略真的被 `transferFile` 采用**（skip 不动目标且标 skipped / refuse 抛且一个字节没写 / rename 写在旁边且原文件保留 / 默认仍然覆盖）、**校验如实报告**（无工具时 `verified: false` 且传输本身仍成功 / 摘要不匹配时报 mismatch）、**目录下载**（形状保留、嵌套目录、**空的远端目录在本地也要出现**——只有遍历能造出它，文件路径自带父目录、symlink 只列出不跟随、冲突按**每个文件**判定而不是整棵树） |
-| `transfer-queue-smoke` | 无 | 92 | 浏览器传输队列的纯状态机与驱动（都从 `client.js` 切出，与发货代码同一段）：同主机串行 / 跨主机上限 2 / 让位不饿死后面空闲主机的条目、成功与失败都释放槽位、取消排队项立即生效而取消运行项要等 worker 确认、完成与取消竞态以完成为真、进度单调且被总量夹住、未知总量不产出百分比、`total` 可中途到达、`started` 标记在 settle 时保留（浏览器保存型下载不得被总结成"已传输"）、清空只删终态、无效动作返回同一 state（不唤醒订阅者）、越限文件一次列全（边界大小放行、未知大小交给服务端）、文件名按码点截断（emoji 不劈开）、百分比向下取整；**驱动层**用可控 promise 与假 toast 驱动：一批只开一个提示、逐项推进时同一提示改写计数、全部结束只产生一句合并结果、取消穿过 worker context 且确认前不释放槽位、失败批次合并成一句并取报警面、浏览器保存型批量说"已开始"；**分块发送器**用假 fetch 驱动：2 MiB 分块的偏移与 final 标志、逐块进度、cancel 变成 `abort` 请求（不发 final）、零字节仍发一个 final、final 失败不重放 |
+| `transfer-queue-smoke` | 无 | 107 | 浏览器传输队列的纯状态机与驱动（都从 `client.js` 切出，与发货代码同一段）：同主机串行 / 跨主机上限 2 / 让位不饿死后面空闲主机的条目、成功与失败都释放槽位、取消排队项立即生效而取消运行项要等 worker 确认、完成与取消竞态以完成为真、进度单调且被总量夹住、未知总量不产出百分比、`total` 可中途到达、`started` 标记在 settle 时保留（浏览器保存型下载不得被总结成"已传输"）、清空只删终态、无效动作返回同一 state（不唤醒订阅者）、越限文件一次列全（边界大小放行、未知大小交给服务端）、文件名按码点截断（emoji 不劈开）、百分比向下取整；**入口读数** `transferQueueProgress`：空 / 畸形队列是空闲、只有排队时是 0% 蓝环、终态不再计数、按字节加权而不是各项百分比平均（1000+100 字节的两条 = 81% 而非 45%）、任一无总量的运行项让环旋转、方向跟随奔跑中的上传 / 下载；**驱动层**用可控 promise 与假 toast 驱动：一批只开一个提示、逐项推进时同一提示改写计数、全部结束只产生一句合并结果、取消穿过 worker context 且确认前不释放槽位、失败批次合并成一句并取报警面、浏览器保存型批量说"已开始"；**分块发送器**用假 fetch 驱动：2 MiB 分块的偏移与 final 标志、逐块进度、cancel 变成 `abort` 请求（不发 final）、零字节仍发一个 final、final 失败不重放；**展示顺序**：进行中在上、已结算最新在前，坏行被跳过、原数组不被改写（`orderedTransferQueueItems`） |
 | `mode-gate-smoke` | 无 | 119 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
 | `shell-smoke` | 无 | 35 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
 | `terminal-smoke` | 无 | 23 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原 |
@@ -240,9 +250,9 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
 | `diagnosis-smoke` | 无 | 77 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**，以及聚合规则（确定的坏压过不确定）。**自检是提示不是判定**：缺工具与环境告警只进 `notes`，不改变 `state` / `warn` / `unknown`，也不与 `findings` 重叠；报告里它们出现在 `advisory (not counted in the verdict):` 一节，而同一份报告中的真问题仍然变红（两条断言互为反向，防止只是「把话改小声」）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
-| `routes-smoke` | 无 | 190 | 25 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
+| `routes-smoke` | 无 | 258 | 30 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |
-| `lifecycle-smoke` | `DSH_CORE_ROOT` | SKIP | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 25 路由 / 10 工具） |
+| `lifecycle-smoke` | `DSH_CORE_ROOT` | 16 | 真实 Cordis 下 5 种服务装配顺序的接管 / 路由 / 工具注册（期望 30 路由 / 10 工具） |
 | `boot-smoke` | `DSH_CORE_ROOT`（远端段另需 `DSH_WS_TEST_ALIAS`） | SKIP | 生产顺序引导、`ctx.fs` 接管与还原、工具端到端、挂载 → 停用 → 读被拒 → 启用往返 |
 | `tool-schemas-smoke` | `DSH_CORE_ROOT` | SKIP | 工具 schema 过真实 `assertSupportedJsonSchema` + render 冒烟（160 项） |
 | `projection-real-smoke` | `DSH_CORE_ROOT` | SKIP | `UPSTREAM-1` 补丁对**真实** `SessionProjectionRegistry` + `WorkingDirectoryService` + 真实 zod，按生产顺序装配：复现 `Invalid input` → 打补丁后 `restore` / `viewCheckpoint` 双双通过 → 报告 `probe: 'broken'` → 卸载后已打开的 ssh:// 会话仍可读。第一节断言的是**缺陷仍然存在**，红 = 删补丁（失败信息自带删除清单） |

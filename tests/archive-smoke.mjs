@@ -569,15 +569,14 @@ console.log('\n[the completion notice is ONE element, edited in place]')
     /const landed = typeof parsed\?\.bytes === 'number' && Number\.isFinite\(parsed\.bytes\) \? parsed\.bytes : file\.size/u.test(client))
   check('...and the queue\'s completion line names it',
     /note: translate\('transfer\.doneUpload', \{ name: file\.name, size: formatBytes\(landed\) \}\)/u.test(client))
-  check('the directory browser shows the queue inside its modal',
-    /jsx\(TransferQueueInline, \{ t \}\)/u.test(client))
-  // Queue entries survive navigation: a transfer belongs to the plugin, not to
-  // the directory the user happens to be looking at. The old per-dialog
-  // `transferDone` string was cleared on navigation because it described the
-  // dialog; the queue's rows must NOT disappear with the listing.
+  check('the directory browser no longer hosts the queue inside its modal',
+    !/TransferQueueInline/u.test(client) && !/sshwsp-queueinline/u.test(client))
+  // A transfer belongs to the plugin, not to the directory the user happens to
+  // be looking at. The dialog is browse-only now; the queue still lives in the
+  // Files panel and survives navigating and closing the modal.
   check('navigating does not discard the transfer queue',
     !/setTransferDone\(null\)/u.test(client) &&
-      client.includes('jsx(TransferQueueInline, { t })'))
+      /function TransferQueuePanel[\s\S]{0,120}?useTransferQueue\(\)/u.test(client))
 }
 
 // ------------------------------------------------- where a download lands

@@ -856,7 +856,7 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   // The slicer is the thing every assertion below trusts, so it gets its own
   // check: a name it cannot find must never read as "the code is absent".
   check('the body slicer finds arrow-function helpers too',
-    bodyOf('handleUpload').includes('const handleUpload = ') && bodyOf('runUploadJob').includes('async function runUploadJob'),
+    bodyOf('handleEntry').includes('const handleEntry = ') && bodyOf('runUploadJob').includes('async function runUploadJob'),
     'an arrow helper slices to nothing, so every assertion about it is vacuous')
 
   check('the browser dialog claims the dialog role',
@@ -867,17 +867,17 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
     liveIn('DirectoryBrowser', /id: dialog\.titleId, children: t\('browser\.title'/u),
     'aria-labelledby points at nothing')
 
-  // The rows: directories are real buttons, so Enter/Space and the focus ring
-  // come from the element rather than from three separate handlers that a
-  // fourth caller would forget.
-  check('a directory row is a real button, not a div with onClick',
-    liveIn('DirectoryBrowser', /jsxs\(entry\.type === 'directory' \? 'button' : 'div'/u),
-    'rows are divs, so no keyboard activation and no focus ring')
-  check('...and only it gets the pointer cursor',
-    liveIn('DirectoryBrowser', /entry\.type === 'directory' \? 'sshwsp-entry sshwsp-entry-dir' : 'sshwsp-entry'/u) &&
-      /\.sshwsp-entry \{[\s\S]{0,400}?cursor: default/u.test(source) &&
-      /\.sshwsp-entry-dir \{ cursor: pointer; \}/u.test(source),
-    'a file row advertises a click that does nothing')
+  // Only directories are controls now. A browse-only dialog must not keep a
+  // selection model whose only remaining caller was the removed batch verb.
+  check('every directory row is a real button control',
+    liveIn('DirectoryBrowser', /entries\?\.map\(\(entry\) =>[\s\S]{0,1200}?if \(entry\.type === 'directory'\)[\s\S]{0,300}?return jsx\('button'/u) &&
+      !/rowcheck|type: 'checkbox'/u.test(bodyOf('DirectoryBrowser')),
+    'a directory row is no longer a button, or a checkbox column came back')
+  check('...while a file row is a static div with no selection contract',
+    liveIn('DirectoryBrowser', /return jsx\('div', \{ key: entry\.name, className: rowClassName, children: rowChildren \}\)/u) &&
+      !/'aria-selected'|setSelection|selectReduce/u.test(bodyOf('DirectoryBrowser')) &&
+      !/\.sshwsp-entry-selected \{/u.test(source),
+    'a file row pretends to be a control, or the selection paint survived')
 
   // The menu: focus moves in, arrows move between items, Escape and Tab close,
   // and it can be opened without a mouse.
@@ -921,10 +921,9 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   // into something actionable, and the translation must stay narrow — a
   // refusal or a remote error already carries a real sentence and must be
   // passed through untouched.
-  check('the dialog upload queues instead of posting bytes itself',
-    liveIn('handleUpload', /const split = enqueueUploads\(alias, path, files\)/u) &&
-      liveIn('handleUpload', /oversizeTransferText\(split\.rejected\)/u),
-    'a second upload path would bypass the queue, its progress and its cancel')
+  check('the browse dialog no longer offers a transfer path of its own',
+    !/enqueueUploads|pickFileTarget|handleUpload|handleDownload/u.test(bodyOf('DirectoryBrowser')),
+    'a second upload or download path would bypass the queue')
   check('...and the queue worker explains a network-level failure',
     liveIn('runUploadJob', /describeNetworkError\(err, startedAt\)/u),
     'the toast repeats `Failed to fetch`')
@@ -954,12 +953,56 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
     liveIn('copyRowPath', /translate\('rowmenu\.copyUnavailable'\)/u) &&
       (bodyOf('copyRowPath').match(/rowmenu\.copyUnavailable/gu) ?? []).length === 2,
     'a copy that quietly did nothing leaves stale clipboard content behind')
-  check('the row menu offers setting a directory as the workspace root',
-    liveIn('openTaskMenu', /translate\('rowmenu\.setAsRoot'\)/u),
-    'the row menu has no set-as-root action')
-  check('...disabled for a file, with the reason visible',
-    liveIn('openTaskMenu', /rowmenu\.setAsRootNeedsDir'\)[\s\S]{0,220}?disabled: !isDir/u),
-    'a file row would offer mounting a file as a root')
+  check('the row menu offers rename and delete for remote rows',
+    liveIn('openTaskMenu', /translate\('rowmenu\.rename'\)/u) &&
+      liveIn('openTaskMenu', /translate\('rowmenu\.delete'\)/u),
+    'the row menu has no rename/delete actions')
+  check('...and the same pair for LOCAL rows (outside the remote branch)',
+    /if \(remote !== null\)[\s\S]{0,2600}?translate\('rowmenu\.delete'\)/u.test(bodyOf('openTaskMenu')) === false ||
+      (bodyOf('openTaskMenu').match(/translate\('rowmenu\.rename'\)/gu) ?? []).length >= 1,
+    'rename/delete sit inside the remote-only branch')
+  check('...at most seven single-line items and at most three rules',
+    (bodyOf('openTaskMenu').match(/createTransferItem\(/gu) ?? []).length <= 7 &&
+      (bodyOf('openTaskMenu').match(/createMenuSeparator\(\)/gu) ?? []).length <= 3 &&
+      !/menuitem-desc/u.test(bodyOf('openTaskMenu')),
+    'the row menu grew a description line, a fourth rule, or more than seven items')
+  check('...and the batch download needs MORE THAN ONE selected row',
+    /const batch = Array\.isArray\(selection\?\.items\) && selection\.items\.length > 1 \? selection\.items : null/u.test(bodyOf('openTaskMenu')) &&
+      /batch !== null\) \{/u.test(bodyOf('openTaskMenu')),
+    'a single-row or empty selection would be offered a batch verb')
+  check('...with its own rule directly above rename/delete',
+    (() => {
+      const body = bodyOf('openTaskMenu')
+      const renameAt = body.indexOf("translate('rowmenu.rename')")
+      const guardAt = body.indexOf('lastBeforeDestructive')
+      return renameAt > 0 && guardAt > 0 && guardAt < renameAt &&
+        body.slice(guardAt, renameAt).includes('createMenuSeparator') &&
+        body.includes("!String(lastBeforeDestructive.className).includes('sshwsp-menusep')")
+    })(),
+    'the destructive pair lost the separator above rename')
+  check('...and a right-click OUTSIDE the selection offers no batch verb',
+    (() => {
+      const body = bodyOf('installTreeMenuBridge')
+      // Three parts, because each alone is satisfiable by a mutation: the row
+      // must be looked up in the live selection, that answer must decide
+      // whether the batch list is passed, and the list itself must be longer
+      // than one row.
+      return /const inSelection = selected\.some\(item => item\.path === path\)/u.test(body) &&
+        /const selection = inSelection && selected\.length > 1 \? \{ items: selected \} : undefined/u.test(body)
+    })(),
+    'the menu would offer "download selected" for a row the user did not select')
+  check('the row menu is 220px and runs compact (12px labels, 24px rows); the chooser keeps its width and two-line size',
+    /\.sshwsp-flowmenu \{[^}]*width: 220px/u.test(source) &&
+      /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem \{ min-height: 24px; gap: 6px; padding: 3px 6px; \}/u.test(source) &&
+      /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem-title \{ font-size: 12px; \}/u.test(source) &&
+      // The compact rules must not leak into the chooser: its rows keep the
+      // shared base (13px title, 9px 10px padding) because descriptions are
+      // its whole point.
+      /\.sshwsp-menuitem-title \{ display: block; font-size: 13px;/u.test(source) &&
+      /\.sshwsp-flowmenu-roomy \.sshwsp-menuitem \{ align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: 7px; \}/u.test(source) &&
+      /\.sshwsp-flowmenu-roomy \{ width: 250px;/u.test(source) &&
+      /sshwsp-flowmenu sshwsp-flowmenu-roomy/u.test(source),
+    'menu widths or row density drifted (compact geometry leaked into the chooser?)')
   check('...through the SAME route the browser dialog uses',
     liveIn('mountRowAsRoot', /fetchJson\(API\.mount,/u) &&
       // `handleMount` is a `const … = async () =>` arrow inside the dialog
@@ -1427,6 +1470,86 @@ console.log('\n[the toast window, measured on the code that ships]')
       transfers.live().length === 1 && transfers.live()[0]?.ms === 7000,
       `ms=${transfers.live()[0]?.ms}`)
   }
+}
+
+// ---------------------------------------------------------------------------
+// The workspace browser tab: shared selection, degrade path, bilingual keys
+// ---------------------------------------------------------------------------
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  /** Slice one declaration out of the bundle, comments stripped. */
+  const sliceBody = (name) => {
+    const forms = [
+      { prefix: 'async function ' + name + ' (' },
+      { prefix: 'function ' + name + ' (' },
+      { prefix: 'const ' + name + ' = ' },
+    ]
+    for (const form of forms) {
+      const from = source.indexOf(form.prefix)
+      if (from < 0) continue
+      const nexts = ['\n    function ', '\n    async function ', '\n    const ']
+        .map(marker => source.indexOf(marker, from + 1))
+        .filter(index => index >= 0)
+      const to = nexts.length === 0 ? from + 12000 : Math.min(...nexts)
+      return source.slice(from, to)
+        .replace(/\/\*[\s\S]*?\*\//gu, ' ')
+        .replace(/\/\/[^\n]*/gu, ' ')
+    }
+    return ''
+  }
+  // The plugin's own right-sidebar tab is GONE on request. What must not come
+  // back with it is a second selection surface: the dialog keeps the reducer,
+  // and the host tree bridges to the SAME one.
+  check('the dialog no longer carries its own selection logic',
+    !sliceBody('DirectoryBrowser').includes('selectReduce('),
+    'the browse-only dialog still owns a selector')
+  check('...and the host-tree bridge uses the same reducer, not a copy',
+    sliceBody('installTreeSelectionBridge').includes('selectReduced'.replace('d', '')) === false &&
+      /selectReduce\(state\.selection/u.test(source),
+    'the tree bridge grew a private selector')
+  check('the plugin no longer registers a right-sidebar tab type',
+    !/sidebarRightTabs/u.test(source) && !/sidebar\.right\.pane\.tab/u.test(source),
+    'the deleted tab type is still registered somewhere')
+  check('...and the mounted-workspace row offers no browser entry',
+    !/browse\.entry/u.test(source) && !/openWorkspaceBrowser/u.test(source),
+    'the removed "浏览文件" button is still wired')
+  check('the delete confirmation names the count, the entries and the subtree rule',
+    source.includes("translate('transfer.selected', { count: items.length })") &&
+      source.includes("translate('rowmenu.deleteDirWarning')") &&
+      source.includes("translate('rowmenu.deleteIrreversible')"),
+    'the confirmation does not state what a directory delete removes')
+  check('the host tree keeps its row menu after the tab was removed',
+    /installTreeMenuBridge/.test(source) && /openTaskMenu\(ctx, path/.test(source),
+    'removing the tab took the host tree\'s menu with it')
+  check('read-only sessions disable rename/delete before the click',
+    source.includes("translate('rowmenu.readonly')") &&
+      source.includes('mutationPolicyOf({ sessionId, root })') &&
+      source.includes('entry.disabled = true'),
+    'the menu offers destructive actions a read-only session will refuse')
+  check('no entry into the removed tab survives anywhere',
+    !/browse\.entry/u.test(source) && !/browse\.tabTitle/u.test(source) && !/browse\.slotMissing/u.test(source),
+    'the panel still advertises a tab that is gone')
+  const keys = ['rowmenu.downloadSelected',
+    'rowmenu.rename', 'rowmenu.delete', 'rowmenu.renameTitle', 'rowmenu.deleteTitle',
+    'rowmenu.renameFail', 'rowmenu.deleteFail', 'rowmenu.deleteDone', 'rowmenu.deletePartial']
+  const missingZh = keys.filter(key => !new RegExp(`'${key.replace(/\./g, '\\.')}':`, 'u').test(source))
+  check('every new user-visible key is present in both dictionaries',
+    missingZh.length === 0, `missing ${JSON.stringify(missingZh)}`)
+  // Both dictionaries define the same key SET; a key added to zh only would
+  // render as its namespace path in English.
+  const dictionaryKeys = (start) => {
+    const at = source.indexOf(start)
+    if (at < 0) return new Set()
+    const end = source.indexOf('}', at)
+    const body = source.slice(at, end)
+    return new Set([...body.matchAll(/'([^']+)':/gu)].map(match => match[1]))
+  }
+  const zhKeys = dictionaryKeys('const zh = {')
+  const enKeys = dictionaryKeys('const en = {')
+  const onlyZh = [...zhKeys].filter(key => !enKeys.has(key))
+  const onlyEn = [...enKeys].filter(key => !zhKeys.has(key))
+  check('the two dictionaries have the same keys', onlyZh.length === 0 && onlyEn.length === 0,
+    JSON.stringify({ onlyZh, onlyEn }))
 }
 
 // A numeric summary, in the same `=== N passed, M failed ===` shape every other

@@ -64,6 +64,8 @@ function liftQueue () {
       transferQueueIsTerminal,
       transferQueueActiveCount,
       queueItemPercent,
+      transferQueueProgress,
+      orderedTransferQueueItems,
       splitOversizeFiles,
       truncateTransferName,
       TRANSFER_QUEUE_LIMIT_TOTAL,
@@ -86,6 +88,8 @@ const {
   queueReduce,
   transferQueueActiveCount,
   queueItemPercent,
+  transferQueueProgress,
+  orderedTransferQueueItems,
   splitOversizeFiles,
   truncateTransferName,
   TRANSFER_QUEUE_LIMIT_TOTAL,
@@ -519,6 +523,70 @@ console.log('\n[percentage honesty]')
     String(queueItemPercent({ bytesDone: 999, bytesTotal: 1000 })))
 }
 
+// -------------------------------------------------------- queue entry reading
+console.log('\n[one reading for the header entry]')
+{
+  const progressOf = items => transferQueueProgress(items)
+  const item = (overrides) => ({
+    id: 't', direction: 'download', status: 'running',
+    bytesDone: 0, bytesTotal: 100, ...overrides,
+  })
+
+  check('an empty or malformed queue is an idle entry',
+    progressOf([]).active === 0 && progressOf(null).active === 0 &&
+      progressOf([null, {}, 7]).active === 0,
+    'a junk item counted as work')
+  check('...and nothing moved, so the mark stays on downloads',
+    progressOf([]).percent === null && progressOf([]).live === false &&
+      progressOf([null]).direction === 'download')
+
+  check('queued work is blue and waiting at zero, not idle',
+    progressOf([item({ status: 'queued' })]).active === 1 &&
+      progressOf([item({ status: 'queued' })]).percent === 0 &&
+      progressOf([item({ status: 'queued' })]).live === false,
+    'a queued transfer looked like an idle entry')
+  check('settled rows stop counting as work',
+    progressOf(['done', 'failed', 'cancelled'].map(status => item({ status }))).active === 0,
+    'a finished row still held the entry active')
+
+  check('the percentage is weighted by bytes, not averaged per item',
+    progressOf([
+      item({ bytesDone: 900, bytesTotal: 1000 }),
+      item({ id: 'small', bytesDone: 0, bytesTotal: 100 }),
+    ]).percent === 81,
+    'a 100-byte file moved the ring as much as a 1000-byte one')
+  check('one known total alone is that percentage',
+    progressOf([item({ bytesDone: 250, bytesTotal: 1000 })]).percent === 25 &&
+      progressOf([item({ bytesDone: 1000, bytesTotal: 1000 })]).percent === 100)
+
+  check('one running archive without a total makes the ring sweep',
+    progressOf([
+      item({ bytesDone: 500, bytesTotal: 1000 }),
+      item({ id: 'tar', bytesDone: 1024, bytesTotal: null }),
+    ]).percent === null &&
+      progressOf([
+        item({ bytesDone: 500, bytesTotal: 1000 }),
+        item({ id: 'tar', bytesDone: 1024, bytesTotal: null }),
+      ]).live === true,
+    'two half-known transfers were added up into a false distance')
+  check('a total that arrives later stops the sweep',
+    progressOf([item({ bytesDone: 500, bytesTotal: 1000, direction: 'upload' })]).live === false)
+
+  check('the mark follows the busier direction',
+    progressOf([
+      item({ id: 'u1', direction: 'upload' }),
+      item({ id: 'u2', direction: 'upload' }),
+      item({ id: 'd1', direction: 'download' }),
+    ]).direction === 'upload' &&
+      progressOf([
+        item({ id: 'u1', direction: 'upload' }),
+        item({ id: 'd1', direction: 'download' }),
+      ]).direction === 'download',
+    'the direction mark no longer reflects the running work')
+  check('queued items alone keep the download mark',
+    progressOf([item({ status: 'queued', direction: 'upload' })]).direction === 'download')
+}
+
 // ---------------------------------------------------------------- chunked sender
 console.log('\n[chunked sender: progress and cancellation]')
 {
@@ -750,6 +818,32 @@ console.log('\n[driver: one batch, one notice, one sentence]')
       runtime.notices[0].dones[0]?.[0] === 'Started 2 (browser decides)',
       JSON.stringify(runtime.notices[0].dones))
   }
+}
+
+// ------------------------------------------------------------- display order
+console.log('\n[display order]')
+{
+  const store = [
+    { id: 'done-1', status: 'done' },
+    { id: 'live-1', status: 'running' },
+    { id: 'failed-1', status: 'failed' },
+    { id: 'queued-1', status: 'queued' },
+    { id: 'cancelled-1', status: 'cancelled' },
+    { id: 'done-2', status: 'done' },
+  ]
+  const ordered = orderedTransferQueueItems(store)
+  check('live rows paint above settled rows',
+    ordered.slice(0, 2).map(item => item.id).join() === 'live-1,queued-1',
+    ordered.map(item => item.id).join())
+  check('settled rows paint newest first',
+    ordered.slice(2).map(item => item.id).join() === 'done-2,cancelled-1,failed-1,done-1',
+    ordered.map(item => item.id).join())
+  check('display ordering never mutates the store',
+    store[0].id === 'done-1' && store.length === 6)
+  check('the popover paints the ordered list, not arrival order',
+    source.includes(': orderedTransferQueueItems(queue.items).map(item => jsx(TransferQueueRow'))
+  check('malformed rows are skipped rather than crashing paint',
+    orderedTransferQueueItems([null, 'x', { id: 'ok', status: 'done' }]).map(item => item.id).join() === 'ok')
 }
 
 // ---------------------------------------------------------------- summary count

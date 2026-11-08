@@ -64,7 +64,7 @@ const EXPECTED_TOOLS = [
 // The number is pinned rather than derived on purpose: deriving it from ROUTES
 // would make "a route was added but never registered" pass, which is the thing
 // this assertion exists to notice.
-const EXPECTED_ROUTES = 27
+const EXPECTED_ROUTES = 30
 
 let failures = 0
 let passes = 0

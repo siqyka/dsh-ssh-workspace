@@ -225,12 +225,12 @@ function guardOf (componentName) {
     /const dismissBackdrop = \(\) => \{[\s\S]{0,80}?if \(!mounting\) onClose\(\)/.test(browser) &&
       !/uploadBusy|transferBusy/.test(browser),
     'the dialog still blocks closing on a transfer the queue owns')
-  check('DirectoryBrowser clears a selection before it closes',
-    /const dismissOrClear = \(\) => \{[\s\S]{0,240}?if \(selectMode\)[\s\S]{0,200}?setSelected\(new Set\(\)\)[\s\S]{0,60}?return[\s\S]{0,40}?\}/.test(browser))
-  check('...and the wrapper still delegates to the dismissal guard',
-    /const dismissOrClear = \(\) => \{[\s\S]{0,400}?dismissBackdrop\(\)/.test(browser))
+  check('DirectoryBrowser has nothing to clear, so Escape closes it directly',
+    !/dismissOrClear|selection\.ids|setSelection/u.test(browser) &&
+      /onClose: dismissBackdrop/u.test(browser),
+    'the browse-only dialog still intercepts Escape for a selection it does not have')
   check('DirectoryBrowser spreads that guarded callback',
-    browser.includes('...backdropDismiss(dismissOrClear)'))
+    browser.includes('...backdropDismiss(dismissBackdrop)'))
   // The queue popover is the fifth backdropDismiss site: it is anchored to a
   // button rather than centred, but it is dismissed by the same rule — press
   // AND release outside — so it must not grow a second implementation.

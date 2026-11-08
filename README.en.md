@@ -255,8 +255,33 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 | "Add workspace" gets a remote entry | DSH's "Add workspace" button becomes an anchored menu offering "New local workspace" (DSH's native picker) or "New remote workspace" (choose a host → browse the remote directory level by level → confirm the mount; unwritable directories produce a warning and refuse creation) |
 | Remote workspaces wear a dedicated mark | Workspaces created by this plugin show the plugin's remote mark instead of the plain folder icon in sidebar rows, the workspace picker, and the session page's workspace button |
 | Host management panel | Add / edit / delete hosts (key paths, auth method, notes, …); changes take effect immediately and drop that alias's old connection. `~/.ssh/config` hosts are shown read-only. "Test connection" only probes reachability (it releases the connection it opened, so a probe never doubles as "connect") and reports as a toast at the top that auto-dismisses after a few seconds (click to close early). Connection state is shown inline after the host name, and dropping a connection also tears down that host's port forwards |
-| Directory browser dialog | A host card's "Browse directory" walks the remote tree level by level, uploads several files into the directory on screen, downloads individual files, and can "Mount this directory" in place; the dialog carries a transfer queue with per-item percentages or byte counts and per-item cancellation |
-| Uploads / downloads from the file panel | Uploading is offered by the directory browser dialog (several files at once) and by the file tree's row menu ("Upload a file here", remote rows only). The "Workspace Files" panel header keeps a single "Transfers" button that stays visible even with an empty queue — **only while the panel shows a remote `ssh://` workspace**; a local listing keeps DSH's own header — badged while something is in flight, that opens the progress popover (per-item progress, speed and a progress bar, cancel, clear finished). The host's own right-hand tree still has no multi-select |
+| Directory browser dialog | A host card's "Browse directory" walks the remote tree level by level and can "Mount this directory" in place; **browse and mount only** — no upload, download, or inline queue (transfers live in the tree row menu and the file panel header) |
+| The "Workspace files" sidebar | DSH's own file tree lists the remote directory; text previews are read over SFTP; `fs.fileUrl` returns a canonical `file:` URI in the remote execution world |
+| Row menu: rename / delete | DSH's tree row menu provides rename and delete: remote rows AND **local rows** can be renamed (rename only, never a move) and deleted (a directory goes with its subtree, after a confirmation); an existing target is refused; a failure leaves the row untouched; F2 / Delete invoke the same action. The row menu is 220px, single-line, at most seven items and three rules (task | transfer/copy | download-selected | rename/delete); "Download selected (N)" appears only when more than one row is selected |
+| Uploads / downloads from the file panel | Uploading is offered only by the file tree's row menu ("Upload a file here", remote rows only). The "Workspace Files" panel header keeps a single tray-arrow icon entry that stays visible even with an empty queue — **only while the panel shows a remote `ssh://` workspace**; a local listing keeps DSH's own header — idle it is the bare mark, and while a transfer is queued or running it turns blue and wears an aggregate progress ring (the count lives in its accessible name), opening the progress popover (per-item progress, speed and a progress bar, cancel, clear finished; running items first, settled newest first). The host's own right-hand tree stays the host's component — the plugin does not touch its JSX, it only layers multi-select on top (see below) |
+
+### Selection, rename and delete
+
+**Entry**: multi-select lives directly in the host's own "Files" tab — no dialog, no plugin tab. The plugin does not take over that tree (it is the host's DOM) — it only adds classes of its own and delegates clicks and keys at the document level, so highlight, Ctrl/Shift, arrow keys and right-click semantics work *in the host's tree*.
+
+| Gesture | Result |
+| --- | --- |
+| Click a directory | Enter it and clear the selection and anchor |
+| Click a file | **Select it AND open it** (navigation passes through; only a modified click swallows it) |
+| Ctrl/Cmd+click | Toggle the row; **a directory is selected, never entered** |
+| Shift+click | Range from the anchor to the row; **the first Shift seeds the anchor**, so two consecutive Shift+clicks select a range without a preceding ordinary click (which would open a file preview); **a directory is selected, never entered**; the anchor does not move |
+| Ctrl/Cmd+Shift+click | Append that range to the existing selection |
+| Right-click (outside the selection) | Collapse the selection to that row, then open the menu; never opens the file |
+| Right-click (inside the selection) | Keep the whole selection, so "Download selected (N)" is offered |
+| Ctrl/Cmd+right-click | Toggle that row, then open the menu |
+| Shift+right-click | Extend the range from the anchor, then open the menu |
+| Click empty space / Esc | Clear the selection (Esc keeps the keyboard cursor) |
+| Ctrl/Cmd+A | Select all, directories included |
+| ↑/↓, Home/End | Move the cursor and select; Shift extends; Ctrl+↑/↓ moves the cursor only |
+| Enter | Enter the directory under the cursor |
+| F2 / Delete | Rename / delete the cursor row or the selected rows |
+
+Selected rows are painted with a background fill and the cursor row with an outline; **no row renders a checkbox and there is no "selection mode" switch, and no batch bar floats under the tree**. Selecting more than one row and right-clicking inside the selection adds "Download selected (N)", which reuses the one transfer queue instead of growing a second one. That item **asks for the destination directory once** and then enqueues the whole batch: the directory comes from the browser's directory handle, else the host's directory picker, else per-file save dialogs — cancelling the picker cancels the batch rather than degrading into N dialogs. The new "Rename" and "Delete" items work for remote rows AND **local workspace rows**: a rename happens **inline on the row** (the name becomes an input; Enter commits, Esc cancels, a refused name keeps the field open and marked invalid), never moves an entry and refuses an existing target; deleting a directory removes its subtree after a confirmation that names the count, the first few entries and the irreversibility; a failure is not optimistically rendered — the list keeps its old state and the reason is shown.
 
 ### Connection model
 
