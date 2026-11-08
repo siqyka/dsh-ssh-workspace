@@ -1,6 +1,6 @@
 # Agent 工具参考
 
-> 定位：十个 `ssh_workspace_*` 工具的用途、参数与返回。
+> 定位：十一个 `ssh_workspace_*` 工具的用途、参数与返回。
 
 这些工具都不复制文件能力：文件内容由 `ctx.fs`（SFTP）服务，`read` / `write` /
 `edit` 已经能在远端工作区工作；会话工作区为 `ssh://` 时，pwsh / bash 工具的
@@ -265,13 +265,35 @@ redirect URI），需要一并放行 localhost。
 | `remoteHost` | 否 | SSH 服务端拨号的目标（默认 `127.0.0.1`） |
 | `localHost` | 否 | 本地监听地址（默认 `127.0.0.1`，仅本机；`0.0.0.0` 暴露到局域网） |
 
-## ssh_workspace_unforward
+## ssh_workspace_reverse_forward
 
-关闭一条端口转发并释放本地端口。
+让**远端主机**监听一个端口，并把每条连接转发回**本机**的端口（等价 `ssh -R`）：
+远端浏览器、构建或同事可以访问你本机运行的服务。它是 `ssh_workspace_forward`
+的镜像。
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
-| `id` | 是 | 来自 `ssh_workspace_forward` 或 `ssh_workspace_status` |
+| `alias` | 是 | 主机别名 |
+| `localPort` | 是 | 本机端口——把连接交给本机的哪个服务 |
+| `remotePort` | 是 | 远端监听端口；传 `0` 由远端挑选空闲端口（推荐），实际端口在 `remotePort` 返回 |
+| `remoteHost` | 否 | 远端绑定接口（默认 `127.0.0.1`，仅环回）；`0.0.0.0` 会把隧道暴露给任何能路由到该主机的一方，返回里会带警告 |
+| `localHost` | 否 | 本机拨号地址（默认 `127.0.0.1`） |
+
+返回 `ok`、`id`、`alias`、`localHost`、`localPort`、`remoteHost`、`remotePort`
+（实际绑定端口）、`requestedRemotePort`（原样回显，`0` 表示由远端分配）、
+`exposed`（非环回绑定时为 `true`）、`error`。
+
+隧道随 SSH 连接存活：连接断开时远端监听器一并消失，需要重新打开。关闭用
+`ssh_workspace_unforward`（与正向转发共用 `id`）。
+
+## ssh_workspace_unforward
+
+关闭一条端口转发并释放监听端口（`ssh_workspace_forward` 与
+`ssh_workspace_reverse_forward` 共用）。
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `id` | 是 | 来自 `ssh_workspace_forward`、`ssh_workspace_reverse_forward` 或 `ssh_workspace_status` |
 
 ## 通用约定
 
@@ -291,10 +313,10 @@ redirect URI），需要一并放行 localhost。
 - 挂载时探测 `rg` / `git` / `inotifywait`，缺失项在挂载结果与面板里直接提示；
   远端有 `inotifywait` 时变更监视走事件推送，否则回落到轮询。
 - **已停用的工作区**对所有读写 / 命令 / 传输一律拒绝，错误信息会点名
-  "the remote workspace is detached"；详见 [unmount-modes.md](./unmount-modes.md)。
+  "the remote workspace is detached"；详见 [features.md](./features.md) 的「工作区」一节。
 
 ## 相关
 
 - [protocol.md](./protocol.md)
-- [unmount-modes.md](./unmount-modes.md)
+- [features.md](./features.md)
 - [根 README](../README.md)

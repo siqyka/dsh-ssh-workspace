@@ -5,7 +5,9 @@
  * font, which could not be outlined into the same geometry as a progress ring,
  * and which said "down", never the verb. The replacement is three shared
  * strokes (a U-shaped tray plus an arrow) used by the React icons, by the
- * DOM-built row menu, and by the ring that reports progress.
+ * DOM-built row menu, and by the ring that reports progress. The row menu
+ * keeps that tray for the transfer verbs and draws a separate mark for every
+ * other verb, so a copy or delete row cannot be mistaken for a file-type row.
  *
  * Source greps alone would pass on a drawing that never renders, so this suite
  * lifts the shipped icon factory out of `lib/client.js`, runs it against a
@@ -187,7 +189,7 @@ check('a queued download counts as in progress',
 // ---- the row menu's DOM icon builder ---------------------------------------
 
 const menuSource = sliceBetween(
-  "    function createMenuIcon (kind = 'file') {",
+  '    const MENU_GLYPH_PATHS = {',
   '    /** A hairline rule between the reference action and the transfer actions. */',
   'the row-menu icon builder',
 )
@@ -206,16 +208,31 @@ function makeDocumentDouble () {
   return { createElementNS: (_namespace, tagName) => makeElement(tagName) }
 }
 
-const makeMenuIcon = new Function('document', 'TRAY_ARROW_PATHS', `${menuSource}\n return createMenuIcon`)(makeDocumentDouble(), icons.TRAY_ARROW_PATHS)
+const menuIcons = new Function('document', 'TRAY_ARROW_PATHS', `${menuSource}\n return { createMenuIcon, MENU_GLYPH_PATHS }`)(makeDocumentDouble(), icons.TRAY_ARROW_PATHS)
+const makeMenuIcon = menuIcons.createMenuIcon
 
-check('the menu draws the download mark for a download action',
-  makeMenuIcon('download').children.map(child => child.getAttribute('d')).join('|') === icons.TRAY_ARROW_PATHS.download.join('|'))
+const drawPaths = svg => svg.children.map(child => child.getAttribute('d')).join('|')
+const menuActionKinds = ['addToTask', 'copy', 'rename', 'delete', 'newFolder']
+for (const kind of menuActionKinds) {
+  check(`the menu draws the ${kind} mark for that action`,
+    drawPaths(makeMenuIcon(kind)) === menuIcons.MENU_GLYPH_PATHS[kind].join('|'),
+    `the ${kind} row still wore the file-type mark`)
+}
+check('the menu still draws the download mark for a download action',
+  drawPaths(makeMenuIcon('download')) === icons.TRAY_ARROW_PATHS.download.join('|'))
 check('...and the upload mark for an upload action',
-  makeMenuIcon('upload').children.map(child => child.getAttribute('d')).join('|') === icons.TRAY_ARROW_PATHS.upload.join('|'))
-check('...keeping the folder and file glyphs for rows that name no verb',
-  makeMenuIcon('folder').children.length === 1 && makeMenuIcon('file').children.length === 2 &&
-    makeMenuIcon().children.length === 2,
-  'a copy/rename row lost its file-type glyph')
+  drawPaths(makeMenuIcon('upload')) === icons.TRAY_ARROW_PATHS.upload.join('|'))
+check('the seven row-menu verbs draw seven different marks',
+  new Set([
+    ...menuActionKinds.map(kind => menuIcons.MENU_GLYPH_PATHS[kind].join('|')),
+    icons.TRAY_ARROW_PATHS.download.join('|'),
+    icons.TRAY_ARROW_PATHS.upload.join('|'),
+  ]).size === 7 &&
+    !menuActionKinds.some(kind => menuIcons.MENU_GLYPH_PATHS[kind].join('|') === menuIcons.MENU_GLYPH_PATHS.file.join('|')),
+  'two verbs still share one drawing')
+check('an unnamed action still falls back to the file mark, not an empty icon',
+  makeMenuIcon().children.length === 2 && makeMenuIcon('unknown').children.length === 2,
+  'the file fallback disappeared')
 
 // ---- the shipped wiring -----------------------------------------------------
 
@@ -244,8 +261,19 @@ check('the queue row wears the same ring only while it is running',
 check('the two directions keep their own marks in the queue column',
   /item\.direction === 'upload'\n\s*\? React\.createElement\(UploadIcon\)/u.test(code) &&
     /React\.createElement\(DownloadIcon\),/u.test(code))
-check('the menu download, batch download and upload items ask for their own glyphs',
-  (code.match(/glyph: 'download'/gu) ?? []).length === 2 && /glyph: 'upload'/u.test(code))
+const rowMenu = sliceBetween(
+  '    function openTaskMenu (ctx, absPath, isDir, root, x, y, sessionId, selection) {',
+  '    let dragPayload = null',
+  'the row-menu action list',
+)
+const menuGlyphs = [...rowMenu.matchAll(/glyph:\s*'([^']+)'/gu)].map(match => match[1]).sort()
+// One verb per action: the download item no longer forks into "download" and
+// "download the whole directory", because the scope is stated by the
+// destination dialog rather than by a second glyph with the same meaning.
+check('every row-menu action names a glyph instead of inheriting the row type',
+  (rowMenu.match(/createTransferItem\(\{/gu) ?? []).length === 7 &&
+    menuGlyphs.join('|') === ['addToTask', 'copy', 'delete', 'download', 'newFolder', 'rename', 'upload'].join('|'),
+  `row-menu glyphs: ${menuGlyphs.join(', ')}`)
 
 // ---- the Files-panel entry -------------------------------------------------
 

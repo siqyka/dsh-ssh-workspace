@@ -58,7 +58,7 @@ ssh://<主机别名>/<远端绝对路径>
 
 三者判定时机不同——停用最先作答，随后是模式，最后是挂载根；且停用对
 `ssh_workspace_exec` / 持久 shell / glob / grep / git / 传输一并生效
-（判据是 `engine.isDisabledTarget`）。详见 [unmount-modes.md](./unmount-modes.md)。
+（判据是 `engine.isDisabledTarget`）。详见 [features.md](./features.md) 的「工作区」一节。
 
 ## 显示规则
 

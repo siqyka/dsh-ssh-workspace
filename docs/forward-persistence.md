@@ -2,7 +2,7 @@
 
 > 一句话定位：把「远端端口映射到本机」从**一次性动作**变成**可保存、可开关、可选择开机自动恢复**的配置项。
 
-相关：[architecture.md](./architecture.md)（连接模型）、[tools.md](./tools.md)（`ssh_workspace_forward`）、[unmount-modes.md](./unmount-modes.md)（同一套「意图 / 事实」模式）。
+相关：[architecture.md](./architecture.md)（连接模型）、[tools.md](./tools.md)（`ssh_workspace_forward`）、[features.md](./features.md)（停用 / 注销语义）。
 
 ---
 

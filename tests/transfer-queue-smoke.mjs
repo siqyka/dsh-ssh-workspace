@@ -20,6 +20,7 @@
  * Run: node tests/transfer-queue-smoke.mjs
  */
 
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -99,6 +100,13 @@ const {
 
 const EMPTY = { items: [] }
 
+/** The deterministic byte pattern makeFile exposes. */
+function makeBytes (length) {
+  const bytes = new Uint8Array(length)
+  for (let index = 0; index < length; index += 1) bytes[index] = (index * 31 + 7) % 256
+  return bytes
+}
+
 /** A `File` double over bytes the real sender slices with `.slice().arrayBuffer()`. */
 function makeFile (length, name = 'blob.bin') {
   const bytes = new Uint8Array(length)
@@ -118,17 +126,16 @@ function makeFile (length, name = 'blob.bin') {
  * `onRequest` may throw: that is how a transport death is simulated, and the
  * sender's retry/abort rules are what the assertions read back from `calls`.
  */
-function recordingFetch (onRequest = null) {
+function recordingFetch (onRequest = null, answer = null) {
   const calls = []
   const fetchImpl = async (url, init) => {
     const request = JSON.parse(init.body)
     calls.push(request)
     if (typeof onRequest === 'function') await onRequest(request, calls)
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ ok: true, bytes: request.data === '' ? 0 : Buffer.from(request.data, 'base64').length }),
-    }
+    const body = typeof answer === 'function'
+      ? answer(request)
+      : { ok: true, bytes: typeof request.data === 'string' && request.data !== '' ? Buffer.from(request.data, 'base64').length : 0 }
+    return { ok: true, status: 200, text: async () => JSON.stringify(body) }
   }
   return { calls, fetchImpl }
 }
@@ -178,6 +185,7 @@ function idsIn (state, status) {
  * @returns {object} the runtime API plus the toast log.
  */
 function liftQueueRuntime () {
+  const runtimeAborts = []
   const start = source.indexOf('// ---- queue runtime (clock, workers, notices, subscriptions)')
   if (start < 0) throw new Error('client.js no longer marks the queue runtime')
   const end = source.indexOf('// ---- uploads', start)
@@ -211,8 +219,16 @@ function liftQueueRuntime () {
       opening: text,
       lastLine: text,
       dones: [],
+      models: [],
       text (line) { node.lastLine = line },
-      done (line, kind) { node.dones.push([line, kind]); node.lastLine = line },
+      done (input, kind) {
+        // The shipped queue now hands the toast a MODEL (text + code + raw
+        // detail), not a bare line, so the failure can be inspected.
+        const line = typeof input === 'string' ? input : input.text
+        node.models.push(input)
+        node.dones.push([line, kind])
+        node.lastLine = line
+      },
       failed (line) { node.dones.push([line, 'err']); node.lastLine = line },
     }
     notices.push(node)
@@ -220,11 +236,14 @@ function liftQueueRuntime () {
   }
   const formatBytes = (bytes) => `${Number(bytes) || 0}B`
   const runtime = new Function(
-    'React', 'translate', 'formatBytes', 'transferNotice', 'queueReduce', 'transferQueueIsTerminal',
+    'React', 'translate', 'formatBytes', 'transferNotice', 'queueReduce', 'transferQueueIsTerminal', 'postUploadChunk',
     `${body};
      return {
        enqueueTransferItems,
        cancelTransferQueueItem,
+       pauseTransferQueueItem,
+       resumeTransferQueueItem,
+       retryTransferQueueItem,
        clearFinishedTransfers,
        transferQueueSnapshot,
        transferQueueDispatch,
@@ -236,8 +255,9 @@ function liftQueueRuntime () {
     transferNotice,
     pure.queueReduce,
     pure.transferQueueIsTerminal,
+    async (request) => { runtimeAborts.push(request); return { ok: true } },
   )
-  return { ...runtime, notices }
+  return { ...runtime, notices, runtimeAborts }
 }
 
 /** Let the driver's promise chain run before asserting on its results. */
@@ -603,6 +623,7 @@ console.log('\n[chunked sender: progress and cancellation]')
   }
   const isNetworkFailure = new Function(`${helperOf('isNetworkFailure')}; return isNetworkFailure`)()
   const transferCancelledError = new Function(`${helperOf('transferCancelledError')}; return transferCancelledError`)()
+  const transferPausedError = new Function(`${helperOf('transferPausedError')}; return transferPausedError`)()
   const bind = (fetchImpl) => {
     const start = senderSource.indexOf('const UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024')
     const chunkStart = senderSource.indexOf('async function postFileInChunks', start)
@@ -610,9 +631,9 @@ console.log('\n[chunked sender: progress and cancellation]')
     const body = senderSource.slice(start, end)
     // eslint-disable-next-line no-new-func
     return new Function(
-      'fetch', 'API', 'isNetworkFailure', 'transferCancelledError',
+      'fetch', 'API', 'isNetworkFailure', 'transferCancelledError', 'transferPausedError',
       `${body}\nreturn { postFileInChunks }`,
-    )(fetchImpl, { uploadChunk: '/api/dsh-ssh-workspace/upload-chunk' }, isNetworkFailure, transferCancelledError)
+    )(fetchImpl, { uploadChunk: '/api/dsh-ssh-workspace/upload-chunk' }, isNetworkFailure, transferCancelledError, transferPausedError)
   }
 
   {
@@ -695,9 +716,151 @@ console.log('\n[chunked sender: progress and cancellation]')
     check('a final-chunk transport death is not replayed',
       transport.calls.filter(call => call.final === true).length === 1,
       JSON.stringify(transport.calls.map(call => call.final)))
-    check('...and still aborts the staged part',
-      transport.calls.some(call => call.abort === true), 'no abort request')
+    // A retry needs the staged prefix, so a wire failure keeps it. Only a
+    // cancel sends the abort request that removes it.
+    check('...and keeps the staged prefix for a retry',
+      transport.calls.some(call => call.abort === true) === false,
+      JSON.stringify(transport.calls.map(call => call.abort)))
   }
+
+  {
+    // A retry probes first and starts where the host says the staged prefix
+    // ended, instead of resending (and truncating) the whole file.
+    const file = makeFile(4 * 1024 * 1024 + 300 * 1024)
+    const transport = recordingFetch(null, (request) => request.probe === true
+      ? { ok: true, bytes: 2 * 1024 * 1024, offset: 2 * 1024 * 1024, resume: true }
+      : { ok: true, bytes: request.offset + (request.data === '' ? 0 : Buffer.from(request.data, 'base64').length) })
+    const { postFileInChunks } = bind(transport.fetchImpl)
+    const progress = []
+    const result = await postFileInChunks('qiyk', '/tmp/queue', file, {
+      uploadId: 'c'.repeat(32),
+      identity: `${file.size}:123`,
+      attempt: 1,
+      onProgress: (bytes) => progress.push(bytes),
+    })
+    check('a retry asks the host for the staged prefix first',
+      transport.calls[0]?.probe === true && transport.calls[0]?.uploadId === 'c'.repeat(32) &&
+        transport.calls[0]?.identity === `${file.size}:123` && transport.calls[0]?.totalBytes === file.size,
+      JSON.stringify(transport.calls[0]))
+    check('...and resumes at the offset the host reported',
+      transport.calls[1]?.offset === 2 * 1024 * 1024 && transport.calls[1]?.probe !== true,
+      JSON.stringify(transport.calls.map(call => call.offset)))
+    check('...reporting the resumed prefix as already done',
+      progress[0] === 2 * 1024 * 1024,
+      JSON.stringify(progress))
+
+    const expected = createHash('sha256').update(makeBytes(file.size)).digest('hex')
+    const final = transport.calls.at(-1)
+    check('the final chunk carries the source SHA-256 for a two-sided check',
+      final?.sha256 === expected && final?.verify === true,
+      String(final?.sha256))
+    check('...and the sender reports no restart when the prefix was accepted',
+      result.restarted === null, String(result.restarted))
+  }
+
+  {
+    // A changed source cannot be continued from stale bytes: the host refuses
+    // the prefix and says why, and the sender restarts at zero with that
+    // sentence kept for the row's own note.
+    const file = makeFile(3 * 1024 * 1024)
+    const reason = 'the source changed since the staged bytes were written — start the upload again'
+    const transport = recordingFetch(null, (request) => request.probe === true
+      ? { ok: true, bytes: 1024, offset: 0, resume: false, discarded: true, reason }
+      : { ok: true, bytes: request.offset + (request.data === '' ? 0 : Buffer.from(request.data, 'base64').length) })
+    const { postFileInChunks } = bind(transport.fetchImpl)
+    const result = await postFileInChunks('qiyk', '/tmp/queue', file, {
+      uploadId: 'd'.repeat(32),
+      identity: `${file.size}:123`,
+      attempt: 1,
+    })
+    check('a refused prefix restarts from offset zero',
+      transport.calls[1]?.offset === 0 && transport.calls[1]?.probe !== true,
+      JSON.stringify(transport.calls.map(call => call.offset)))
+    check('...and the refusal sentence is returned, not swallowed',
+      result.restarted === reason, String(result.restarted))
+  }
+
+  {
+    // THE pause contract: a pause must interrupt the chunk in flight, not wait
+    // for it to finish. The fetch below never resolves unless its signal
+    // aborts, so a sender that only checks between chunks would hang here.
+    const file = makeFile(3 * 1024 * 1024)
+    let paused = false
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      const request = JSON.parse(init.body)
+      calls.push(request)
+      return new Promise((resolve, reject) => {
+        const signal = init.signal
+        if (signal !== undefined) {
+          signal.addEventListener('abort', () => {
+            const error = new Error('aborted')
+            error.name = 'AbortError'
+            reject(error)
+          })
+        }
+      })
+    }
+    const { postFileInChunks } = bind(fetchImpl)
+    const promise = postFileInChunks('qiyk', '/tmp/queue', file, {
+      uploadId: 'e'.repeat(32),
+      identity: `${file.size}:123`,
+      isPaused: () => paused,
+    })
+    for (let index = 0; index < 20 && calls.length === 0; index += 1) await Promise.resolve()
+    check('the first chunk is in flight before the pause is asked for',
+      calls.length === 1 && calls[0]?.offset === 0, JSON.stringify(calls))
+    paused = true
+    const outcome = await Promise.race([
+      promise.then(() => 'resolved').catch((error) => (error?.paused === true ? 'paused' : 'other')),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 2500)),
+    ])
+    check('a pause interrupts the in-flight chunk instead of waiting it out',
+      outcome === 'paused', String(outcome))
+    check('...and keeps the staged prefix (no abort request)',
+      calls.every(call => call.abort !== true), JSON.stringify(calls.map(call => call.abort)))
+  }
+}
+
+// ---------------------------------------------------------------- pause / resume / retry
+console.log('\n[pause / resume / retry: the state machine]')
+{
+  const state = enqueue(EMPTY, [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }], 1)
+  check('pausing a running item keeps its slot until it acknowledges',
+    statusOf(queueReduce(state, { type: 'pause', id: 'a1', at: 2 }), 'a1') === 'pausing' &&
+      statusOf(queueReduce(state, { type: 'pause', id: 'a1', at: 2 }), 'a2') === 'queued',
+    JSON.stringify(queueReduce(state, { type: 'pause', id: 'a1', at: 2 }).items.map(item => [item.id, item.status])))
+  const ack = queueReduce(queueReduce(state, { type: 'pause', id: 'a1', at: 2 }), { type: 'pauseAck', id: 'a1', at: 3 })
+  check('the acknowledgement parks the item and frees its host slot',
+    statusOf(ack, 'a1') === 'paused' && statusOf(ack, 'a2') === 'running',
+    JSON.stringify(ack.items.map(item => [item.id, item.status])))
+
+  const queuedPaused = queueReduce(state, { type: 'pause', id: 'a2', at: 2 })
+  check('a queued item pauses without waiting for a worker',
+    statusOf(queuedPaused, 'a2') === 'paused' && statusOf(queuedPaused, 'a1') === 'running',
+    JSON.stringify(queuedPaused.items.map(item => [item.id, item.status])))
+
+  const resumed = queueReduce(ack, { type: 'resume', id: 'a1', at: 4 })
+  check('resuming while the host is busy requeues, and the earlier arrival wins',
+    statusOf(resumed, 'a1') === 'queued' && statusOf(resumed, 'a2') === 'running' &&
+      resumed.items.find(item => item.id === 'a1').createdAt === 1,
+    JSON.stringify(resumed.items.map(item => [item.id, item.status, item.createdAt])))
+  const afterFree = queueReduce(resumed, { type: 'settle', id: 'a2', at: 5, status: 'done', bytes: 1 })
+  check('the resumed item starts ahead of the later queued items',
+    statusOf(afterFree, 'a1') === 'running' && statusOf(afterFree, 'a3') === 'queued',
+    JSON.stringify(afterFree.items.map(item => [item.id, item.status])))
+
+  const failed = queueReduce(enqueue(EMPTY, [{ id: 'f1' }], 1), { type: 'settle', id: 'f1', at: 2, status: 'failed', error: 'wire died' })
+  const retried = queueReduce(failed, { type: 'retry', id: 'f1', at: 3 })
+  const retryItem = retried.items.find(item => item.id === 'f1')
+  check('retrying a failed item clears its error and counts the attempt',
+    statusOf(retried, 'f1') === 'running' && retryItem.attempts === 1 &&
+      retryItem.error === null && retryItem.bytesDone === 0,
+    JSON.stringify([retryItem.status, retryItem.attempts, retryItem.error, retryItem.bytesDone]))
+  const pausedOne = queueReduce(enqueue(EMPTY, [{ id: 'p1' }], 1), { type: 'pause', id: 'p1', at: 2 })
+  check('a paused item is still work in progress, not a settled row',
+    transferQueueActiveCount(pausedOne.items) === 1,
+    String(transferQueueActiveCount(pausedOne.items)))
 }
 
 // ---------------------------------------------------------------- driver + notices
@@ -855,6 +1018,106 @@ console.log('\n[active count]')
   const settled = queueReduce(state, { type: 'settle', at: 2, id: 'a1', status: 'done', bytes: 1 })
   check('a settled item stops counting when it finishes', transferQueueActiveCount(settled.items) === 1,
     String(transferQueueActiveCount(settled.items)))
+}
+
+
+// ---------------------------------------------------------------- pause / retry: the driver
+console.log('\n[pause / resume / retry: the driver]')
+{
+  const pausedError = () => {
+    const error = new Error('transfer paused')
+    error.paused = true
+    return error
+  }
+
+  {
+    const runtime = liftQueueRuntime()
+    // Same host, so the per-host limit makes the second item wait. A pause
+    // must release that slot only after the worker acknowledges.
+    const a1 = controllableItem('a1', 'a.bin', 'host-a', 100)
+    a1.item.uploadId = 'a'.repeat(32)
+    a1.item.dir = '/tmp/queue'
+    const a2 = controllableItem('a2', 'b.bin', 'host-a', 200)
+    const [id1, id2] = runtime.enqueueTransferItems([a1.item, a2.item])
+    await flushWorkers()
+    check('the first item runs while the same-host second item waits',
+      statusOf(runtime.transferQueueSnapshot(), id1) === 'running' &&
+        statusOf(runtime.transferQueueSnapshot(), id2) === 'queued',
+      JSON.stringify(runtime.transferQueueSnapshot().items.map(item => [item.id, item.status])))
+
+    runtime.pauseTransferQueueItem(id1)
+    check('pause marks the running row as pausing, still holding its slot',
+      statusOf(runtime.transferQueueSnapshot(), id1) === 'pausing' &&
+        statusOf(runtime.transferQueueSnapshot(), id2) === 'queued' &&
+        a1.pending[0].ctx.isPaused() === true,
+      JSON.stringify(runtime.transferQueueSnapshot().items.map(item => [item.id, item.status])))
+
+    a1.pending[0].reject(pausedError())
+    await flushWorkers()
+    check('the worker acknowledgement parks the row and frees the slot for the waiter',
+      statusOf(runtime.transferQueueSnapshot(), id1) === 'paused' &&
+        statusOf(runtime.transferQueueSnapshot(), id2) === 'running',
+      JSON.stringify(runtime.transferQueueSnapshot().items.map(item => [item.id, item.status])))
+
+    runtime.resumeTransferQueueItem(id1)
+    await flushWorkers()
+    check('resume requeues the paused row behind the running waiter',
+      statusOf(runtime.transferQueueSnapshot(), id1) === 'queued' &&
+        runtime.transferQueueSnapshot().items.find(item => item.id === id1)?.resumed === true,
+      String(statusOf(runtime.transferQueueSnapshot(), id1)))
+
+    await a2.pending[0].resolve({ bytes: 200 })
+    await flushWorkers()
+    check('the resumed row starts once its slot frees, with the resume flag set',
+      statusOf(runtime.transferQueueSnapshot(), id1) === 'running' &&
+        a1.pending.length === 2 &&
+        a1.pending[1].ctx.resume === true &&
+        a1.pending[1].ctx.attempts === 0,
+      JSON.stringify({ status: statusOf(runtime.transferQueueSnapshot(), id1), runs: a1.pending.length, ctx: a1.pending[1] && [a1.pending[1].ctx.resume, a1.pending[1].ctx.attempts] }))
+
+    runtime.pauseTransferQueueItem(id1)
+    a1.pending[1].reject(pausedError())
+    await flushWorkers()
+    runtime.cancelTransferQueueItem(id1)
+    await flushWorkers()
+    check('cancelling a paused upload sends the abort that removes its staged part',
+      runtime.runtimeAborts.length === 1 && runtime.runtimeAborts[0].abort === true &&
+        runtime.runtimeAborts[0].uploadId === 'a'.repeat(32),
+      JSON.stringify(runtime.runtimeAborts))
+    check('...and the row settles as cancelled',
+      statusOf(runtime.transferQueueSnapshot(), id1) === 'cancelled',
+      String(statusOf(runtime.transferQueueSnapshot(), id1)))
+  }
+
+  {
+    const runtime = liftQueueRuntime()
+    const f1 = controllableItem('f1', 'f.bin', 'host-a', 100)
+    const [id] = runtime.enqueueTransferItems([f1.item])
+    await flushWorkers()
+    f1.pending[0].reject(new Error('the wire died'))
+    await flushWorkers()
+    check('a failed row keeps its reason for the retry button',
+      statusOf(runtime.transferQueueSnapshot(), id) === 'failed',
+      String(statusOf(runtime.transferQueueSnapshot(), id)))
+    runtime.retryTransferQueueItem(id)
+    await flushWorkers()
+    const state = runtime.transferQueueSnapshot()
+    check('retry starts a new worker with the next attempt number',
+      statusOf(state, id) === 'running' &&
+        f1.pending.length === 2 &&
+        f1.pending[1].ctx.attempts === 1,
+      JSON.stringify({ status: statusOf(state, id), runs: f1.pending.length, attempts: f1.pending[1]?.ctx.attempts }))
+  }
+}
+
+console.log('\n[pause wiring in the shipped bundle]')
+{
+  const pausedRethrows = (source.match(/if \(err\?\.paused === true\) throw err/gu) ?? []).length
+  check('both job wrappers let the paused sentinel through', pausedRethrows === 2, String(pausedRethrows))
+  check('page-side download streams stop on pause, not only cancel',
+    /streamIntoHandle\([^\n]*ctx\.isPaused\(\)/u.test(source) &&
+      /readResponseBlob\([^\n]*ctx\.isPaused\(\)/u.test(source),
+    'a handle/anchor download would ignore the pause button')
 }
 
 if (failures.length > 0) {

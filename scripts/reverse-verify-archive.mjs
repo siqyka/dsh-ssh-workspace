@@ -36,6 +36,10 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const stubs = path.join(root, 'tests', '.peer-stubs', 'node_modules')
 const coreRoot = process.env.DSH_CORE_ROOT ?? stubs
+if (!path.isAbsolute(coreRoot)) {
+  console.error(`reverse-verify-archive: DSH_CORE_ROOT must be an absolute path, got ${JSON.stringify(coreRoot)}`)
+  process.exit(1)
+}
 
 const MUTATIONS = [
   {
@@ -109,8 +113,8 @@ const MUTATIONS = [
   {
     name: 'downloadTreeAsTar returns RAW ENTRIES instead of archive bytes',
     file: 'lib/transfer.js',
-    find: '  return { stream: tarStream(archiveEntries()) }',
-    replace: '  return { stream: archiveEntries() }',
+    find: "  return { stream: format === 'tar' ? tarStream(archiveEntries()) : zipStream(archiveEntries()), format }",
+    replace: "  return { stream: archiveEntries(), format }",
     suite: 'archive',
   },
   {
@@ -130,29 +134,29 @@ const MUTATIONS = [
     // covers a wiring change it cannot see.
     name: 'the tree-row upload goes back to two separate toasts',
     file: 'lib/client.js',
-    find: "      const notice = transferNotice(translate('transfer.uploadingName', { name: file.name }))",
-    replace: "      notifyUser(translate('transfer.uploadingName', { name: file.name }), 'ok')\n      const notice = { text: () => {}, done: (line) => notifyUser(line, 'ok'), failed: (line) => notifyUser(line, 'err') }",
+    find: "      transferQueueNotice = { handle: transferNotice(line), ids: new Set(items.map(item => item.id)), line }",
+    replace: "      notifyUser(toastError(line))\n      transferQueueNotice = null",
     suite: 'archive',
   },
   {
     name: 'a completion notice survives navigation',
     file: 'lib/client.js',
-    find: '        setSelectMode(false)\n        setTransferDone(null)',
-    replace: '        setSelectMode(false)',
+    find: "function TransferQueuePanel ({ anchor, onClose, t }) {\n      const queue = useTransferQueue()",
+    replace: "function TransferQueuePanel ({ anchor, onClose, t }) {\n      const queue = transferQueueState",
     suite: 'archive',
   },
   {
     name: 'the upload reports the LOCAL file size instead of what landed',
     file: 'lib/client.js',
-    find: "          const size = typeof parsed?.bytes === 'number' ? parsed.bytes : file.size\n          setTransferDone(t('browser.doneUpload', { name: file.name, size: formatSize(size) }))",
-    replace: "          setTransferDone(t('browser.doneUpload', { name: file.name, size: formatSize(file.size) }))",
+    find: "        const landed = typeof parsed?.bytes === 'number' && Number.isFinite(parsed.bytes) ? parsed.bytes : file.size",
+    replace: "        const landed = file.size",
     suite: 'archive',
   },
   {
     name: 'the completion line is moved behind the modal backdrop as a toast',
     file: 'lib/client.js',
-    find: "            transferDone && jsx('div', {",
-    replace: "            false && jsx('div', {",
+    find: "    function TransferQueuePanel ({ anchor, onClose, t }) {",
+    replace: "    function TransferQueueInline () {}\n    function TransferQueuePanel ({ anchor, onClose, t }) {",
     suite: 'archive',
   },
   {
@@ -161,15 +165,15 @@ const MUTATIONS = [
     // transfers where a destination matters.
     name: 'the destination is chosen AFTER the bytes arrive',
     file: 'lib/client.js',
-    find: "      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return\n      const notice = transferNotice(",
-    replace: "      const notice = transferNotice(",
+    find: "      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return",
+    replace: "      await Promise.resolve()\n      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return",
     suite: 'archive',
   },
   {
     name: 'a cancelled picker still fetches the file',
     file: 'lib/client.js',
-    find: "      if (target.kind === 'canceled') return\n      const notice = transferNotice(",
-    replace: "      if (false) return\n      const notice = transferNotice(",
+    find: "      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return",
+    replace: "      const target = await pickFileTarget(suggested)",
     suite: 'archive',
   },
   {

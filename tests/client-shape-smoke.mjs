@@ -393,7 +393,7 @@ console.log('\n[a11y: the menu contract]')
 // The index arithmetic is EXTRACTED from the source and executed here rather
 // than grepped for. A grep for `'ArrowDown'` passes whether the wrapping is
 // right or the modulo is wrong — and this repository has already shipped
-// assertions of exactly that kind (see O-14 in optimization-and-future.md).
+// assertions of exactly that kind (see O-14 in docs/optimization-and-future03.md).
 {
   const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
   const count = (re) => (source.match(re) ?? []).length
@@ -802,7 +802,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
 // ---------------------------------------------------------------------------
 console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 //
-// C-01 in optimization-and-future02.md. The panel had four dialogs and wired
+// C-01 (closed; the ledger is docs/optimization-and-future03.md). The panel had four dialogs and wired
 // three; the fourth (DirectoryBrowser) had a backdrop and a dialog frame, so it
 // LOOKED covered while keyboard focus walked straight through it into the page
 // behind. Two more holes sat in the same area: the browser's rows were
@@ -961,15 +961,19 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
     /if \(remote !== null\)[\s\S]{0,2600}?translate\('rowmenu\.delete'\)/u.test(bodyOf('openTaskMenu')) === false ||
       (bodyOf('openTaskMenu').match(/translate\('rowmenu\.rename'\)/gu) ?? []).length >= 1,
     'rename/delete sit inside the remote-only branch')
-  check('...at most seven single-line items and at most three rules',
-    (bodyOf('openTaskMenu').match(/createTransferItem\(/gu) ?? []).length <= 7 &&
+  check('...at most eight single-line items and at most three rules',
+    (bodyOf('openTaskMenu').match(/createTransferItem\(/gu) ?? []).length <= 8 &&
       (bodyOf('openTaskMenu').match(/createMenuSeparator\(\)/gu) ?? []).length <= 3 &&
       !/menuitem-desc/u.test(bodyOf('openTaskMenu')),
-    'the row menu grew a description line, a fourth rule, or more than seven items')
-  check('...and the batch download needs MORE THAN ONE selected row',
-    /const batch = Array\.isArray\(selection\?\.items\) && selection\.items\.length > 1 \? selection\.items : null/u.test(bodyOf('openTaskMenu')) &&
-      /batch !== null\) \{/u.test(bodyOf('openTaskMenu')),
-    'a single-row or empty selection would be offered a batch verb')
+    'the row menu grew a description line, a fourth rule, or more than eight items')
+  // There is no longer a SECOND verb for a batch: one item, one label, and the
+  // decision of what it acts on belongs to `resolveTargets` alone. A menu that
+  // grew a batch entry back would be a second answer to the same question.
+  check('...and there is exactly one download verb, whatever the selection',
+    (bodyOf('openTaskMenu').match(/translate\('transfer\.download'\)/gu) ?? []).length === 1 &&
+      !/batch/u.test(bodyOf('openTaskMenu')) &&
+      (bodyOf('openTaskMenu').match(/translate\('rowmenu\.delete'\)/gu) ?? []).length === 1,
+    'a second, selection-sized verb came back into the row menu')
   check('...with its own rule directly above rename/delete',
     (() => {
       const body = bodyOf('openTaskMenu')
@@ -980,17 +984,17 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
         body.includes("!String(lastBeforeDestructive.className).includes('sshwsp-menusep')")
     })(),
     'the destructive pair lost the separator above rename')
-  check('...and a right-click OUTSIDE the selection offers no batch verb',
+  check('...and a right-click hands the whole selection to resolveTargets',
     (() => {
       const body = bodyOf('installTreeMenuBridge')
-      // Three parts, because each alone is satisfiable by a mutation: the row
-      // must be looked up in the live selection, that answer must decide
-      // whether the batch list is passed, and the list itself must be longer
-      // than one row.
-      return /const inSelection = selected\.some\(item => item\.path === path\)/u.test(body) &&
-        /const selection = inSelection && selected\.length > 1 \? \{ items: selected \} : undefined/u.test(body)
+      // The bridge must not pre-filter the selection. Every rule about "this
+      // row" versus "these rows" lives in ONE function, and a second copy here
+      // (only when the row happened to be inside a batch) is a second answer
+      // waiting to disagree with what the action then does.
+      return /openTaskMenu\(ctx, path, kind === 'directory', treeRootOf\(row\), x, y, undefined, \{ items: selected \}\)/u.test(body) &&
+        !/inSelection/u.test(body)
     })(),
-    'the menu would offer "download selected" for a row the user did not select')
+    'the bridge decided the target set before resolveTargets could')
   check('the row menu is 220px and runs compact (12px labels, 24px rows); the chooser keeps its width and two-line size',
     /\.sshwsp-flowmenu \{[^}]*width: 220px/u.test(source) &&
       /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem \{ min-height: 24px; gap: 6px; padding: 3px 6px; \}/u.test(source) &&
@@ -1034,30 +1038,32 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   check('the tree-gesture toast expires on that constant',
     liveIn('armToast', /domToastTimer = setTimeout\(dismiss, TOAST_DISMISS_MS\)/u),
     'the DOM path uses a different (or no) window')
-  check('...and the panel toast expires on it too, for every kind',
-    /if \(toast === null \|\| toastHeld\) return undefined/u.test(source) &&
-      /setTimeout\(\(\) => setToast\(null\), TOAST_DISMISS_MS\)/u.test(source),
-    'the effect still short-circuits a failure kind, or hardcodes a window')
+  check('the panel uses the same DOM notice, so there is one clock',
+    /const reportToast = \(input, kind\) => notifyUser\(input, kind\)/u.test(source) &&
+      !/const \[toast, setToast\] = React\.useState/u.test(source) &&
+      !/toastHeld/u.test(source),
+    'a second React toast would own a second timer and a second node')
+  check('the panel can hand a failure a code, raw detail and safe retry',
+    /reportToast\(toastError\(/u.test(source) && /reportToast\(await/u.test(source),
+    'the panel still reports every failure as an unexplained sentence')
   check('the pointer resting on a notice holds its clock',
     liveIn('armToast', /addEventListener\('mouseenter'/u) &&
-      /onMouseEnter: \(\) => setToastHeld\(true\)/u.test(source),
+      liveIn('armToast', /addEventListener\('mouseleave'/u),
     'the sentence being read can expire under the cursor')
   check('...and leaving restarts the window rather than resuming the remainder',
-    liveIn('armToast', /addEventListener\('mouseleave'/u),
+    liveIn('armToast', /schedule\(\)/u),
     'a paused notice would resume with almost no time left')
-  check('...and the panel hold cannot outlive the toast it belongs to',
-    /if \(toast === null\) setToastHeld\(false\)/u.test(source),
-    'a click under the pointer leaves a stale hold, freezing every later toast')
   check('an expiring failure still interrupts, and still says why',
-    liveIn('armToast', /el\.setAttribute\('role', failed \? 'alert' : 'status'\)/u),
+    bodyOf('renderToast').includes("el.setAttribute('role', failure ? 'alert' : 'status')"),
     'a polite announcement can be removed mid-sentence')
-  check('...and stays dismissible without a mouse',
-    liveIn('armToast', /event\.key !== 'Escape' && event\.key !== 'Enter'/) &&
-      liveIn('armToast', /if \(failed\) el\.focus\(\)/u),
-    'the keyboard path exists but nothing focuses the toast')
-  check('...and hands focus back when it expires',
-    liveIn('armToast', /document\.activeElement === el/u) &&
-      liveIn('armToast', /returnFocus\.focus\(\)/u),
+  check('...and stays dismissible without a mouse, without stealing focus',
+    liveIn('renderToast', /el\.tabIndex = 0/u) &&
+      liveIn('armToast', /event\.key === 'Escape'/u) &&
+      !liveIn('armToast', /el\.focus\(\)/u),
+    'the keyboard path exists but the toast takes the caret when it appears')
+  check('...and hands focus back when it is closed from inside',
+    liveIn('dismissToast', /el\.contains\(active\)/u) &&
+      liveIn('dismissToast', /returnFocus\.focus\(\)/u),
     'removing the focused node drops focus to <body>')
 }
 
@@ -1227,7 +1233,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
     'no cancellation point before the next chunk')
   check('the chunked path posts JSON, not bytes',
     /url: API\.uploadChunk|fetch\(API\.uploadChunk/u.test(client) &&
-      /body: JSON\.stringify\(request\)/u.test(client),
+      /body: JSON\.stringify\(body\)/u.test(client),
     'chunked request is not JSON')
   // The server reads at most 4 MiB of JSON; base64 inflates by 4/3. The margin
   // is asserted numerically so a future chunk-size bump fails here rather than
@@ -1242,7 +1248,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
       /const final = end >= total/u.test(client),
     'the loop would send nothing for an empty file')
   check('a final chunk is never replayed (its rename would already be done)',
-    /request\.final === true \|\| request\.abort === true \? 1 : 2/u.test(client),
+    /body\.final === true \|\| body\.abort === true \? 1 : 2/u.test(client),
     'a lost response after a successful publish would be reported as failure')
   check('a failed upload aborts its staged part instead of leaving it behind',
     /abort: true/u.test(client), 'no cleanup request')
@@ -1427,13 +1433,15 @@ console.log('\n[the toast window, measured on the code that ships]')
     // focused node drops focus to <body>, and the next Tab starts over.
     const dom = makeToastDom()
     const { notifyUser } = dom.build(client)
-    const previous = dom.document.createElement()
+    const previous = dom.document.body
     previous.focus()
     notifyUser('focus goes here', 'err')
-    check('an error takes focus so Esc/Enter reach it at all',
-      dom.document.activeElement === dom.nodes[0], 'the toast never took focus')
-    dom.tick()
-    check('...and hands it back when it expires',
+    check('an error does NOT take focus when it appears',
+      dom.document.activeElement === previous, 'the toast stole the caret')
+    const inside = dom.nodes[0].querySelector('[data-toast-action="details"]')
+    inside.focus()
+    dom.nodes[0].emit('keydown', { key: 'Escape', target: dom.nodes[0] })
+    check('...but hands it back when closed from inside',
       dom.document.activeElement === previous,
       'focus fell to the document, so the keyboard restarts at the top of the page')
   }
@@ -1513,11 +1521,30 @@ console.log('\n[the toast window, measured on the code that ships]')
   check('...and the mounted-workspace row offers no browser entry',
     !/browse\.entry/u.test(source) && !/openWorkspaceBrowser/u.test(source),
     'the removed "浏览文件" button is still wired')
+  // The row menu carries ONE fixed verb, so the confirmation is the only place
+  // that states scope. Its title varies with what will go (one file, one
+  // directory and how much is under it, or N entries) and its body carries the
+  // counted directory/file split — all derived from the same `items` array the
+  // delete then runs over.
+  // The confirmation OPENS FIRST and fills its numbers in afterwards: counting a
+  // deep tree is a walk of /ls round trips, and a dialog that only appears after
+  // the last one is a button that looks dead. So the shape this asserts is
+  // "dialog built from the selection, counts painted into reserved nodes" —
+  // not "counts awaited before the dialog exists", which is what it used to be.
   check('the delete confirmation names the count, the entries and the subtree rule',
-    source.includes("translate('transfer.selected', { count: items.length })") &&
+    /const counts = await countDeleteContents\(items, paint\)/u.test(source) &&
+      /items\.length > 1[\s\S]{0,200}?translate\('rowmenu\.deleteMany', \{ count: items\.length \}\)/u.test(source) &&
+      source.includes("translate('rowmenu.deleteOneDir', { count: filesShown })") &&
+      /const counts = await countDeleteContents\(items, paint\)/.test(source) &&
+      /const paint = \(counts\) => \{/.test(source) &&
+      source.includes("translate('rowmenu.deleteCounts', { dirs: counts.dirs, files: filesShown })") &&
+      source.includes("translate('rowmenu.deleteCountPending')") &&
       source.includes("translate('rowmenu.deleteDirWarning')") &&
       source.includes("translate('rowmenu.deleteIrreversible')"),
     'the confirmation does not state what a directory delete removes')
+  check('...and its title never invented a count of its own',
+    !/translate\('rowmenu\.deleteMany', \{ count: [^i]/u.test(source),
+    'the confirmation title counts something other than the target array')
   check('the host tree keeps its row menu after the tab was removed',
     /installTreeMenuBridge/.test(source) && /openTaskMenu\(ctx, path/.test(source),
     'removing the tab took the host tree\'s menu with it')
@@ -1529,8 +1556,20 @@ console.log('\n[the toast window, measured on the code that ships]')
   check('no entry into the removed tab survives anywhere',
     !/browse\.entry/u.test(source) && !/browse\.tabTitle/u.test(source) && !/browse\.slotMissing/u.test(source),
     'the panel still advertises a tab that is gone')
-  const keys = ['rowmenu.downloadSelected',
-    'rowmenu.rename', 'rowmenu.delete', 'rowmenu.renameTitle', 'rowmenu.deleteTitle',
+  // ONE label per verb, whatever the selection: a menu that changes its
+  // wording with the count is a second answer to "what will this delete", and
+  // the confirmation already owns the scope.
+  check('the row menu labels the two destructive verbs once, without a count',
+    !source.includes('rowmenu.downloadSelected') &&
+      !source.includes("translate('transfer.selected'") &&
+      /label: translate\('transfer\.download'\)/u.test(source) &&
+      /label: translate\('rowmenu\.delete'\)/u.test(source),
+    'a menu label still varies with the selection')
+  const keys = ['transfer.downloadTargetTitle',
+    'transfer.downloadTargetSubtitle', 'transfer.chooseTarget', 'transfer.downloadQueued',
+    'transfer.skippedLocal',
+    'rowmenu.deleteOneFile', 'rowmenu.deleteOneDir', 'rowmenu.deleteMany', 'rowmenu.deleteCounts',
+    'rowmenu.rename', 'rowmenu.delete', 'rowmenu.renameTitle',
     'rowmenu.renameFail', 'rowmenu.deleteFail', 'rowmenu.deleteDone', 'rowmenu.deletePartial']
   const missingZh = keys.filter(key => !new RegExp(`'${key.replace(/\./g, '\\.')}':`, 'u').test(source))
   check('every new user-visible key is present in both dictionaries',

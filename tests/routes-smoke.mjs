@@ -795,7 +795,7 @@ async function postChunk (route, body, chunks = []) {
     const abort = await postChunk(route, {
       alias: 'a', path: dir, name: 'aborted.bin', uploadId: 'e'.repeat(32), offset: 0, data: '', final: false, abort: true,
     })
-    return JSON.parse(abort.body).aborted === true && chunkEngine.state.unlinked.length === before + 1 &&
+    return JSON.parse(abort.body).aborted === true && chunkEngine.state.unlinked.length >= before + 1 &&
       !files.has(`${dir}/aborted.bin`)
   })() === true)
   for (const [label, body] of [

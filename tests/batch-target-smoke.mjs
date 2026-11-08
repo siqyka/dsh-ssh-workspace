@@ -223,8 +223,18 @@ const ITEMS = [
     (source.match(/pickDirTarget\(ctx\)/gu) ?? []).length === 1,
     'the batch surface stopped asking for a single destination')
   check('...and routes it through the one shared batch enqueue',
-    /async function downloadTreeItems[\s\S]{0,1400}?enqueueDownloadsInto\(/u.test(source),
+    /function requestBatchDownload \(chosen, skipped, ctx\)[\s\S]{0,2600}?enqueueDownloadsInto\(/u.test(source),
     'a surface grew its own per-item destination handling')
+  // One entry point decides between "a save dialog for this one file" and "one
+  // folder for the whole selection". Both the row menu and the keyboard resolve
+  // their targets first and then call THIS, so no second batch path can pick a
+  // different set than the one the confirmation named.
+  check('one gesture entry decides between a single file and a batch',
+    /async function downloadRows \(items, ctx\)[\s\S]{0,1200}?requestBatchDownload\(chosen, skipped, ctx\)/u.test(source),
+    'the single-file and batch paths forked again')
+  check('...and the old separate batch function is gone',
+    !/function downloadTreeItems/u.test(source),
+    'two batch download entry points exist again')
   check('the per-file dialogs are still the documented fallback',
     /const target = await pickFileTarget\(/u.test(source),
     'the single-file path lost its save dialog')
@@ -233,7 +243,7 @@ const ITEMS = [
   // placed after the await would make the stop button inert for exactly the
   // copy it was meant to cancel.
   check('a host-side copy polls for cancellation instead of checking afterwards',
-    /setInterval\(\(\) => \{ if \(ctx\.isCancelled\(\)\) stop\(\) \}/u.test(source),
+    /setInterval\(\(\) => \{[^}]*?ctx\.isCancelled\(\)[^}]*?stop\(\)/u.test(source),
     'cancelling a host-side copy does nothing until it finishes')
   check('...and the poll is cleared on both outcomes',
     /finally \{\s*\n\s*if \(poll !== null\) clearInterval\(poll\)/u.test(source),
@@ -273,15 +283,15 @@ const ITEMS = [
   check('a muted notice wears neither outcome colour',
     !node.className.includes('sshwsp-toast-ok') && !node.className.includes('sshwsp-toast-err'), node.className)
   check('...it is neutral instead', node.className.includes('sshwsp-toast-muted'), node.className)
-  check('...it does not steal focus from the user', dom.document.activeElement === null, String(dom.document.activeElement))
+  check('...it does not steal focus from the user', dom.document.activeElement === dom.document.body, String(dom.document.activeElement))
   check('...but it still expires on the one seven-second window',
     dom.timers.length === 1 && dom.timers[0].ms === 7000,
     `${dom.timers.length} timer(s), ms=${dom.timers.map(timer => timer.ms).join(',')}`)
   check('...and it is still dismissible from the keyboard', node.tabIndex === 0, String(node.tabIndex))
 
   notifyUser('boom', 'err')
-  check('a failure still interrupts with role="alert"', dom.nodes.length === 1 && dom.nodes[0].role === 'alert', dom.nodes[0].role)
-  check('...and still takes focus, for Esc/Enter', dom.document.activeElement === dom.nodes[0])
+  check('a failure still interrupts with role="alert"', dom.nodes.length === 1 && dom.nodes[0].getAttribute('role') === 'alert', dom.nodes[0].getAttribute('role'))
+  check('...and still does NOT take focus, for Esc/Enter', dom.document.activeElement === dom.document.body)
 }
 
 // ---- the route the queue posts to actually exists --------------------------

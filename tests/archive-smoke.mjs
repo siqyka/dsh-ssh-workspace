@@ -35,7 +35,7 @@ const { globToRegExp, relativeForRule, treeFilter } = await import(pathToFileURL
 // The toast helpers are lifted from the shipped bundle by a shared harness so
 // this suite and `client-shape-smoke` drive the SAME code rather than two
 // retyped copies.
-const { liftToasts } = await import(pathToFileURL(path.join(pluginRoot, 'tests', 'support', 'toast-dom.mjs')).href)
+const { liftToasts, makeToastDom } = await import(pathToFileURL(path.join(pluginRoot, 'tests', 'support', 'toast-dom.mjs')).href)
 // `transfer.js` reaches the shared SFTP primitives, which resolve the DSH peer
 // packages — so only the part of this suite that drives `downloadTreeAsTar`
 // needs an assembled tree. The tar writer and the rule matcher are pure and run
@@ -469,34 +469,8 @@ console.log('\n[the completion notice is ONE element, edited in place]')
    * fires is the point.
    */
   function makeDom () {
-    const nodes = []
-    const timers = []
-    const document = {
-      body: { appendChild: (node) => { nodes.push(node); node.parent = document.body } },
-      createElement: () => {
-        const listeners = new Map()
-        const node = {
-          className: '',
-          textContent: '',
-          tabIndex: -1,
-          parent: null,
-          setAttribute (name, value) { this[name] = value },
-          addEventListener (name, handler) { listeners.set(name, handler) },
-          listeners,
-          focus () { /* focus is client-shape's subject, not this suite's */ },
-          remove () { const at = nodes.indexOf(this); if (at >= 0) nodes.splice(at, 1) },
-        }
-        return node
-      },
-      querySelectorAll: () => [...nodes],
-    }
-    const setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length }
-    const clearTimeout = () => {}
-    // The lift brings its own `domToastTimer` binding and `armToast`: the whole
-    // point of the handle is that finishing CLEARS the pending timer before
-    // arming its own, and a copy that skipped that would not be the real code.
-    const build = liftToasts(client).build(document, setTimeout, clearTimeout)
-    return { transferNotice: build.transferNotice, nodes, timers, document }
+    const dom = makeToastDom()
+    return Object.assign(dom, { transferNotice: dom.build(client).transferNotice })
   }
 
   {
@@ -504,10 +478,10 @@ console.log('\n[the completion notice is ONE element, edited in place]')
     const handle = dom.transferNotice('Uploading a.zip…')
     check('opening a transfer creates exactly one node', dom.nodes.length === 1, String(dom.nodes.length))
     const live = dom.nodes[0]
-    check('...which says it is working', live.textContent === 'Uploading a.zip…', live.textContent)
+    check('...which says it is working', live.querySelector('.sshwsp-toast-line').textContent === 'Uploading a.zip…', live.querySelector('.sshwsp-toast-line').textContent)
     handle.done('Uploaded a.zip (1.0 KB)')
     check('finishing does NOT add a second node', dom.nodes.length === 1, String(dom.nodes.length))
-    check('...it edits the same one', live.textContent === 'Uploaded a.zip (1.0 KB)', live.textContent)
+    check('...it edits the same one', live.querySelector('.sshwsp-toast-line').textContent === 'Uploaded a.zip (1.0 KB)', live.querySelector('.sshwsp-toast-line').textContent)
     check('...and only NOW starts the dismissal timer', dom.timers.length === 1, String(dom.timers.length))
     check('...marking it as a success', live.className.includes('sshwsp-toast-ok'), live.className)
   }
@@ -517,8 +491,8 @@ console.log('\n[the completion notice is ONE element, edited in place]')
     const handle = dom.transferNotice('Uploading b.zip…')
     handle.failed('Upload failed: no space left')
     const node = dom.nodes[0]
-    check('a failure turns the same node into an error', node.textContent === 'Upload failed: no space left', node.textContent)
-    check('...with role="alert", because it must interrupt', node.role === 'alert', node.role)
+    check('a failure turns the same node into an error', node.querySelector('.sshwsp-toast-line').textContent === 'Upload failed: no space left', node.querySelector('.sshwsp-toast-line').textContent)
+    check('...with role="alert", because it must interrupt', node.getAttribute('role') === 'alert', node.getAttribute('role'))
     // The window is seven seconds for BOTH kinds now. The old rule kept failures
     // until clicked; a single-slot toast made a sticky failure hide the message
     // that followed it, so the permanence went and the wording stayed.
@@ -533,11 +507,11 @@ console.log('\n[the completion notice is ONE element, edited in place]')
     const handle = dom.transferNotice('Uploading c.zip…')
     handle.text('Uploading c.zip… 40%')
     check('the in-flight line can be updated in place',
-      dom.nodes[0].textContent === 'Uploading c.zip… 40%', dom.nodes[0].textContent)
+      dom.nodes[0].querySelector('.sshwsp-toast-line').textContent === 'Uploading c.zip… 40%', dom.nodes[0].querySelector('.sshwsp-toast-line').textContent)
     handle.done('Uploaded c.zip')
     handle.done('Uploaded c.zip AGAIN')
     check('a second outcome does not overwrite the first',
-      dom.nodes[0].textContent === 'Uploaded c.zip', dom.nodes[0].textContent)
+      dom.nodes[0].querySelector('.sshwsp-toast-line').textContent === 'Uploaded c.zip', dom.nodes[0].querySelector('.sshwsp-toast-line').textContent)
     check('...and does not re-arm the timer', dom.timers.length === 1, String(dom.timers.length))
   }
 
@@ -545,7 +519,7 @@ console.log('\n[the completion notice is ONE element, edited in place]')
   // says what using it means.
   check('a transfer handle exists', /function transferNotice \(/u.test(client))
   check('the queue turns the in-flight notice into the result, in place',
-    /notice\.handle\.done\(summary\.line, summary\.kind\)/u.test(client) &&
+    /notice\.handle\.done\(\{[^}]*summary\.kind/u.test(client) &&
       /notice\.handle\.text\(line\)/u.test(client))
   // One toast owner: the queue opens the notice once per batch, and no upload
   // path opens a competing `notifyUser` progress line — that second toast is
@@ -568,7 +542,8 @@ console.log('\n[the completion notice is ONE element, edited in place]')
   check('the upload reads the server\'s byte count',
     /const landed = typeof parsed\?\.bytes === 'number' && Number\.isFinite\(parsed\.bytes\) \? parsed\.bytes : file\.size/u.test(client))
   check('...and the queue\'s completion line names it',
-    /note: translate\('transfer\.doneUpload', \{ name: file\.name, size: formatBytes\(landed\) \}\)/u.test(client))
+    /const base = translate\('transfer\.doneUpload', \{ name: file\.name, size: formatBytes\(landed\) \}\)/u.test(client) &&
+      /note: verdict === null \? base :/u.test(client))
   check('the directory browser no longer hosts the queue inside its modal',
     !/TransferQueueInline/u.test(client) && !/sshwsp-queueinline/u.test(client))
   // A transfer belongs to the plugin, not to the directory the user happens to
@@ -634,18 +609,25 @@ console.log('\n[a download reports a save only when it can see one]')
   // activation the click granted, and the first network `await` spends it. A
   // source check is the only way to see it, and it is worth having because the
   // alternative is a bug that shows up only on large files.
-  const row = client.slice(
-    client.indexOf('async function downloadTreeRow ('),
-    client.indexOf('async function sendTreeUpload (') === -1
-      ? undefined
-      : client.indexOf('async function sendTreeUpload ('),
-  )
+  const rowStart = client.indexOf('async function downloadTreeRow (')
+  if (rowStart < 0) throw new Error('client.js does not define downloadTreeRow()')
+  let rowEnd = -1
+  let depth = 0
+  for (let i = client.indexOf('{', rowStart); i < client.length; i += 1) {
+    if (client[i] === '{') depth += 1
+    else if (client[i] === '}') {
+      depth -= 1
+      if (depth === 0) { rowEnd = i + 1; break }
+    }
+  }
+  if (rowEnd < 0) throw new Error('unbalanced braces in downloadTreeRow()')
+  const row = client.slice(rowStart, rowEnd)
   const pickAt = row.indexOf('await pickFileTarget(')
-  const fetchAt = row.indexOf('await fetch(')
+  const firstAt = row.indexOf('await ')
   check('the destination is chosen BEFORE the request is made',
-    pickAt >= 0 && fetchAt > pickAt, `pick@${pickAt} fetch@${fetchAt}`)
+    pickAt >= 0 && firstAt === pickAt, `pick@${pickAt} first@${firstAt}`)
   check('a cancelled picker transfers no bytes at all',
-    row.includes('if (target.kind === \'canceled\') return'), 'the cancel branch is missing')
+    row.includes("if (target.kind === 'canceled') return"), 'the cancel branch is missing')
 
   /** A writable double that records writes and whether it was closed. */
   function makeWritable () {

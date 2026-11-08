@@ -235,9 +235,9 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | 拖拽 / 右键把文件加入任务 | 文件树的文件与文件夹可**直接拖到聊天输入框**（悬停显示虚线高亮，松开插入引用 chip），或**右键「添加到任务」**——与 `@` 补全选中效果完全一致 |
 | 「添加工作区」远程入口 | 「添加工作区」按钮替换为锚定菜单：「新建本地工作区」（DSH 原生选择器）或「新建远程工作区」（选主机 → 逐级浏览远端目录 → 确认挂载；目录不可写时警告并拒绝创建） |
 | 远程工作区专用标记 | 本插件创建的远程工作区在侧栏行、工作区选择器与会话页工作区按钮处显示远端标记图标，而不是普通文件夹图标 |
-| 主机管理面板 | 添加 / 编辑 / 删除主机（私钥路径、认证方式、备注等），改动立即生效并丢弃该别名旧连接；`~/.ssh/config` 主机只读展示；「测试连接」只探测可达性（连上即释放，不会留下连接），结果以顶部 toast 弹出，数秒自动消失（点击可提前关闭）；「已连接」状态内联在主机名后，断开时连带拆除该主机的端口转发 |
+| 主机管理面板 | 添加 / 编辑 / 删除主机（私钥路径、认证方式、备注等），改动立即生效并丢弃该别名旧连接；`~/.ssh/config` 主机只读展示；「测试连接」只探测可达性（连上即释放，不会留下连接），结果以顶部 toast 弹出，7 秒自动消失（点击 / Esc 可提前关闭，悬停暂停）；错误可就地展开诊断码与原始错误、复制整段诊断，测试连接可安全重放所以带「重试」；「已连接」状态内联在主机名后，断开时连带拆除该主机的端口转发 |
 | 浏览目录对话框 | 主机卡片的「浏览目录」逐级浏览远端目录，并可就地「挂载此目录」；**只浏览 / 挂载**，不提供上传、下载或内联队列（传输入口在文件树行菜单与文件面板头部） |
-| 行菜单：重命名 / 删除 | 宿主文件树行菜单提供重命名与删除：远端行与**本地行**都可重命名（只改名、不换目录）与删除（目录连同子目录、需确认）；目标已存在时拒绝；失败保持原样；F2 / Delete 触发同一动作。行菜单收窄为 220px 单行、最多 7 项、最多三组分隔线（「加入任务」｜「传输/复制」｜「下载所选」｜「重命名/删除」）；「下载所选（N 项）」只在一行以上被选中时出现 |
+| 行菜单：新建文件夹 / 重命名 / 删除 | 宿主文件树行菜单提供重命名与删除：远端行与**本地行**都可重命名（只改名、不换目录）与删除（目录连同子目录、需确认）；目标已存在时拒绝；失败保持原样；F2 / Delete 触发同一动作。**远端目录行**另有「新建文件夹」，走 `POST /mkdir`（父目录 + 单个路径段名称，越界 / 只读 / 停用 / 重名在写盘前拒绝）；成功后重新列目录并选中新行，本地目录不提供。行菜单收窄为 220px 单行、最多 8 项、最多三组分隔线（「加入任务」｜「传输/复制」｜「下载到本机」｜「新建文件夹 / 重命名/删除」）。菜单文案固定、不带数字：删除永远是「删除」，下载永远是「下载到本机」；选几行由 `resolveTargets` 判决，数量写在删除确认框与下载目标对话框里 |
 | 文件面板 / 上传 / 下载 | 上传入口只有文件树行右键菜单「上传文件到此目录」（仅远端行）；「工作区文件」面板头部只留一个托盘箭头图标入口（**仅当面板显示的是 `ssh://` 远程工作区时出现**；本地目录沿用宿主自己的头部；在远端列表里它不随队列清空而隐藏），空闲是裸图标、有排队或运行中的传输时变蓝并套上聚合进度环（数量放在无障碍名称里），点开是进度浮层（逐项进度、速度与进度条、取消、清除已完成；进行中在上，已结算最新在前）。右侧文件树本身仍是宿主组件——插件不改它的 JSX，只在它上面叠加多选（见下节） |
 
 ### 多选、重命名与删除
@@ -252,7 +252,7 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | Shift+单击 | 从锚点到该行的连续区间；**第一次 Shift 会直接播种锚点**，所以连续两次 Shift+单击就能连选，不需要先普通点击（普通点击文件会打开预览）；**命中目录只选中、不进入**；锚点不变 |
 | Ctrl/Cmd+Shift+单击 | 把该区间追加进现有选择 |
 | 右键（选择之外） | 选择收拢到该行再出菜单；不打开 |
-| 右键（选择之内） | 保留整批选择，菜单才有「下载所选（N 项）」 |
+| 右键（选择之内） | 保留整批选择；菜单文案不变，目标是整批 |
 | Ctrl/Cmd+右键 | 切换该行后出菜单 |
 | Shift+右键 | 从锚点扩区间后出菜单 |
 | 单击空白 / Esc | 清空选择（Esc 保留键盘光标） |
@@ -261,7 +261,7 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | Enter | 打开光标所在目录 |
 | F2 / Delete | 重命名 / 删除光标或选中行 |
 
-选中行是背景高亮加光标行描边，**任何行都不渲染复选框，也没有“选择模式”开关，树的下方也不再浮出批量条**。选中一行以上后，在选中行上右键，菜单里多出「下载所选（N 项）」，复用同一个传输队列，不另开一套。点它时**只选一次目标目录**，随后整批入队逐个下载——目标目录依次回落到浏览器目录句柄、宿主目录选择器、单文件保存框，取消选择即取消整批。行菜单里新增的「重命名」「删除」对远端行与**本地工作区行**都可用：重命名是**行内改名**（文件名原位变输入框，Enter 提交、Esc 取消、被拒绝时保持打开并标红），只改名、不换目录，目标已存在时直接拒绝；删除目录会连同子目录一起删，并先给出数量、名称与「不可恢复」的确认；失败不乐观更新，列表保持原样并给出原因。
+选中行是背景高亮加光标行描边，**任何行都不渲染复选框，也没有“选择模式”开关，树的下方也不再浮出批量条**。选中一行以上后在选中行上右键，菜单仍然是同一个「下载到本机」——文案不随选择数变化，作用范围由选择决定；它复用同一个传输队列，不另开一套。目标超过一项时先确认（写明将下载多少项），再**只选一次目标目录**，随后整批入队逐个下载——目标目录依次回落到浏览器目录句柄、宿主目录选择器、单文件保存框，取消选择即取消整批。行菜单里新增的「重命名」「删除」对远端行与**本地工作区行**都可用：重命名是**行内改名**（文件名原位变输入框，Enter 提交、Esc 取消、被拒绝时保持打开并标红），只改名、不换目录，目标已存在时直接拒绝；删除目录会连同子目录一起删，并先给出数量、名称与「不可恢复」的确认；失败不乐观更新，列表保持原样并给出原因。
 
 ### 连接模型
 
@@ -275,9 +275,11 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 
 明确**不支持**的：
 
-- **跳板机 / ProxyCommand**：引擎只直连目标主机（`ssh2` 客户端未接 `proxyJump`）。
-  带 `proxyJump` / `ProxyCommand` 的主机会在解析时被**明确拒绝**并说明原因，
-  而不是悄悄按直连去试；需要跳板时请改用别的工具连接。
+- **`ProxyCommand`（仅此一项）**：仍然拒绝——它是任意本地命令执行，而配置文件
+  是数据，不能变成「读配置 = 执行程序」。`ProxyJump` 已支持：按 `ssh -J` 的
+  形状逐跳建独立连接（最多 8 跳），目标只看到直接邻居；`none` 表示强制直连。
+  带 `ProxyCommand` 的主机会在解析时被**明确拒绝**并说明原因，而不是悄悄按
+  直连去试。
 - **shell 命令的落点由 `workdir` 决定**。会话工作区为 `ssh://` 时，
   `pwsh` / `bash` 的命令在远端主机执行——按 POSIX shell 语义、不受本机文件
   沙箱约束（以远端登录用户的完整权限运行）；本地 `workdir` 的命令仍在本机
@@ -314,18 +316,14 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 | [architecture.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/architecture.md) | 架构与实现：`ctx.fs` / `ctx.shell` / `ctx.subprocess` 接管、变更监视与流式读取、内建桥接、引擎与连接模型 |
 | [protocol.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/protocol.md) | `ssh://` 路径协议：语法、规范化、显示规则、`file:` URI、写入围栏与停用围栏 |
 | [hosts.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/hosts.md) | 主机配置与认证：存储格式、`~/.ssh/config` 回退、面板管理 |
-| [tools.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/tools.md) | Agent 工具参考：十个 `ssh_workspace_*` 工具 |
+| [tools.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/tools.md) | Agent 工具参考：11 个 `ssh_workspace_*` 工具（含 `reverse_forward`） |
 | [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记、端口转发与持久会话区 |
 | [forward-persistence.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/forward-persistence.md) | 端口转发持久化：意图与事实的分离、两条断开路径的一致性、自动开启 |
-| [unmount-modes.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/unmount-modes.md) | 卸载的两种模式：`detach`（可逆）与 `deregister`、会话归档、停用围栏 |
-| [trigger-gates.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/trigger-gates.md) | **触发门禁的一行指令**：四道围栏各自该怎么撞、撞出什么错误码，以及怎么用远端实际状态反证 |
-| [acceptance-prompts.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/acceptance-prompts.md) | **验收 Prompt**：权限围栏三项决定的逐条验收脚本（操作 → 必须看到的结果 → 判据），可直接粘给远端会话执行 |
 | [development.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/development.md) | 开发、调试与发布：源码结构、依赖解析、打包流程 |
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 |
 | [upstream-workaround-pattern.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、反模式与成本边界 |
 | [troubleshooting.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/troubleshooting.md) | 排查与常见问题：错误语义、连接问题、已知限制 |
-| [optimization-and-future.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/optimization-and-future.md) | **优化项与 Future（第一辑）**：首次全量审阅的 16 项优化（每项附推进结果与反向验证）、明确不做的事与 9 个能力方向 |
-| [optimization-and-future02.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/optimization-and-future02.md) | **优化项与 Future（第二辑 · 2026-11-04 复审）**：O-17 / O-18 两个新问题、对 O-11 / O-12 / O-13 的更正、F-10 / F-11 与可复现实测记录 |
+| [optimization-and-future03.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/optimization-and-future03.md) | **优化项与 Future（第三辑 · 唯一账本）**：仍未做、判定不做、上游阻塞、验证缺口与已完成 ID 索引；前两辑已合并到这里 |
 | [CONTRIBUTING.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CONTRIBUTING.md) | 参与开发：环境、三种测试、代码约定、改完之后 |
 | [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY.md) | 安全策略：凭据如何存储、主机密钥校验、已知边界、漏洞报告 |
 | [CHANGELOG.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CHANGELOG.md) | 更新日志：各版本的新增、修复与变更 |

@@ -104,8 +104,11 @@ console.log('\n[wire-up]')
 check('the row menu offers a download action', clientSource.includes("translate('transfer.download')"))
 check('the row menu offers an upload action', clientSource.includes("translate('transfer.upload')"))
 check('transfers are gated on a remote row', clientSource.includes('remoteTargetOf(absPath)'))
+// The menu now hands its resolved targets to one gesture entry; a single
+// remote row still reaches the per-file save dialog, so "download THIS file"
+// and "download these rows" share a decision point instead of a code path.
 check('downloads the row itself, not a guessed path',
-  clientSource.includes('downloadTreeRow(absPath, isDir)'))
+  clientSource.includes('await downloadTreeRow(chosen[0].path, chosen[0].isDir === true)'))
 check('uploads beside the row',
   clientSource.includes('uploadTreeRow(absPath, isDir)'))
 check('upload targets the row\'s own directory when it is one',
@@ -114,8 +117,13 @@ check('upload targets the row\'s own directory when it is one',
 // true of the browser and false of the agent's own tool. It is now a real
 // action backed by the archive route, and the assertion says so rather than
 // checking for an apology.
+//
+// The menu label is now FIXED ("下载到本机") for a file and for a directory: the
+// scope is stated by the destination dialog, not by a second verb that changed
+// its wording with the row kind.
 check('a directory download is a real action, not an apology',
-  clientSource.includes("translate('transfer.downloadDir')") &&
+  clientSource.includes("label: translate('transfer.download')") &&
+    !clientSource.includes("translate('transfer.downloadDir')") &&
     !clientSource.includes('downloadDirUnsupported'))
 check('the browser reuses the streaming download route',
   clientSource.includes('const route = isDir ? API.downloadTree : API.download') &&

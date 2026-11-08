@@ -1,0 +1,149 @@
+# 优化项与 Future（第三辑）
+
+> 本页是**唯一的前瞻账本**：前两辑已合并到这里并从仓库删除，只保留仍在桌上的事、判定不做的理由、上游阻塞的现状与验证证据的缺口。
+
+**合并说明（2026-11-08）**
+
+- `optimization-and-future.md`（第一辑，O-01…O-16 与 F-01…F-09）与 `optimization-and-future02.md`（第二辑，O-17…O-22、C-01…C-04、F-10/F-11）已删除。它们的结论按「仍要做 / 判定不做 / 上游卡住 / 已完成」拆进本页，已完成条目只留 ID 与落点（第 5 节），不再重述论证过程。
+- 同一轮删除的专题页（`unmount-modes.md`、`trigger-gates.md`、`acceptance-prompts.md`、`prompt-dead-keys-and-host-recheck.md`）也不再单独成页；它们描述的行为以代码与测试断言为准，本页不搬推理过程。
+- 本页不替代 `CHANGELOG.md`：已发布版本里发生了什么，看 CHANGELOG；这里只回答「下一步还能做什么、为什么不做某件事」。
+
+## 1. 仍未做
+
+### 1.1 客户端 chunk 拆分（C-02；原 O-12 的“不做”已被推翻）
+
+**状态**：可做，待排期。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
+
+宿主 `@deepseek-ai/dsh-client-modules`（`app.asar` 内）的真实能力：
+
+| 通道 | 位置 | 结论 |
+| --- | --- | --- |
+| 同步 `require` 兄弟文件 | `:833-841` 只查 seed / loadCache / factories | **不行**，同步拆仍需要构建或第二入口 |
+| `require.async(spec)` | `:842-847`，相对路径转 `importChunk` | **可以**懒加载同目录 chunk |
+| chunk 命名 | `:600` `CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/` | `client.extra.js` 合法 |
+| 注册 | `:704` 校验 `registration.chunk` | chunk 里写 `load({ id, chunk: 'client.extra.js', factory })` |
+| 取用 | `:852-877` `chunkUrl(...)` + `loadBundle` | 按插件目录同名文件取，不扫描、不预构建 |
+
+**最小验证（尚未做）**：新增一个只含 `load({ id, chunk: 'client.probe.js', factory })` 的 `lib/client.probe.js`，在主 bundle 调一次 `require.async('./client.probe.js')`，确认宿主对 `/plugins/` 返回 200 且注册成功。这一步不改产品行为，只证明通道可用。
+
+**拆分边界**：只拆交互后才渲染的部分（对话基座、面板分区、文件浏览器）；被多处同步引用的顶层工具函数不能拆——那会把“懒加载”变成“处处等待”。
+
+**触发条件**：`lib/client.js` 继续增长到影响启动、内存或编辑体验时；或下一次本来就要大改界面时顺手做。
+
+### 1.2 配置解析的统一词法层（F-10）
+
+现状是三套扫描：Host 主表、`Include` 展开、`Match` 判定各有一套引号/通配/边界规则。O-17（`Match` 是否终止 `Host`）与 O-18（通配块里的身份字段）已经修好，但新增一条指令仍要在三处同步，且“未知指令”的报错措辞不统一。
+
+目标：先做**词法层**（引号、转义、续行、注释、`Host`/`Match`/`Include` 的 section 边界），再做**语义层**（`supported` / `ignored` / `lost` / `error` 四态 + 来源行号）。完整 OpenSSH 语义仍然明确不做（见第 2 节）。
+
+**触发条件**：下一次要支持新指令或新语法；或出现三处行为不一致的真实 bug。没有触发时，抽象只会增加一层需要维护的映射。
+
+### 1.3 资源恢复编排（F-11）
+
+现状：端口转发天然幂等，watcher 有注册表与责任边界（O-19），shell 会话不可跨进程恢复。还没有一张统一的“恢复登记表”。
+
+目标（条件性）：登记 `{ type, target, generation, recover, close, lastResult }`，恢复顺序固定为“先重扫、再监听”；watcher 失败进诊断环；shell 只接受“新代”；恢复可等待（异步），不要求同步完成。**明确不做**：承诺断线后远端命令继续运行（见第 2 节第 5 条）。
+
+**触发条件**：出现第二类真实恢复需求（例如面板状态、上传中断之外的资源）。只有 watcher 与转发时，不值得为两类资源抽象一层编排。
+
+### 1.4 提交与发布收口
+
+`package.json` 已是 `0.3.0`，CHANGELOG 有 `[Unreleased]` 段，但工作树仍有未提交改动，也没有打 tag 或发布 npm。用户约定：**未明确说“更新版本 / 发布 / 打 tag”时，不改版本号、不发布**。发布前按 README 的发布检查表走（`npm run check` 必须全绿）。
+
+### 1.5 曾列为待办、现已完成（防止重复开工）
+
+- 27 个零引用 i18n 键已删除（335 → 308），包括两个边界键的配套改动；`transfer.uploadingName` / `queue.cancelling` / `queue.cancelItem` / `queue.cancelled` 未误伤。
+- `scripts/reverse-verify-archive.mjs` 的 7 条漂移锚点已随源码更新，现在 **20/20 全 RED**（2026-11-08 实测，exit 0，源文件 sha256 与跑前一致）。
+- P2 队列暂停/重试、P3 toast 详情/复制/重试、P4 远端新建文件夹、P5 批量删除/下载均已落地（`resolveTargets`、`enqueueDownloadsInto`；旧 `handleBatchDownload` 与 `rm -rf` 均为 0 命中）。
+
+## 2. 判定不做
+
+| 方向 | 理由 | 何时可重开 |
+| --- | --- | --- |
+| 整体重写为 TypeScript / 引入构建 | 会打断五个运行时补丁与单入口 bundle；类型收益可以先用 JSDoc + 局部 `// @ts-check` 拿，不值得一次性翻修 | 模块拆分后补丁只剩一两处时 |
+| 自实现完整 `ssh_config` 语义 | 语义面大，错误解析比不支持更危险；采用“明确子集 + 显式报告/审计” | 上游提供可依赖的解析库，或用户能接受“解析不了就拒绝”的硬失败 |
+| 远端命令沙箱 | 需要远端内核能力（namespace / seccomp 等），插件无法从一条 SSH 连接里证明隔离；假装沙箱比不提供更危险 | 宿主提供 execution world 边界（见第 3 节第 4 条） |
+| 盲目缓存 / 并发预取 | 没测量前加缓存只会让失效更难推理；O-22 的测量工具未校准 | 先有可复现的延迟测量，再谈缓存 |
+| 承诺断线后恢复运行中命令 | 远端进程去向不可知（可能仍在跑），正确语义是“结果未知 / 可能已生效”；写类命令不重放 | 不重开；这是语义边界，不是能力缺口 |
+| 容器化的发布证据（O-20） | 假 SSH 服务器只证明协议，不证明 OpenSSH/SFTP/POSIX/PTY；2026-11-07 已在真机（`qiyk`，Ubuntu 24.10 / OpenSSH 9.7p1）与 306 包装配树上建立证据，用户决定不再投入一次性容器夹具 | CI 需要可重复的真机环境时 |
+| CI 差异矩阵（O-21） | 并入 O-14 关闭；CI 仍只跑 Ubuntu + Node 20 单格，避免用矩阵掩盖“本机可过”的假绿 | 出现只在特定平台复现的 bug |
+| 全量性能基线（O-22） | 2026-11-07 判定不做，测量工具未校准；但 `ls` 条数上限已作为**正确性**修复独立落地（默认 500、封顶 2000、非法值 400、截断返回真实总数、码点序） | 有明确的性能回归需要判定时，单独立项 |
+| 系统钥匙串凭据后端（F-04） | 2026-11-08 判定不做。现状 AES-256-GCM，密钥在 `$DSH_HOME/dsh-ssh.key`（owner-only，首次生成）；边界写清：不防整个 `$DSH_HOME` 被拷走、不保管 `keyPath` 指向的私钥或口令文件；钥匙串只换密钥位置，挡不住整目录拷贝，还多一个平台依赖 | 宿主提供统一的凭据服务时 |
+| SOCKS / 动态转发（F-03） | 需求未出现；ProxyJump 多跳与反向转发已经做，SOCKS 需要另一套协议面与测试夹具 | 真实需求 + 引擎测试夹具 |
+
+## 3. 上游阻塞
+
+复核对象：`F:/GitHub/.test-deps/node_modules/@deepseek-ai`，相关包 `0.2.1-rc.2`（2026-11-08 逐行核对）。四条都**仍卡**。行号以该副本为准；`app.asar` 内版本可能不同步，复核时先确认版本。
+
+| 条目 | 宿主现状 | 上游解决后本插件可退什么 |
+| --- | --- | --- |
+| 终端 backend 丢弃 `request.cwd` | `dsh-api-terminal-controller/lib/index.js:981` `spawn(agent, owner, request, signal)`；`:983` `const cwd = await workingDirectory.ensure(agent, signal)`；`:986-996` 把该 `cwd` 传给 `subprocess.spawnTerminal(...)`；`:1001` `info.cwd` 同值。`request.cwd` 在函数内 **0 次读取**。工具层其实已经正确下传：`dsh-tool-terminal/lib/index.js:303-307` `const cwd = await ctx.workingDirectory.ensure(owner, exec.signal)`，`cwd: args.cwd === void 0 ? cwd : resolve(cwd, args.cwd)` | `lib/patch-terminal.js:317-356` 的 cwd 补丁与 `lib/patch-projection.js:90` 的 `RELAXED_KEY`。两者现在都承重：`ssh://` cwd 能进终端全靠它们 |
+| 宿主文件树没有选择/批量 API | `dsh-client-ui-sidebar-files/lib/client.js`（0.2.1-rc.2，1,025 行）：`selected` / `selection` 0 命中；`ctrlKey` / `shiftKey` / `metaKey` 0 命中（只有命令快捷键的 `modifiers`）。宿主仍输出 `data-files-entry` / `data-files-path`（`:498-499` 目录、`:522-523` 文件、`:542-543` other，`:667` 声明），本插件的装饰式桥接依赖它们 | `.sshwsp-tree-row-selected` + `aria-selected` + roving tabindex + document 捕获监听 + `selectReduce` 的手势拆分。注意：宿主已从 2,251 行缩到 1,025 行，桥接必须按当前 DOM 重新复核一遍 |
+| 工具上下文没有 cwd / world / 进度通道 | `dsh-tool-cordis/lib/types/api-catalog.js:8172` `ToolExecutionInput { callId; rootCallId?; name; schema?; arguments; agent?; parent?; signal }`；`:8244` `ToolRunContext extends ToolExecution { deferContext(context: UserMessage): void; concludeTurn(): void }`。插件只能用 `exec.signal`（`lib/tools.js:1385-1387`） | F-02 的“传输进度进入工具输出”可以接宿主进度通道，而不是现在的查队列；前台工具也能显示进度，而不是只有终态 |
+| execution world / 配额没有 provider seam | `dsh-api-terminal-controller/lib/index.js:969-980` `execution(agent)` 只 `agent.ctx.get` `subprocess` / `sandboxPolicy` / `workingDirectory`，没有可替换的 provider。上限仍只有每会话终端数：`:753` `maxTerminals: z.number().step(1).min(1).default(8)`、`:843` `terminal/limit-reached`；没有连接/传输配额抽象 | F-05 的“多工作区配额”可以交给宿主，插件不必自己维护计数器；远端命令沙箱也才有讨论的前提 |
+
+## 4. 验证证据的缺口与口径
+
+- **默认门禁**：`node tests/run.mjs`，最近一次实测 `70 passed, 6 skipped, 0 failed`（76 套件）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
+- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.test-deps/node_modules/@deepseek-ai` 后为 `73 passed, 3 skipped, 0 failed`（76 套件）；6 个按环境启用的套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `live` / `acceptance`，默认不在门禁内。
+- **`run.mjs` 的跳过判定有缺陷（未修）**：`tests/run.mjs:186-189` 只要输出里出现行首 `SKIP` 就把整套记为 skipped。`tests/boot-smoke.mjs` 实际跑了 30 项并通过，但内部有一行 `SKIP remote-host checks (set DSH_WS_TEST_ALIAS to enable; ...)`，于是整套永远显示为 SKIP。需要引入第三态“部分运行”（退出码 0 且既有通过计数又有 SKIP），否则“6 个 skipped”这个数字会长期误导。
+- **`scripts/reverse-verify-archive.mjs`**：20 个变异全部 RED（2026-11-08 实测），跑前备份、跑后逐字节还原。它是评审动作，**不进 CI**——它会改写源文件。
+- **`scripts/reverse-verify-future.mjs`：14 confirmed / 5 not（2026-11-08 复跑，exit 1），待修**：
+  - F-04 “audit stops following wildcard blocks”：锚点漂移，`lib/config-audit.js` 已没有 `applies =` / `patternMatches`（逻辑重构）。
+  - F-04 “a repeated keyword is reported twice”：锚点漂移，`seen.has(lower)` 已改为 `seen.has(keyword)`（`lib/config-audit.js:243`）。
+  - F-07 “redaction stops masking an Authorization header”：锚点漂移，`lib/audit.js` 的 header 规则已拆分/改写。
+  - F-07 “redaction stops masking an environment assignment”：**变异已失效**——`lib/redact.js:103` 的共享兜底 `(password|passphrase)(\s*[=:]\s*)…` 仍会遮住 `DB_PASSWORD=`，只改 `lib/audit.js` 不再移除行为。要么同时改两处，要么退役这条变异。
+  - F-09 “the bundle stops masking a login user”：锚点漂移，遮罩已移到 `lib/redact.js:99` 的 `maskText`，`lib/support-bundle.js` 里不再有那条 `.replace(... @ ...)`。
+- **判断标准**：反向验证的 `expect` 是“必须变红的断言数”；少于它说明套件没有钉住行为，多于它说明变异破坏了别的东西，数字不再是证据。`expect: 0` 的变异允许以**崩溃**记数（`F-06` 那条就是这样：套件解引用它期望的环境），但这只证明“行为变了”，不能证明是哪条断言抓住的——复跑时仍要看崩溃点。
+
+## 5. 已完成条目索引
+
+代码注释里引用 `O-xx` / `F-xx` / `C-xx` 时先查这里；需要细节时看 CHANGELOG 与对应测试。
+
+| ID | 主题 | 结论 / 落点 |
+| --- | --- | --- |
+| O-01 | 失败重放语义 | 已修：写类不重放，结果报“未知” |
+| O-02 | watcher 降级句柄 | 已修：单一 live 句柄 |
+| O-03 | 原始字节上传 CSRF | 已修：媒体类型门（415） |
+| O-04 | 真机套件失效 | 已修：scratch 目录校验 + acceptance 参数 |
+| O-05 | 前台/后台恢复时序 | 已修：`onRestored` 只在成功路径 |
+| O-06 | shell 超时串输出 | 已修：屏障 + generation |
+| O-07 | 暂存名与背压 | 已修：随机名 + drain/error 竞速 |
+| O-08 | 首钥落盘失败 | 已修：degraded 诊断 + `unpinnedHostKeys` |
+| O-09 | SFTP 重复打开 | 已修：single-flight（Promise 缓存 + `streamOpening`） |
+| O-10 | 空列表与静默降级 | 已修：listing 三态 |
+| O-11 | 可访问性 | 已修：`useDialogA11y` + `useMenuKeyboard`；C-01 补齐第四对话框与行 |
+| O-12 | 客户端单文件拆分 | 见 C-02 / §1.1：“不可拆”的结论已推翻 |
+| O-13 | 诊断形状 | 已修：`seq` / `SCHEMA_VERSION` / `exportText` 脱敏 |
+| O-14 | 测试真实性 | 已关闭：假 SSH 服务器 + 三态汇总；CI 矩阵判定不做 |
+| O-15 | 上游契约测试 | 已修：`upstream-contract.js` |
+| O-16 | 文档数字可生成 | 已修：`scripts/doc-numbers.mjs` |
+| O-17 | `Match` 是否终止 `Host` | 已修 |
+| O-18 | 通配块里的身份字段 | 已修：LOST 报告 |
+| O-19 | watcher 恢复闭环 | 已闭环：注册表 + 跨订阅去重 + 真 socket 断链 |
+| O-20 | 容器化发布证据 | 判定不做；真机证据已建立（§2） |
+| O-21 | CI 差异矩阵 | 并入 O-14 关闭 |
+| O-22 | 性能基线 | 判定不做；`ls` 上限作为正确性修复独立落地 |
+| C-01 | O-11 只闭合 2/3 | 已修 |
+| C-02 | chunk 拆分的前提 | 见 §1.1 |
+| C-03 | 脱敏漏点 | 已修 |
+| C-04 | F-04 凭据后端 | 判定不做（§2） |
+| F-01 | 断线后的语义 | 已做：分代 + watcher 重建 + 起始目录；环境恢复判为伪需求 |
+| F-02 | 传输可靠性 | 已做：校验 / 冲突 / 续传 / 目录 zip / 排除 / 队列 / 暂停恢复重试；剩并发测量与工具进度（§3） |
+| F-03 | 拓扑 | 已做：ProxyJump 多跳 + 反向转发；SOCKS 不做 |
+| F-04 | 主机配置管理 | 已做：审计 / Include / Match / 标签 / 最近使用；凭据后端不做 |
+| F-05 | 远端原生能力 | 上游阻塞（§3） |
+| F-06 | 能力探测 | 已做；容器端到端随 O-20 关闭 |
+| F-07 | 可审计 | 已做：审计环 + 确认策略；真隔离不做 |
+| F-08 | 界面 | 已做：多选 / 菜单收窄 / 批量下载 / 新建文件夹 / 删除；终端 cwd 上游阻塞 |
+| F-09 | 可观测性 | 已做；性能基线随 O-22 关闭 |
+| F-10 | 配置兼容层 | 见 §1.2 |
+| F-11 | 恢复编排 | 见 §1.3 |
+
+## 相关
+
+- [features.md](./features.md)：每个能力“做什么、怎么用、缺依赖时怎么降级”。
+- [tools.md](./tools.md)：11 个 Agent 工具的参数与行为。
+- [development.md](./development.md)：源码结构、测试套件与生成数字。
+- [upstream-workarounds.md](./upstream-workarounds.md)：第 3 节四个补丁的退役条件与删除步骤。
+- [../CHANGELOG.md](../CHANGELOG.md)：已发布版本的实际变更。

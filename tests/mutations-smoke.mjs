@@ -74,6 +74,18 @@ console.log('\n=== mutations smoke ===\n')
   check('the route table has a rename and a delete endpoint',
     /rename: '\/api\/dsh-ssh-workspace\/rename'/u.test(routes) &&
       /deleteEntry: '\/api\/dsh-ssh-workspace\/delete'/u.test(routes))
+  check('the route table has a remote-only mkdir endpoint',
+    routes.includes("mkdir: '/api/dsh-ssh-workspace/mkdir'"))
+  check('mkdir fences the CHILD it creates, not the parent it sits in',
+    routes.includes('async function mkdirRemoteEntry (engine, router, ctx, body)') &&
+      routes.includes("assertMutationAllowed(ctx, body, child.displayPath, 'create a folder')") &&
+      routes.includes('assertRemoteFence(router, child)'))
+  check('the row menu offers new folder only for a remote directory',
+    client.includes('remote !== null && isDir') &&
+      client.includes("translate('rowmenu.newFolder')"))
+  check('...and the successful action re-lists and selects the new row',
+    client.includes('fetchJson(API.mkdir') &&
+      client.includes('selectCreatedRow(data?.path, request)'))
   check('the local branch re-reads the root from the session/policy, not the body',
     /function localRootOf \(owner\)/u.test(routes) &&
       /owner\?\.policy\?\.workspaceRoot/u.test(routes) &&
@@ -160,15 +172,25 @@ if (!coreRoot) {
   // ---- remote -----------------------------------------------------------------
   async function remoteCases () {
     const socketPaths = new Map()
+    socketPaths.set('/srv/proj', { type: 'dir', children: ['a.txt', 'dir', 'link', 'detached.txt'] })
     socketPaths.set('/srv/proj/a.txt', { type: 'file' })
     socketPaths.set('/srv/proj/dir', { type: 'dir', children: ['sub', 'inner.txt'] })
     socketPaths.set('/srv/proj/dir/sub', { type: 'dir', children: [] })
     socketPaths.set('/srv/proj/dir/inner.txt', { type: 'file' })
     socketPaths.set('/srv/proj/link', { type: 'link' })
     socketPaths.set('/srv/proj/detached.txt', { type: 'file' })
-    const calls = { renames: [], unlinks: [], rmdirs: [] }
+    const calls = { renames: [], unlinks: [], rmdirs: [], mkdirs: [] }
     const sftp = {
       lstat (target, cb) {
+        const entry = socketPaths.get(target)
+        if (entry === undefined) { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
+        cb(null, {
+          isDirectory: () => entry.type === 'dir',
+          isSymbolicLink: () => entry.type === 'link',
+          isFile: () => entry.type === 'file',
+        })
+      },
+      stat (target, cb) {
         const entry = socketPaths.get(target)
         if (entry === undefined) { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
         cb(null, {
@@ -183,6 +205,21 @@ if (!coreRoot) {
         cb(null, (entry.children ?? []).map(filename => ({ filename })))
       },
       realpath (target, cb) { cb(null, target) },
+      mkdir (target, cb) {
+        if (socketPaths.has(target)) {
+          cb(Object.assign(new Error('failure'), { code: 4 }))
+          return
+        }
+        const parent = target.slice(0, target.lastIndexOf('/')) || '/'
+        const entry = socketPaths.get(parent)
+        if (entry === undefined || entry.type !== 'dir') {
+          cb(Object.assign(new Error('no such file'), { code: 2 }))
+          return
+        }
+        calls.mkdirs.push(target)
+        socketPaths.set(target, { type: 'dir', children: [] })
+        cb(null)
+      },
       rename (from, to, cb) {
         if (!socketPaths.has(from)) { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
         if (socketPaths.has(to)) { cb(Object.assign(new Error('failure'), { code: 4 })); return }
@@ -228,6 +265,28 @@ if (!coreRoot) {
 
     const exists = await post(routes, ROUTES.rename, { path: 'ssh://qy/srv/proj/b.txt', newName: 'dir', sessionId: 's-remote' })
     check('an existing target is a 409', exists.status === 409, JSON.stringify(exists))
+
+    const made = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/srv/proj', name: 'created', sessionId: 's-remote' })
+    check('creating a folder below the mounted root works',
+      made.status === 200 && calls.mkdirs.includes('/srv/proj/created'), JSON.stringify(made))
+    const madeExists = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/srv/proj', name: 'dir', sessionId: 's-remote' })
+    check('an existing folder name is a 409',
+      madeExists.status === 409 && /already exists/u.test(madeExists.body), JSON.stringify(madeExists))
+    const madeOutside = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/other', name: 'x', sessionId: 's-remote' })
+    check('creating outside every mounted root is a 403',
+      madeOutside.status === 403 && /outside every mounted/u.test(madeOutside.body), JSON.stringify(madeOutside))
+    const madeBadName = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/srv/proj', name: 'x/y', sessionId: 's-remote' })
+    check('a folder name carrying a separator is a 400',
+      madeBadName.status === 400 && /single path segment/u.test(madeBadName.body), JSON.stringify(madeBadName))
+    const madeReadOnly = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/srv/proj', name: 'ro', sessionId: 's-remote-ro' })
+    check('a read-only session cannot create a folder',
+      madeReadOnly.status === 403 && /read-only/u.test(madeReadOnly.body), JSON.stringify(madeReadOnly))
+    const madeLocal = await post(routes, ROUTES.mkdir, { path: '/tmp/not-a-workspace', name: 'x', sessionId: 's-remote' })
+    check('the mkdir route never touches a local directory',
+      madeLocal.status === 400 && /only available for remote/u.test(madeLocal.body), JSON.stringify(madeLocal))
+    const madeMissing = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/srv/proj/missing', name: 'x', sessionId: 's-remote' })
+    check('a missing parent directory is a 404',
+      madeMissing.status === 404 && /does not exist/u.test(madeMissing.body), JSON.stringify(madeMissing))
 
     const root = await post(routes, ROUTES.deleteEntry, { path: 'ssh://qy/srv/proj', sessionId: 's-remote' })
     check('deleting the mounted root itself is refused', root.status === 403 && /root itself/u.test(root.body), JSON.stringify(root))

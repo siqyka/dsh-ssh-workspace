@@ -2,77 +2,56 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
-## [Unreleased]
+## [0.3.1] - 2026-11-08
 
 ### 新增
 
 **文件与选择**
 
-- **宿主「文件」树支持 Windows 式多选**：Ctrl/Cmd 切换、Shift 选区间；修饰键点目录只选不进，不渲染复选框、无批量条；选择按会话 + 根记忆，重挂载后仍可续选。
-- **单击文件仍然打开它**：普通单击同时选中并照旧打开，只有修饰键单击吃掉导航。
-- **右键遵守多选语义**：选择外收拢到该行、内保留整批；Ctrl 切换、Shift 扩区间，右键不打开；多选后菜单出现「下载所选（N 项）」。
-- **批量下载只问一次位置**：依次回落浏览器 `showDirectoryPicker`、preload 桥、`uiWorkspace.pickDirectory`、逐项保存；取消即取消整批并给中性提示。
-- **在文件行上直接重命名**：F2 / 行菜单原位变输入框，Enter 提交、Escape 取消；非法名保持打开并标 `aria-invalid`，模态仅兜底。
-- **重命名与删除**：新增 `POST /rename` / `POST /delete`；越界、根目录与只读 / 停用状态拒绝；软链只动链接本体，目录删除先确认再逐项 lstat。
-- **行右键菜单收窄**：220px 单行、去描述、24px 行高、最多 7 项三组线；覆盖策略改由 `title` 提示。
+- **宿主「文件」树多选**：Ctrl/Cmd 切换、Shift 选区间；普通单击仍打开，修饰键点目录只选不进；选择按会话 + 根记忆，重挂载后仍可续选。
+- **菜单文案固定，作用范围随选择**：删除始终「删除」、下载始终「下载到本机」，不再有「删除所选（N 项）」「下载所选（N 项）」两套文案；目标由 `resolveTargets(clickedRow, selection)` 唯一决定，收敛发生在菜单弹出前。数量移到删除确认框与下载目标对话框：确认框先出现、数字后到，递归计数上限 200，本地未知与列目录失败分别说明。
+- **批量下载只问一次位置**：超过一项先确认再选目录，依次回落浏览器 `showDirectoryPicker`、preload 桥、`uiWorkspace.pickDirectory`、逐项保存；取消即取消整批；混选时本地行被跳过并说明。
+- **行内重命名 / 新建文件夹 / 删除**：F2 或行菜单原位输入；新增 `POST /rename`、`POST /delete`、`POST /mkdir`，越界、根目录、只读 / 停用状态拒绝，软链只动链接本体，目录删除逐项 lstat。
+- **行右键菜单收窄**：220px 单行、24px 行高、最多 8 项、三组分隔线，各动作独立图标。
 
 **传输**
 
-- **统一传输队列与进度浮层**：浏览器上传共用一份队列（主机 1 / 全局 2），五态、进度单调、可单独取消；面板头部常驻入口，入队前 1 GiB 预检。
-- **传输图标与聚合进度环**：下载控件改共享 svg，进行中套弧环、排队空环；头部入口按字节加权聚合，无总量时改旋转弧。
-- **速度与进度条**：运行行显示「百分比 · 速度 · 字节」；速率 250ms 采样平滑、停顿 5s 归零，结束后不再显示速度。
-- **队列绘制顺序**：进行中在上按到达顺序，已结算在下且最新在前，最新一行不会被 320px 视口挡掉。
-- **分块上传**：浏览器改走 `POST /upload-chunk`，2 MiB 分片经 JSON；服务端无状态按 offset 追加，失败清理残片。
-- **断点续传**：暂存名由目标派生、sidecar 记源；大小与 mtime 一致且残片不大于源才续写；修复从位置 0 写导致尾巴重复。
-- **目录下载**：新增 `downloadTree`，跳过 symlink 并列出、冲突逐文件判定；`GET /download-tree` 默认 zip、`?format=tar` 可回退。
-- **传输校验与冲突策略**：`verify: true` 时两侧 SHA-256 比对，缺工具时报未校验而非伪成功；冲突四态，`refuse` 先做只看不写的预检。
+- **统一传输队列与进度**：浏览器上传共用一份队列（主机 1 / 全局 2），五态、可单独取消、可暂停 / 恢复、失败可重试；重试重新判冲突、补缺失分片并双侧 SHA-256 校验。
+- **速度与聚合进度环**：运行行显示百分比、速度、字节；速率 250ms 采样平滑，停顿 5s 归零；头部入口按字节加权聚合。
+- **分块上传 / 断点续传 / 目录下载**：2 MiB 分片经 `POST /upload-chunk`；暂存名由目标派生、sidecar 记源；`downloadTree` 默认 zip、`?format=tar` 可回退，跳过 symlink 并列出。
 
 **连接与配置**
 
-- **`ProxyJump` 真建链**：按 `ssh -J` 逐跳建独立连接，目标只看到直接邻居；逐跳认证、各自固定主机密钥、凭据不跨跳，`ProxyCommand` 仍拒绝；并修端口默认 22、链路漏关。
-- **反向转发 `ssh -R`**：远端监听、转发回本机；监听器是远端状态，必须显式取消；默认环回，非环回标 `exposed`。
-- **`Include` 跟随与 `Match` 求值**：被包含文件就地插入以保 first-wins，按真实路径区分 duplicate / cycle；`Match` 支持 host / originalhost / all，exec 拒绝，活连接条件返回「选中无人」；不跨 `Host` 泄漏。
-- **命令确认策略**：默认关闭，`all` 或按破坏性 / 提权 / 系统规则询问；exec 与持久 shell 同门，无法询问即拒绝；它是确认门，不是沙箱。
-- **主机「最近使用」**：按连接成功排序并显示时间；独立 `recent` 段，上限 100，写入不阻塞连接。
-- **文件树右键菜单**：复制 `ssh://` 路径、设为工作区根；剪贴板被拒时报错。主机标签保存路由打通并规范化。
-- **状态来源标注**：`/status` 每节带 `{kind, at}`：live / cached / stale；从未探测不算 stale，能力节取最旧一行。
+- **`ProxyJump` 真建链**：按 `ssh -J` 逐跳建独立连接，目标只看到直接邻居；`ProxyCommand` 仍拒绝。
+- **反向转发 `ssh -R`、`Include` 跟随与 `Match` 求值、命令确认策略、主机最近使用、`ssh://` 路径菜单、状态来源 live / cached / stale**。
+- **远端「新建文件夹」** 与 **宿主文件树右键菜单**（复制 `ssh://` 路径、设为工作区根）共用同一套围栏。
 
 ### 修复
 
-- **没有连接的主机也显示「断开」**：只在 `connected` 时渲染，broken 与重连行改「立即重连」；`host-card-smoke` 覆盖五态。
-- **错误提示一挂就是永远**：单槽 toast 藏住下一条；统一 7 秒窗口，悬停暂停、移开重计，到期焦点交还来源。
-- **非 ASCII 文件名下载必然 500**：UTF-8 放进 `Content-Disposition` 触发 `ERR_INVALID_CHAR`；改 RFC 6266 / 5987 两半形式，控制符替换。
-- **桌面版上传必然失败**：`dsh-app://` 下 `File` / `Blob` 请求体在网络层失败；改走分块 JSON。
-- **上传五分钟被宿主掐断**：`node:http` 默认 `requestTimeout=300000` 掐断整个请求；读取期抬到 2 小时、读完还原。
-- **「已下载」提示早于保存**：`blob` 返回即报成功，取消却静默；改为先选目标再写入，handle / canceled / unsupported 分开，并修 `revokeObjectURL` 过早。
-- **断线后变更监视永久停止**：轮询失败一律 `changed(error)`，watcher 自停；改为只在链路不通且有重连循环时重试，恢复后补扫。
-- **持久 shell 重开回到登录目录**：按 session key 记住调用方起始目录，重开后按它重连；输出区分 `reopened` / `continued`。
-- **`remote-fs.js` 在 git 眼里是二进制**：缓存键使用字面 NUL；改为转义并单独提交，写入 `.git-blame-ignore-revs`。
-- **能力表里四条能力虚构**：`sha256sum` / `tar` / `rsync` / `tput` 从未被调用；移入 `UNPROBED_CAPABILITIES`，新增读源码断言。
-- **改 `~/.ssh/config` 后已建连接不失效**：记录建立时配置指纹，`acquire` 比对不同即重连；用内容哈希，避免 NTFS `ino:size:mtimeMs` 漏掉同长度重写。
-- **单文件上限只对一条门成立**：上限从 `transfer.js` 导出、`routes.js` 引用；上传查声明长度与流式累计，超限 413，下载在 `writeHead` 前判定。
+- **同一路径被监视两次、事件双发**：按 `alias + 规范化路径` 建注册表，同目标只留一只底层 watcher，事件逐消费者各扇出一次，关闭按引用计数；真实 SSH socket 硬断并自动重连后计数始终为 1。
+- **错误提示只有一句话，看不见原因也无法重试**：统一 7 秒窗口、悬停暂停；错误就地提供详情 / 复制 / 重试，只在可安全重放的动作上渲染重试；所有反馈改写同一节点。
+- **传输在桌面端、非 ASCII 文件名与长请求上的三处断点**：分块 JSON 替代 `File` 请求体、RFC 6266 / 5987 文件名、读取期 2 小时超时；「已下载」改为先选目标再写入。
+- **断线后监视永久停止 / 持久 shell 回到登录目录**：只在链路不通且有重连循环时重试，恢复后补扫；shell 按会话记住起始目录。
+- **能力表虚构、配置指纹漏检、单文件上限只对一条门成立**：虚构能力移入 `UNPROBED_CAPABILITIES`，配置指纹改用内容哈希，上限从 `transfer.js` 导出并在上传 / 下载两侧判定。
 
 ### 移除
 
-- **「浏览目录」只保留浏览与挂载**：逐行下载与上传入口退场，文件操作统一走宿主「文件」树；目录行仍可进入并挂载。
+- **清理 27 个零引用 i18n 键**：中英各删 27 行，335 → 308 键；与活键同前缀的旧键整行精确删除。
+- **「浏览目录」只保留浏览与挂载**：逐行下载与上传入口退场。
 
 ### 变更
 
-- 关闭目录对话框不再中断传输；进度在面板浮层继续可见。
-- 浏览器不再发送 `application/octet-stream`，唯一上传通道是 `POST /upload-chunk`；原始路由保留给非浏览器调用者。
-- 面板不再渲染「远程环境自检」（`SHOW_SELF_CHECK_SECTION = false`），探测与诊断照旧；结果改挂 `diagnosis.notes`，不计入状态灯。
+- 关闭目录对话框不再中断传输；浏览器唯一上传通道是 `POST /upload-chunk`；面板不再渲染「远程环境自检」。
 
 ### 测试
 
-- 新增 `browser-rows-smoke` 等 9 个套件，覆盖列表、白屏、主机卡、选择、重命名、批量、图标与变更路由。
-- `transfer-queue-smoke` 覆盖队列顺序、图标聚合与速度；选择套件覆盖连续两次 Shift 与宿主零打开。
-- 裸检出 66 passed / 6 skipped / 0 failed（72 套件）；真实装配树 69 / 3 / 0，PASS 3519。
+- 新增 `selection-targets-smoke`（77 项）、`toast-smoke`（87 项）、`watch-sharing-smoke`（36 项）、`transfer-retry-smoke`；`transfer-queue-smoke` 覆盖队列顺序与速度，选择套件覆盖连续 Shift 与零打开。
+- 裸检出 **70 passed / 6 skipped / 0 failed（76 套件）**；真实装配树 **73 / 3 / 0**。反向验证：菜单带 N、去收敛、计数错位、删重试门控、去 watcher 注册表均真红。
 
 ### 文档
 
-- `docs/development.md` 的套件、路由与断言数字由 `scripts/doc-numbers.mjs` 生成，不再手写。
-- `docs/features.md` / `docs/ui.md` 记录队列顺序、浏览收窄与 Shift 手势；`docs/optimization-and-future.md` 记 F-08 与反向验证。
-- README 中英文同步浏览目录、传输入口与 Shift 连选。
+- 三辑合并：删除 `docs/optimization-and-future.md` 与 `docs/optimization-and-future02.md`，内容收进 `docs/optimization-and-future03.md`；删除 `unmount-modes.md`、`trigger-gates.md`、`acceptance-prompts.md` 三篇临时专题，修正索引与死链。
+- README 中英文同步多选、浏览收窄、ProxyJump 限制、11 个工具与反向上游转发；`docs/ui.md` 记录确认框先出现、菜单固定文案。
 
 ## [0.2.8] - 2026-10-31
 
@@ -128,11 +107,11 @@
 ### 文档
 
 - `architecture.md` 新增「后台重连」；`troubleshooting.md` 新增排查表；`features.md` 新增能力表；`ui.md` 记录卡片状态与诊断报告一节。
-- 新增 [docs/optimization-and-future.md](docs/optimization-and-future.md)：16 项优化的审阅、推进结果与反向验证、9 个能力方向。
+- 新增 `docs/optimization-and-future.md`：16 项优化的审阅、推进结果与反向验证、9 个能力方向（该卷已删除，内容并入 `docs/optimization-and-future03.md`）。
 - 两个 README 的配置表补上 `engine.reconnect`，版本示例更新为 npm 上的 `latest`。
 - 全量文档审阅：路由清单补齐 `hosts/reconnect` / `self-check` / `support-bundle`，源码结构表补上 8 个模块，套件表补上 7 个缺行，各处套件与断言计数统一为实测值（裸检出 44 套件 / 1733 项、真实装配树 1956 项）。
 - 诊断环的容量与各导出面的条数分开写清（容量 40，`events` 取 10，`/status`、`diagnosticsText` 与诊断报告取 20）。
-- 两篇既有文档补登索引：[trigger-gates.md](docs/trigger-gates.md)、[acceptance-prompts.md](docs/acceptance-prompts.md)。
+- 两篇既有文档补登索引：`docs/trigger-gates.md`、`docs/acceptance-prompts.md`（两页已删除）。
 
 ## [0.2.7] - 2026-10-24
 

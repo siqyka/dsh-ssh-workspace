@@ -472,13 +472,14 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   `priority: -100` 遮蔽原生 `directoryFlow` 双入口）与远端目录对话框；
 - 工作区标记是 **DOM 装饰**：不删改 React 节点，隐藏原生文件夹图标、
   插入自有 `svg[data-sshwsp-mark]`，MutationObserver 自愈重扫；
-- 与宿主通信走 25 条路由（前缀 `/api/dsh-ssh-workspace/`）：
+- 与宿主通信走 31 条路由（前缀 `/api/dsh-ssh-workspace/`）：
   `hosts`、`hosts/save`、`hosts/delete`、`hosts/forget-key`、
   `hosts/disconnect`、`hosts/reconnect`、`test`、`ls`、`status`、`mount`、
   `unmount`、`enable`、`forward`、`unforward`、`forward/save`、
   `forward/toggle`、`forward/delete`、`forward/remember`、`forward/probe`、
-  `forward/settings`、`transfer`、`download`、`upload`、`self-check`、
-  `support-bundle`。
+  `forward/settings`、`transfer`、`download`、`download-tree`、`upload`、
+  `upload-chunk`、`rename`、`delete`、`mkdir`、`mutation-policy`、
+  `self-check`、`support-bundle`。
   路由只服务**回环请求**：除 `remoteAddress`
   回环外，还要求 `Host` 头精确为本机监听端口的 `localhost` / `127.0.0.1` /
   `[::1]` 三种拼写之一，否则 403——仅凭回环地址挡不住 DNS rebinding（页面
@@ -502,7 +503,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 - **停用围栏**横跨所有缝：`engine.disabledWorkspaces` 是唯一真相，
   `ctx.fs`、内建 fs 桥、`ctx.shell`、`ctx.subprocess`、终端接管层与
   `transfer` / `download` / `upload` 在建立连接之前统一拒绝。
-  详见 [unmount-modes.md](./unmount-modes.md)。
+  详见 [features.md](./features.md) 的「工作区」一节。
 
 ## 相关
 
