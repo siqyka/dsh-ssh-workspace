@@ -15,8 +15,8 @@
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 47 | directory listing |
-| test suites | 76 | `tests/run.mjs` |
-| passing assertions (sampled) | 3454 | measured 2026-11-08 |
+| test suites | 77 | `tests/run.mjs` |
+| passing assertions (sampled) | 3453 | measured 2026-11-09 |
 
 <!-- doc-numbers:end -->
 
@@ -147,18 +147,20 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **76 个套件里 70 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
+于是 **77 个套件里 71 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
 `boot` / `tool-schemas` 缺真实装配树，`live` / `acceptance` 缺真实主机）；生成表那一行是
-**采样值**（2026-11-08：3454 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳。
+**采样值**（2026-11-09：3453 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳。
 带 `DSH_CORE_ROOT=F:/GitHub/.test-deps/node_modules/@deepseek-ai` 时，`projection-real` / `lifecycle` /
-`tool-schemas` 三个再跑起来（`boot` 要真实主机，仍然跳过），**73 个套件通过、3 个 SKIP**
-（`boot` / `live` / `acceptance`）。换一台机器、换一个宿主版本，断言总数就会变，所以只保留采样值。
+`tool-schemas` 三个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
+**74 个套件通过、1 个部分运行（`boot`）、2 个 SKIP**（`live` / `acceptance`）。
+换一台机器、换一个宿主版本，断言总数就会变，所以只保留采样值。
 
 **两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
 
 - `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` 三个再跑起来，
-  通过套件数 70 → 73；断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，76 个套件全部运行、
+  通过套件数 71 → 74；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
+  断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，77 个套件全部运行、
   零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
@@ -167,7 +169,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
 **统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以「逐套件
-`PASS` 行数」与「汇总行数字」两种算法给出同一个值（本轮采样：3454 项，76 个套件）。
+`PASS` 行数」与「汇总行数字」两种算法给出同一个值（本轮采样：3453 项，77 个套件）。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
 脚本会静默跳过一个套件甚至五个，得出看起来核对过、实际少掉数百项的数字（本文件曾因此写 1756，
@@ -178,12 +180,11 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `SUITES` 里**——它们的 72 项断言从未在 `npm test` 中执行过。已补进列表。表格里的套件数与
 `tests/run.mjs` 的条目数应当逐一对得上，这一点也是查出来的，不是本来就成立。
 
-**「跳过套件数」与「SKIP 行数」是两个不同的量**：runner 判定一个套件是否跳过的唯一依据是
-「输出里有没有 SKIP 行」，而不是它跑了几项断言。所以一个已经跑完自己断言的套件，只要它为某个
-需要真实主机的子检查补打一行 `SKIP`，整行也会被记成 SKIP；反过来，尾行只报套件状态，不报断言数。
-要看某个套件究竟跑没跑，读它自己那行 `=== N passed`，不要读汇总。
-
-`boot-smoke` 现在正是这种情形：它跑完 30 项并通过，但为真实主机的子检查打了一行 `SKIP`，于是整套被记为 SKIP。这是判定缺陷（「部分运行」无法表达），不是套件没跑。
+**「跳过套件数」与「SKIP 行数」是两个不同的量**：runner 现在读每个套件收尾的
+`=== N passed, M failed ===`，并把「`N > 0` 且存在行首 SKIP 行」记为 `partial`（部分运行），
+不再把整行折成 SKIP。只有 `N === 0` 且有 SKIP 才是整体 skip；`N === 0` 且没有汇总行或没有 SKIP 是
+fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0。`boot-smoke` 在装配树下就是
+`partial`：它已跑 30 项，内部 remote-host 段仍跳过。这是「部分运行」，不是套件没跑。
 
 下表各套件的「项数」就是它收尾行里的数字，与上文的加总口径一致。
 
@@ -251,7 +252,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 | `ssh-config-smoke` | 无 | 43 | `Match` 块必须**终止**当前 `Host` 段（`lib/ssh-config.js`）：三个扫描器过去只在 `Host` 行重置选择状态，于是 `Match host db` 之后的 `User` / `Port` / `IdentityFile` 被当成上一个 `Host` 的内容——主机名对、凭据是另一台机器的；更严重的是该段里的 `ProxyJump none` 会取消 `Host *` 的跳板机，让本应被拒的主机变成「可直连」。section 切分现在只有一个实现，精确块、代理扫描与审计都从它读。另钉住 `O-18` 的通配身份字段：`Host *` 里的 `User` 必须报 `lost`（解析器只从精确块取身份，审计也这么说），而精确块里的同一关键字保持沉默；词表每个键都必须能被 `verdictFor` 命中（`addkeysToagent` / `stricthostkeychecking` 曾经是混合大小写的死键，`strict-host-key-checking` 连解析正则都匹配不上） |
 | `config-audit-smoke` | 无 | 37 | `~/.ssh/config` 审计（`lib/config-audit.js`）：`ignored` / `lost` / `refused` 三种判定不可合并（`LocalForward` 是 `lost`，`ProxyJump` 走 `skipped` 而不是审计）、未列出的关键字也有判定、匹配跟随 resolver（`Host *` 生效、`!name` 排除、别的块不串味）、first-wins 且重复只报一次、长值截断、`listing()` 每行带 `unsupported` |
 | `scratch-safety-smoke` | 无 | 41 | 测试自己的远端清理围栏：`DSH_WS_TEST_DIR` 为空、含空格、指向 `/etc` 三种输入都必须在任何删除发生**之前**被拒，而不是把 `rm -rf` 带着错误路径发出去 |
-| `doc-numbers-smoke` | 无 | 17 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红） |
+| `doc-numbers-smoke` | 无 | 23 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红） |
+| `run-state-smoke` | 无 | 10 | 跑批判定：`pass` / `partial` / `skip` / `fail` 四态不可合并，汇总行缺失时证明不了跑过，`0 passed` 不算通过 |
 | `upstream-contract-smoke` | 无 | 37 | 每个补丁声明它碰的宿主符号，双向校验：磁盘上每个 `patch-*.js` 都有契约、契约不指向不存在的文件、安装函数确实导出、声明的符号确实出现在模块里，且安装顺序固定——上游改名一个符号而补丁照常安装，就是「命令静默地跑在本机」 |
 | `redact-smoke` | 无 | 29 | 脱敏规则只有一个实现（`lib/redact.js`），三份对外产物共用：`diagnostics` 的 `exportText()`、支持包、审计行。存在理由是它们曾各写一套并**互相矛盾**——`engine.js` 每条成功连接都记 `connected to alice@prod-db-01.internal.corp:22`，支持包会打码而诊断文本不会，于是「支持包已经打码」正好成了用户放心粘贴诊断文本的理由。断言用真实字符串与真实函数：登录用户名、内网主机名、凭据样式的文件名必须消失，而 `host:port`、路径形状与普通源码文件名必须保留（过度打码的报告同样没用）；家目录 / 私钥 / `password=` 三组旧规则不得回归；脱敏必须幂等；别名掩码与三处产物口径一致 |
 | `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |

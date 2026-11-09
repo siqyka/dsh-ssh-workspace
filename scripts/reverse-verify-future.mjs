@@ -14,6 +14,12 @@
  * `finally`, and verified byte-identical afterwards, so a crash cannot leave the
  * tree modified.
  *
+ * A case may carry `also: [{file, from, to}]` when one behaviour is implemented
+ * in two places. The shared password fallback in `redact.js` masks the same
+ * `DB_PASSWORD=` that `audit.js` masks, so breaking only one of them is
+ * invisible to the suite. All applied mutations are restored in reverse order,
+ * each with its own byte-for-byte check.
+ *
  * `expect` is the number of assertions that must go red. Getting FEWER means the
  * suite is not pinning the behaviour; getting MORE means the mutation broke
  * something else and the number is no longer evidence.
@@ -76,8 +82,8 @@ const CASES = [
   {
     label: 'F-04: the audit stops following wildcard blocks',
     file: 'lib/config-audit.js',
-    from: "      applies = positive.some(pattern => patternMatches(pattern, alias)) &&",
-    to: "      applies = positive.some(pattern => pattern === alias) &&",
+    from: "    if (!selects(section, alias)) continue",
+    to: "    if (!isExact(section, alias)) continue",
     suite: 'config-audit-smoke.mjs',
     expect: 2,
     why: 'a catch-all block is where LocalForward is normally declared',
@@ -85,8 +91,8 @@ const CASES = [
   {
     label: 'F-04: a repeated keyword is reported twice',
     file: 'lib/config-audit.js',
-    from: "    if (seen.has(lower)) continue\n    seen.add(lower)",
-    to: "    seen.add(lower)",
+    from: "      if (seen.has(keyword)) continue",
+    to: "      // duplicate guard removed for reverse verification",
     suite: 'config-audit-smoke.mjs',
     expect: 1,
     why: 'OpenSSH uses the first value; the second is not a separate decision',
@@ -114,9 +120,20 @@ const CASES = [
     file: 'lib/audit.js',
     from: "    /([A-Za-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key))(\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
     to: "    /(\\bpassword\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
+    // The shared fallback in `redact.js:103` still masks `DB_PASSWORD=` when
+    // only the audit's own rule is broken. Both have to stop masking it for the
+    // mutation to be observable; this is the one case where one file is not
+    // enough to prove the behaviour is gone.
+    also: [
+      {
+        file: 'lib/redact.js',
+        from: "  out = out.replace(/(password|passphrase)(\\s*[=:]\\s*)[^\\s,'\"}]+/giu, '$1$2<redacted>')",
+        to: "  out = out.replace(/(\\bpassword\\s*[=:]\\s*)[^\\s,'\"}]+/giu, '$1<redacted>')",
+      },
+    ],
     suite: 'audit-smoke.mjs',
     expect: 2,
-    why: '`DB_PASSWORD=` is how an assignment is actually spelled',
+    why: '`DB_PASSWORD=` is how an assignment is actually spelled; the shared fallback masks it too',
   },
   {
     label: 'F-09: the bundle falls back to pre-formatted audit text',
@@ -129,9 +146,9 @@ const CASES = [
   },
   {
     label: 'F-09: the bundle stops masking a login user',
-    file: 'lib/support-bundle.js',
-    from: "    .replace(/([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+:\\d+)/gu, '<user>@$2')",
-    to: "    .replace(/(?:)/gu, '')",
+    file: 'lib/redact.js',
+    from: "  out = out.replace(/([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+:\\d+)/gu, '<user>@$2')",
+    to: "  out = out.replace(/(?:)/gu, '')",
     suite: 'support-bundle-smoke.mjs',
     expect: 1,
     why: '`root@host:22` names the account; the address alone does not',
@@ -214,16 +231,27 @@ let failures = 0
 let passes = 0
 
 for (const testCase of CASES) {
-  const target = path.join(root, testCase.file)
-  const original = readFileSync(target, 'utf8')
-  if (!original.includes(testCase.from)) {
-    failures += 1
-    console.log(`  FAIL  ${testCase.label} — the anchor was not found in ${testCase.file}`)
-    continue
-  }
+  const mutations = [
+    { file: testCase.file, from: testCase.from, to: testCase.to },
+    ...(Array.isArray(testCase.also) ? testCase.also : []),
+  ]
+  const applied = []
+  let output
+  let missing = false
   try {
-    writeFileSync(target, original.replace(testCase.from, testCase.to), 'utf8')
-    let output
+    for (const mutation of mutations) {
+      const target = path.join(root, mutation.file)
+      const original = readFileSync(target, 'utf8')
+      if (!original.includes(mutation.from)) {
+        failures += 1
+        console.log(`  FAIL  ${testCase.label} — the anchor was not found in ${mutation.file}`)
+        missing = true
+        break
+      }
+      writeFileSync(target, original.replace(mutation.from, mutation.to), 'utf8')
+      applied.push({ target, original })
+    }
+    if (missing) continue
     try {
       output = execFileSync(process.execPath, [path.join(root, 'tests', testCase.suite)], { encoding: 'utf8' })
     } catch (error) {
@@ -253,10 +281,14 @@ for (const testCase of CASES) {
       console.log(`        ${testCase.why}`)
     }
   } finally {
-    writeFileSync(target, original, 'utf8')
-    if (readFileSync(target, 'utf8') !== original) {
-      failures += 1
-      console.log(`  FAIL  ${testCase.label} — the file was not restored`)
+    // Restore in reverse order. Every applied mutation is verified byte for
+    // byte, so a crash cannot leave a source file modified.
+    for (const { target, original } of applied.reverse()) {
+      writeFileSync(target, original, 'utf8')
+      if (readFileSync(target, 'utf8') !== original) {
+        failures += 1
+        console.log(`  FAIL  ${testCase.label} — ${path.relative(root, target)} was not restored`)
+      }
     }
   }
 }

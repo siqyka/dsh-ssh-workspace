@@ -13,13 +13,18 @@
  * assembled tree; a stub cannot verify what they exist to verify, and a false
  * pass would be worse than an honest skip.
  *
- * ## Three outcomes, not two
+ * ## Four outcomes, not two
  *
  * A skipping suite exits 0, which is indistinguishable from a passing one at the
  * process level. That is how a summary could read "all green" while several
  * suites had never executed. The runner therefore classifies each suite as
- * pass / skip / fail and prints the skipped ones by name, so a reader can see
- * exactly which evidence is missing.
+ * pass / partial / skip / fail and prints the non-passing ones by name, so a
+ * reader can see exactly which evidence is missing.
+ *
+ * `partial` is the case that used to be invisible: the suite ran its own assertions
+ * successfully and then skipped one environment-dependent section. It is not
+ * a failure (the sections that could run did pass), but it is also not a pass
+ * and must never be folded into the pass count.
  *
  * Usage:
  *   node tests/run.mjs                 # everything (live suites skip if not configured)
@@ -43,6 +48,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { installPeerStubs } from './peer-stubs.mjs'
+import { classifySuite } from './support/run-state.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 
@@ -61,6 +67,7 @@ const SUITES = [
   'config-audit',
   'scratch-safety',
   'doc-numbers',
+  'run-state',
   'upstream-contract',
   'audit',
   'redact',
@@ -149,16 +156,16 @@ if (!childEnv.DSH_CORE_ROOT && childEnv.DSH_NO_PEER_STUBS !== '1') {
 }
 
 /**
- * Per-suite outcomes, in three states.
+ * Per-suite outcomes, in four states.
  *
  * A suite that skips exits 0, exactly like one that passes, so "everything
  * green" used to be able to mean "several suites never ran". The exit code is
- * the only channel a child process has, so the runner detects a skip the way the
- * suites themselves announce it: by looking for the skip line they print. That
- * keeps every suite unchanged — it still prints the line for a human — while
- * letting the summary tell PASS from SKIP.
+ * the only channel a child process has, so classification reads the summary the
+ * suite prints plus its line-leading SKIP lines. `partial` is a suite that
+ * passed at least one assertion and skipped a section, which is neither a pass
+ * nor a skip.
  *
- * @type {Array<{name: string, state: 'pass'|'skip'|'fail', detail?: string}>}
+ * @type {Array<{name: string, state: 'pass'|'partial'|'skip'|'fail', passed: number, failed: number, skipLines: string[], detail?: string}>}
  */
 const outcomes = []
 for (const name of names) {
@@ -179,26 +186,39 @@ for (const name of names) {
     outcomes.push({ name, state: 'fail', detail: result.error.message })
     continue
   }
-  if (result.status !== 0) {
-    outcomes.push({ name, state: 'fail', detail: `exit ${result.status}` })
-    continue
-  }
   // A skip LINE, not the word "skip" anywhere: a suite's prose may mention it.
+  // The summary is the proof that the suite reached its own assertions; a
+  // missing summary is a failure, not an honest skip.
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
-  const skipped = /^\s*SKIP\s/mu.test(output)
-  outcomes.push({ name, state: skipped ? 'skip' : 'pass' })
+  const outcome = classifySuite({ status: result.status, output })
+  const detail = result.status !== 0
+    ? `exit ${result.status}`
+    : outcome.state === 'fail' && outcome.failed > 0
+      ? `${outcome.failed} assertion(s) failed`
+      : outcome.state === 'fail'
+        ? 'no passing assertions and no suite summary'
+        : undefined
+  outcomes.push({ name, ...outcome, ...(detail === undefined ? {} : { detail }) })
 }
 
 const failed = outcomes.filter(outcome => outcome.state === 'fail')
 const skipped = outcomes.filter(outcome => outcome.state === 'skip')
+const partial = outcomes.filter(outcome => outcome.state === 'partial')
 const passed = outcomes.filter(outcome => outcome.state === 'pass')
 
-console.log(`\n=== run.mjs: ${passed.length} passed, ${skipped.length} skipped, ${failed.length} failed (${names.length} suite(s)) ===`)
+console.log(`\n=== run.mjs: ${passed.length} passed, ${partial.length} partial, ${skipped.length} skipped, ${failed.length} failed (${names.length} suite(s)) ===`)
 // Skips are listed by name and never folded into the pass count: a reader must
 // be able to see which evidence is missing, not just that nothing failed.
 if (skipped.length > 0) {
   console.log('skipped (did NOT run — set the environment each suite names to include them):')
   for (const outcome of skipped) console.log(`  SKIP  ${outcome.name}-smoke`)
+}
+if (partial.length > 0) {
+  console.log('partial (ran what it could, then skipped an environment-dependent section):')
+  for (const outcome of partial) {
+    console.log(`  PARTIAL  ${outcome.name}-smoke — ran ${outcome.passed} assertion(s)`)
+    for (const line of outcome.skipLines) console.log(`           ${line.trim()}`)
+  }
 }
 if (failed.length > 0) {
   console.log('failed:')

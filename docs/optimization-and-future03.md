@@ -32,29 +32,46 @@
 
 ### 1.2 配置解析的统一词法层（F-10）
 
-现状是三套扫描：Host 主表、`Include` 展开、`Match` 判定各有一套引号/通配/边界规则。O-17（`Match` 是否终止 `Host`）与 O-18（通配块里的身份字段）已经修好，但新增一条指令仍要在三处同步，且“未知指令”的报错措辞不统一。
+**状态：已收敛，原前提不成立（2026-11-09 复核）。** 现在只有一个 section 切分实现：`lib/ssh-config.js:71` 的 `sectionsOf`；`selects`（`:119`）使用同一文件的 `patternMatches`（`:104`），`Match` 判定在 `:130` 委托 `lib/match-eval.js:139` 的 `matchSelects`，后者又把 `host` / `originalhost` 的模式交回 `patternMatches`（import 在 `lib/match-eval.js:40`）。两个真实消费者读的是同一套：`lib/hosts.js:19-20` 与 `lib/config-audit.js:51` 都 import `sectionsOf` / `isExact` / `selects`，`lib/hosts.js:95`、`:143` 与 `lib/config-audit.js:235-236` 都调用它们。
 
-目标：先做**词法层**（引号、转义、续行、注释、`Host`/`Match`/`Include` 的 section 边界），再做**语义层**（`supported` / `ignored` / `lost` / `error` 四态 + 来源行号）。完整 OpenSSH 语义仍然明确不做（见第 2 节）。
+逐条核对剩下的“差异”：
 
-**触发条件**：下一次要支持新指令或新语法；或出现三处行为不一致的真实 bug。没有触发时，抽象只会增加一层需要维护的映射。
+| 看似第二套规则 | 实际 | 是否会在同一输入上给出不同结论 |
+| --- | --- | --- |
+| `lib/include-chain.js:76` 的 `expandGlob` | 展开 **文件路径**（`*` / `?` / `[...]`，按路径段），且只在 `Include` 上调用 | 否：输入是文件路径，不是 Host 模式 |
+| `lib/match-eval.js:84` 的 `parseMatchConditions` | 解析 `criterion value` 条件语法；host 模式仍走 `patternMatches` | 否：条件语法与模式匹配是两层，不竞争同一输入 |
+| `Host` 与 `Match` 的引号 / token 化 | 两者都从 `sectionsOf` 拿同一份 `patterns`，因此内部消费者一致；`sectionsOf` 不做引号内空格合并，是**单实现相对 OpenSSH 的缺口** | 否（内部一致）；这是窄修，不是三处同步问题 |
+
+`lib/include-chain.js:174` 的 `readConfigWithIncludes` 返回展开后的**文本**，不是第二套 section；`lib/hosts.js:45-55` 把它交给 `sectionsOf`。因此“新增一条指令必须同步改三处”没有真实样例：指令词表只在 `lib/config-audit.js` 的 `SUPPORTED_KEYWORDS` / `KNOWN_UNSUPPORTED` 维护，读取侧只有 `lib/hosts.js` 一处。
+
+目标中的完整词法层不再立项；若将来要支持引号模式或续行，按窄修处理，不预先抽象。完整 OpenSSH 语义仍明确不做（见第 2 节）。
 
 ### 1.3 资源恢复编排（F-11）
 
-现状：端口转发天然幂等，watcher 有注册表与责任边界（O-19），shell 会话不可跨进程恢复。还没有一张统一的“恢复登记表”。
+**状态：触发未满足（2026-11-09 复核）。**
 
-目标（条件性）：登记 `{ type, target, generation, recover, close, lastResult }`，恢复顺序固定为“先重扫、再监听”；watcher 失败进诊断环；shell 只接受“新代”；恢复可等待（异步），不要求同步完成。**明确不做**：承诺断线后远端命令继续运行（见第 2 节第 5 条）。
+现有可恢复资源及各自的责任边界：
 
-**触发条件**：出现第二类真实恢复需求（例如面板状态、上传中断之外的资源）。只有 watcher 与转发时，不值得为两类资源抽象一层编排。
+| 资源 | 现有实现 | 是否需要统一登记表 |
+| --- | --- | --- |
+| 持久端口转发 | `lib/forward-persist.js:68` 的 `SavedForwardManager`：意图与事实分离、失败原因按 id 记在 `:86` 的 Map、启动时自动开启 | 需要，但已在原处有幂等生命周期 |
+| 文件 watcher | `lib/watch-recovery.js:63` 的 `watchFailureVerdict` + `:91` 的退避；断链重试、恢复后重扫由引擎接线（O-19） | 需要，但已按连接健康与重连代次判定 |
+| 上传续传 | `lib/resume.js:89` 的 `planResume`、`:126` 的 `resumeRecord`：暂存文件 + sidecar，按源身份决定续不续 | 否：是传输内部状态，不跨连接恢复编排 |
+| 连接本身 | `lib/reconnect.js:73` 的 `ReconnectScheduler`：按 alias 维护 entry / 退避 / 放弃态 | 否：是连接策略，不是被恢复的资源 |
+| 持久 shell | `lib/shell.js:322` 的 `ShellManager`；dispose 时全部关闭 | 否：刻意不跨进程恢复（见第 2 节“承诺断线后恢复运行中命令”） |
 
-### 1.4 提交与发布收口
+需要统一编排的仍只有**转发与 watcher 两类**；另外三类要么是传输内部状态，要么是连接策略，要么明确不可恢复。O-19 已经把 watcher 的注册表、责任边界与跨订阅去重收口，转发也有自己的持久化。没有出现第三类真实恢复需求，因此不建 `{ type, target, generation, recover, close }` 登记表；恢复顺序“先重扫、再监听”也留在 watcher 的现有实现里。
 
-`package.json` 已是 `0.3.0`，CHANGELOG 有 `[Unreleased]` 段，但工作树仍有未提交改动，也没有打 tag 或发布 npm。用户约定：**未明确说“更新版本 / 发布 / 打 tag”时，不改版本号、不发布**。发布前按 README 的发布检查表走（`npm run check` 必须全绿）。
+**触发条件**：出现第三类需要跨连接恢复的资源，或现有两类需要共享同一个恢复顺序 / 代次。**明确不做**：承诺断线后远端命令继续运行（见第 2 节第 5 条）。
 
 ### 1.5 曾列为待办、现已完成（防止重复开工）
 
+- 0.3.1 已完成本地提交、远端推送、`v0.3.1` tag 与 npm 发布；`origin/main` 与 npm latest 都是 `0.3.1`。
 - 27 个零引用 i18n 键已删除（335 → 308），包括两个边界键的配套改动；`transfer.uploadingName` / `queue.cancelling` / `queue.cancelItem` / `queue.cancelled` 未误伤。
 - `scripts/reverse-verify-archive.mjs` 的 7 条漂移锚点已随源码更新，现在 **20/20 全 RED**（2026-11-08 实测，exit 0，源文件 sha256 与跑前一致）。
 - P2 队列暂停/重试、P3 toast 详情/复制/重试、P4 远端新建文件夹、P5 批量删除/下载均已落地（`resolveTargets`、`enqueueDownloadsInto`；旧 `handleBatchDownload` 与 `rm -rf` 均为 0 命中）。
+
+**版本约定**：未明确说“更新版本 / 发布 / 打 tag”时，不改版本号、不发布；发布前按 README 的发布检查表走（`npm run check` 必须全绿）。
 
 ## 2. 判定不做
 
@@ -84,16 +101,16 @@
 
 ## 4. 验证证据的缺口与口径
 
-- **默认门禁**：`node tests/run.mjs`，最近一次实测 `70 passed, 6 skipped, 0 failed`（76 套件）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
-- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.test-deps/node_modules/@deepseek-ai` 后为 `73 passed, 3 skipped, 0 failed`（76 套件）；6 个按环境启用的套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `live` / `acceptance`，默认不在门禁内。
-- **`run.mjs` 的跳过判定有缺陷（未修）**：`tests/run.mjs:186-189` 只要输出里出现行首 `SKIP` 就把整套记为 skipped。`tests/boot-smoke.mjs` 实际跑了 30 项并通过，但内部有一行 `SKIP remote-host checks (set DSH_WS_TEST_ALIAS to enable; ...)`，于是整套永远显示为 SKIP。需要引入第三态“部分运行”（退出码 0 且既有通过计数又有 SKIP），否则“6 个 skipped”这个数字会长期误导。
+- **默认门禁**：`node tests/run.mjs`，最近一次实测 `71 passed, 6 skipped, 0 failed`（77 套件）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
+- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.test-deps/node_modules/@deepseek-ai` 后为 `74 passed, 1 partial, 2 skipped, 0 failed`（77 套件）；`boot` 为 `partial`（已跑 30 项，内部 remote-host 段仍 SKIP），`live` / `acceptance` 仍 SKIP。默认不在门禁内的 6 个按环境套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `live` / `acceptance`。
+- **`run.mjs` 的跳过判定（已修）**：`tests/run.mjs:186-189` 先前只要输出里出现行首 `SKIP` 就把整套记为 skipped，没有看「跑了几项」。默认口径下 `tests/boot-smoke.mjs:32` 因 `DSH_CORE_ROOT` 未设置而打印 SKIP 并以 `0 passed` 退出，因此 `71 passed / 6 skipped` 没有高估；设 `DSH_CORE_ROOT` 后 boot 真的跑 30 项（`tests/boot-smoke.mjs:198` 只是内部 remote-host 段 SKIP），旧 runner 却把整套记为 skipped。第三态 `partial` 已由 `tests/support/run-state.mjs` 与 `tests/run-state-smoke.mjs` 引入。
 - **`scripts/reverse-verify-archive.mjs`**：20 个变异全部 RED（2026-11-08 实测），跑前备份、跑后逐字节还原。它是评审动作，**不进 CI**——它会改写源文件。
-- **`scripts/reverse-verify-future.mjs`：14 confirmed / 5 not（2026-11-08 复跑，exit 1），待修**：
-  - F-04 “audit stops following wildcard blocks”：锚点漂移，`lib/config-audit.js` 已没有 `applies =` / `patternMatches`（逻辑重构）。
-  - F-04 “a repeated keyword is reported twice”：锚点漂移，`seen.has(lower)` 已改为 `seen.has(keyword)`（`lib/config-audit.js:243`）。
-  - F-07 “redaction stops masking an Authorization header”：锚点漂移，`lib/audit.js` 的 header 规则已拆分/改写。
-  - F-07 “redaction stops masking an environment assignment”：**变异已失效**——`lib/redact.js:103` 的共享兜底 `(password|passphrase)(\s*[=:]\s*)…` 仍会遮住 `DB_PASSWORD=`，只改 `lib/audit.js` 不再移除行为。要么同时改两处，要么退役这条变异。
-  - F-09 “the bundle stops masking a login user”：锚点漂移，遮罩已移到 `lib/redact.js:99` 的 `maskText`，`lib/support-bundle.js` 里不再有那条 `.replace(... @ ...)`。
+- **`scripts/reverse-verify-future.mjs`：19 confirmed / 0 not（2026-11-09 复跑，exit 0）**：四条漂移均已落位——
+  - F-04 wildcard：破坏点改为 `lib/config-audit.js:236` 的 `selects(section, alias)` → `isExact(...)`，实测 2 红；
+  - F-04 repeated：删除 `lib/config-audit.js:243` 的 `seen.has(keyword)` 守卫，实测 1 红；
+  - F-07 environment assignment：`lib/audit.js:81` 与 `lib/redact.js:103` 两处同时破坏（脚本新增 `also` 多文件变异），实测 2 红；
+  - F-09 login user：锚点移到 `lib/redact.js:99` 的 `maskText` 登录用户正则，实测 1 红。
+  脚本现在对每个已写文件逐字节还原并按相反顺序收尾；跑后 `git status --short lib` 为空。
 - **判断标准**：反向验证的 `expect` 是“必须变红的断言数”；少于它说明套件没有钉住行为，多于它说明变异破坏了别的东西，数字不再是证据。`expect: 0` 的变异允许以**崩溃**记数（`F-06` 那条就是这样：套件解引用它期望的环境），但这只证明“行为变了”，不能证明是哪条断言抓住的——复跑时仍要看崩溃点。
 
 ## 5. 已完成条目索引
