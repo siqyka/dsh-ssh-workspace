@@ -18,7 +18,19 @@
 
 返回 `hosts[]`，每项含 `alias`、`host`、`port`、`user`、`auth`
 （`key` / `password` / `agent`）、`keyReady`、`source`（`store` / `ssh-config`）、
-`description`、`tags`。
+`description`、`tags`，以及下列可选字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `agentForward` | 是否转发 agent。它是**安全相关的授权**，所以明说出来而不是隐藏 |
+| `compress` | 是否开启 SSH 压缩 |
+| `lastUsedAt` | 上次成功使用的时间（epoch 毫秒）；从未用过则**缺席** |
+| `unsupported[]` | 该主机 ssh-config 块里声明了、但插件**不处理**的关键字：`{ keyword, value, verdict, detail }`，`verdict` 为 `lost` / `refused` / `ignored` |
+
+`description`、`lastUsedAt`、`unsupported` 在「没有内容」时**整个字段缺席**，而不是取值
+`undefined`——后者在 JSON 里不可表示，DSH 0.2.2-rc.1 起会把整个返回值判为
+"not lossless JSON" 并拒绝调用。`description` 缺席与「用户没写描述」在语义上相同，所以缺席
+是更诚实的编码。
 
 ## ssh_workspace_mount
 
@@ -98,8 +110,8 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 
 无参数。返回当前挂载点 `mounted[]`、**已停用**的工作区 `disabled[]`、活动连接
 `connections[{ alias, state, inFlight }]`（`state` 为 `connected` / `broken`）、
-打开中的端口转发 `forwards[]`、持久会话 `shells[{ alias, session, alive }]`、
-最近的诊断事件 `events[{ at, kind, message, alias? }]`，
+打开中的端口转发 `forwards[]`、持久会话 `shells[{ alias, session, alive, startedIn?, reopens }]`、
+最近的诊断事件 `events[{ seq, at, kind, message, alias? }]`，
 以及 `fsPatched`（远端服务是否在役）。
 
 `mounted` 与 `disabled` 是互斥的两个集合：停用会把路径从前者移到后者。
@@ -109,6 +121,16 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 宿主不装 console exporter，`debug` 级别又低于所有 exporter 的默认级别，所以**这是唯一
 能被用户读到的连接历史**。排查「为什么刚才断了」「为什么文件树不刷新」先看这里——
 `degraded` 表示 `inotifywait` 推送失效退回轮询，或大文件读取退回了共享 SFTP 通道。
+
+`seq` 是环形缓冲区的自增序号。它必须出现在返回值里，因为**环会淘汰旧条目**：没有 `seq`，
+两条相邻的记录看起来就是连续的，而实际的「中间漏掉了几条」正是判读一次断线所依据的信息。
+（这个字段一直由 `lib/diagnostics.js` 产生，只是最初的 schema 没声明它——DSH 0.2.2-rc.1
+开始真正校验工具返回值，于是整个 status 调用被拒。）
+
+`shells[].startedIn` 是会话**启动时**所在的目录，不是当前目录（远端 shell 的当前目录从这里
+观测不到，叫 `cwd` 会被误读）；启动记录已随会话关闭而消失时该字段**缺席**，而不是取值
+`undefined`——后者在 JSON 里不可表示，会让整个返回值被判为 "not lossless JSON"。`reopens`
+是该会话被重开的次数。
 
 ### 连接代次
 

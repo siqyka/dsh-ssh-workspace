@@ -2,6 +2,35 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
+## [0.3.2] - 2026-11-11
+
+### 新增
+
+**文件与选择**
+
+- **系统文件拖入远端「文件」树上传**：落点决定目标目录——目录行（折叠或展开）是自身，文件与 `other` 行是父目录，展开目录内的嵌套空白归属该目录（宿主的子列表就在同一个 `li` 内），树体空白与树头 / 路径标签归树根；不自动展开目录。只接收文件：拖入文件夹整批跳过（前三个名字 + 省略号，不递归、不入队），与文件混合时跳过说明搭在同一条批次提示的结果句上而不再另开一条会互相覆盖的 toast，只拖文件夹时才单独提示；本地工作区的树明确拒绝，不静默变成 composer 附件。监听在 document capture 阶段，树内 `preventDefault + stopPropagation` 拦住宿主附件，树外不拦截、DSH 原有拖入行为不变；内部「树行 → 输入框」拖拽只带自定义 MIME，仍走原落点插入分支。上传复用同一个 `enqueueUploads` 队列与同一句超限提示，成功后的刷新仍由队列负责。
+- **本地工作区「文件」树的空白处菜单**：空白处右键恰好两项——「新建文件夹」「复制路径」。目标目录是空白处所属的那一个（落在已展开目录的嵌套列表里就是那个目录，否则是树根），必须在树根之内；只读会话只禁用新建，复制始终可用。`POST /mkdir` 因此按 `path` 的拼写分支，本地分支的边界只取自会话/策略（请求里的 `root` 只用于识别会话），`realpath` 父目录防符号链接逃逸。远端工作区保留原有空白处菜单，远端目录行的「新建文件夹」保持不变。
+- **多选整批拖入输入框**：`dragstart` 用 `resolveTargets` + `treeSelectedItems` 取整批目标，载荷是版本化 JSON；`drop` 一次调用同一个插入助手，按树中顺序逐条插入、重复路径只插一次；行菜单「添加到任务」用同一目标集合。
+
+**输入框**
+
+- **拖入时按指针落点插入引用**：`dragover`/`drop` 用浏览器 `caretRangeFromPoint` 把指针位置映射成 composer 的 detect 偏移；文本按 `data.length`、chip 按 1、managed `<br>` 按 0、段落之间按一个换行累计。拖动期间在输入框内画一条单例竖向光标，第一个 chip 插在落点、后续 chip 依次跟随。多张可见输入卡、指针在卡片内边距、边界不可映射或浏览器不给 caret 时一律回退到旧的追加行为，映射失败不影响投放。
+
+### 修复
+
+- **工具返回值被 DSH 0.2.2-rc.1 拒绝**（[#3](https://github.com/siqyka/dsh-ssh-workspace/issues/3)）：宿主开始真正校验 `output.schema`，`ssh_workspace_status` 的 `events[].seq` 一直在产生却没被声明，`ssh_workspace_hosts` 直接把带未声明键（含 `undefined`）的存储行交给宿主，整次调用被判成不可无损 JSON。修的是**这一类**而不是这两个字段：新增 `lib/tool-schema.js` 的 `projectValue` / `validateValue`，`defineTool` 按各工具自己的 schema 投影返回值并把丢弃记进 `drainProjectionDrops()`；顺带修掉 `ShellManager.list()` 的 `startedIn: start?.cwd`，以及 `projectValue` 自己漏报「未声明且值为 `undefined`」的键。新增 `tests/tool-results-smoke.mjs` 真跑 `execute` 并**对丢弃记录断言为空**——schema 必须跟上生产者，而不是靠投影悄悄吃掉信息。
+- **同名工作区误标**：标题是弱身份，本地工作区与远程工作区可以合法同名（本仓库本身就是）。此前标记与停用置灰只按标题匹配，同名的**本地**行会被换成远程标记、甚至被置灰成不可点。现在同时收集本地标题，两边都有的标签不标识任何一方；标题规则也只在完整读过 DSH 自己的 store 之后生效，`/status` 回退时只做 id 匹配。
+- **拖动插入后光标落在错误位置**：插入后只聚焦一次，且聚焦的是接住投放的那张输入卡（不再受「唯一可见 composer」这条歧义规则影响）；拖动结束清掉树行里残留的文本选区，光标落在 chip 之后而不是行名上。
+
+### 测试
+
+- 新增 `tree-blank-menu-smoke`（16 项）、`tree-drag-smoke`（24 项）、`tree-os-drop-smoke`（60 项）、`composer-drop-point-smoke`（42 项）、`tool-results-smoke`（33 项）；`client-shape-smoke` 275 → 298、`mutations-smoke` 62 → 80、`transfer-queue-smoke` 135 → 138、`caret-after-insert-smoke` 17 → 19。
+- 裸检出 **76 passed / 6 skipped / 0 failed（82 套件，3759 项断言）**；真实装配树 **79 passed / 1 partial / 2 skipped（4003 项断言）**。反向验证 `reverse-verify-tree-drag`：17 confirmed / 0 not。
+
+### 文档
+
+- README 中英文同步系统文件拖入、本地空白处菜单与本地 `/mkdir` 分支；`docs/ui.md` 记录落点映射、退化矩阵与两种「文件夹」；`docs/protocol.md` 补 `/mkdir` 的两个分支；`docs/tools.md` 补 `hosts` 的可选字段与 `status` 的 `events[].seq` / `shells[].startedIn`；`docs/development.md` 与 `docs/optimization-and-future03.md` 同步套件数与闭环状态。
+
 ## [0.3.1] - 2026-11-08
 
 ### 新增
