@@ -75,7 +75,7 @@
 
 ### 1.5 曾列为待办、现已完成（防止重复开工）
 
-- 0.3.1 已完成本地提交、远端推送、`v0.3.1` tag 与 npm 发布；`origin/main` 与 npm latest 都是 `0.3.1`。
+- 0.3.1 已完成本地提交、远端推送、`v0.3.1` tag 与 npm 发布；0.3.2 沿用同一条链路（提交 → `npm version` → `git push --follow-tags` → CI 发布），`origin/main` 与 npm latest 跟最新 tag 走。
 - 27 个零引用 i18n 键已删除（335 → 308），包括两个边界键的配套改动；`transfer.uploadingName` / `queue.cancelling` / `queue.cancelItem` / `queue.cancelled` 未误伤。
 - `scripts/reverse-verify-archive.mjs` 的 7 条漂移锚点已随源码更新，现在 **20/20 全 RED**（2026-11-08 实测，exit 0，源文件 sha256 与跑前一致）。
 - P2 队列暂停/重试、P3 toast 详情/复制/重试、P4 远端新建文件夹、P5 批量删除/下载均已落地（`resolveTargets`、`enqueueDownloadsInto`；旧 `handleBatchDownload` 与 `rm -rf` 均为 0 命中）。
