@@ -132,9 +132,10 @@ function runFocus (options = {}) {
   const factory = new Function(
     'document',
     'COMPOSER_CARD_SELECTOR',
+    'COMPOSER_INPUT_SELECTOR',
     `${focusSrc}\n${soleSrc}\nreturn focusSoleComposer()`,
   )
-  factory(makeDocument([input], options.visible !== false), '[data-composer-card]')
+  factory(makeDocument([input], options.visible !== false), '[data-composer-card]', '[data-composer-input]')
   return state
 }
 
@@ -143,7 +144,7 @@ function runFocus (options = {}) {
 check('focusSoleComposer is registered in client.js', source.includes('function focusSoleComposer ('))
 check(
   'the insert path calls the focus helper',
-  /function addPathToTask[\s\S]{0,1500}?focusSoleComposer\(\)/.test(source),
+  extractFunction('addPathsToTask').includes('focusSoleComposer(card)'),
 )
 
 console.log('\n[the bug: DOM focus first, caret ends up at the document start]')
@@ -210,6 +211,7 @@ console.log('\n[fallbacks]')
   const factory = new Function(
     'document',
     'COMPOSER_CARD_SELECTOR',
+    'COMPOSER_INPUT_SELECTOR',
     `${focusSrc}\n${soleSrc}\nreturn focusSoleComposer()`,
   )
   const bothVisible = {
@@ -218,12 +220,36 @@ console.log('\n[fallbacks]')
       querySelector: (sel) => (sel === '[data-composer-input]' ? input : null),
     })),
   }
-  factory(bothVisible, '[data-composer-card]')
+  factory(bothVisible, '[data-composer-card]', '[data-composer-input]')
   check(
     'two visible composers are ambiguous, so neither is focused',
     one.state.order.length === 0 && two.state.order.length === 0,
     `${one.state.order.length}/${two.state.order.length}`,
   )
+}
+
+console.log('\n[named drop card]')
+
+{
+  // The drop names the card it landed on, so two visible composers are not
+  // ambiguous for that path: the receiving card must still get the caret.
+  const { input, state } = makeEditor({ modelCaret: 9 })
+  const card = { querySelector: (sel) => (sel === '[data-composer-input]' ? input : null) }
+  const factory = new Function(
+    'document',
+    'COMPOSER_CARD_SELECTOR',
+    'COMPOSER_INPUT_SELECTOR',
+    'card',
+    `${focusSrc}\n${soleSrc}\nreturn focusSoleComposer(card)`,
+  )
+  factory({
+    querySelectorAll: () => [
+      { getBoundingClientRect: () => ({ width: 400, height: 80 }), querySelector: (sel) => (sel === '[data-composer-input]' ? input : null) },
+      { getBoundingClientRect: () => ({ width: 400, height: 80 }), querySelector: () => null },
+    ],
+  }, '[data-composer-card]', '[data-composer-input]', card)
+  check('a named card is focused even when two are visible', state.order.join(',') === 'editor.focus,input.focus', state.order.join(','))
+  check('...and the caret lands on that card insertion point', state.caret === 9, 'caret=' + state.caret)
 }
 
 console.log('\n[source contract]')

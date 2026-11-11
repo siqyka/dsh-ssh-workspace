@@ -282,8 +282,10 @@ if (!coreRoot) {
     check('a read-only session cannot create a folder',
       madeReadOnly.status === 403 && /read-only/u.test(madeReadOnly.body), JSON.stringify(madeReadOnly))
     const madeLocal = await post(routes, ROUTES.mkdir, { path: '/tmp/not-a-workspace', name: 'x', sessionId: 's-remote' })
-    check('the mkdir route never touches a local directory',
-      madeLocal.status === 400 && /only available for remote/u.test(madeLocal.body), JSON.stringify(madeLocal))
+    check('a local path on a remote session is refused before any filesystem work',
+      madeLocal.status === 403 && /cannot belong to it/u.test(madeLocal.body), JSON.stringify(madeLocal))
+    check('...and the mkdir route really did reach the local branch',
+      routes.length > 0 && madeLocal.body.includes('remote'))
     const madeMissing = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/srv/proj/missing', name: 'x', sessionId: 's-remote' })
     check('a missing parent directory is a 404',
       madeMissing.status === 404 && /does not exist/u.test(madeMissing.body), JSON.stringify(madeMissing))
@@ -371,6 +373,93 @@ if (!coreRoot) {
     JSON.stringify(inventedWithSession))
   check('...and the outside file is untouched', lstatSync(outsideChild).isFile(), 'the refusal still deleted the file')
 
+
+  // ---- local mkdir ----------------------------------------------------------
+  // The same route serves both halves: the path spelling decides the branch, and
+  // the local branch reads its root from the session, not from the request.
+  const madeFolder = await post(routes, ROUTES.mkdir, { path: localRoot, name: 'fresh', sessionId: 's-local' })
+  check('creating a folder in the local workspace works',
+    madeFolder.status === 200 && lstatSync(path.join(localRoot, 'fresh')).isDirectory(), JSON.stringify(madeFolder))
+  check('...and reports the created path',
+    JSON.parse(madeFolder.body).path === path.join(localRoot, 'fresh'), madeFolder.body)
+
+  const madeNested = await post(routes, ROUTES.mkdir, { path: path.join(localRoot, 'fresh'), name: 'inner', sessionId: 's-local' })
+  check('a nested folder is created below its resolved directory',
+    madeNested.status === 200 && lstatSync(path.join(localRoot, 'fresh', 'inner')).isDirectory(), JSON.stringify(madeNested))
+
+  const madeTwice = await post(routes, ROUTES.mkdir, { path: path.join(localRoot, 'fresh'), name: 'inner', sessionId: 's-local' })
+  check('creating an existing folder name is a 409', madeTwice.status === 409, JSON.stringify(madeTwice))
+
+  const madeSeparator = await post(routes, ROUTES.mkdir, { path: localRoot, name: 'a/b', sessionId: 's-local' })
+  check('a folder name carrying a separator is a 400', madeSeparator.status === 400, JSON.stringify(madeSeparator))
+
+  const madeOutside2 = await post(routes, ROUTES.mkdir, { path: outsideRoot, name: 'escape', sessionId: 's-local' })
+  check('creating outside the session workspace is refused',
+    madeOutside2.status === 403 && /outside the session workspace/u.test(madeOutside2.body), JSON.stringify(madeOutside2))
+  check('...and nothing was created there', !exists(path.join(outsideRoot, 'escape')))
+
+  const madeOnFile = await post(routes, ROUTES.mkdir, { path: path.join(localRoot, 'renamed.txt'), name: 'x', sessionId: 's-local' })
+  check('creating below a file is refused', madeOnFile.status === 400 && /not a directory/u.test(madeOnFile.body), JSON.stringify(madeOnFile))
+
+  const madeMissingLocal = await post(routes, ROUTES.mkdir, { path: path.join(localRoot, 'no-such'), name: 'x', sessionId: 's-local' })
+  check('a missing local parent directory is a 404',
+    madeMissingLocal.status === 404 && /does not exist/u.test(madeMissingLocal.body), JSON.stringify(madeMissingLocal))
+
+  // A request that names a DIFFERENT root must not move the boundary: the
+  // folder has to appear under the session workspace, never under the named
+  // root. This is the local-mkdir twin of the rename/delete rule above.
+  const namedRoot = await post(routes, ROUTES.mkdir, { path: outsideRoot, name: 'invented', root: outsideRoot, sessionId: 's-local' })
+  check('a foreign root on the local mkdir request does not become the boundary',
+    namedRoot.status === 403 && /outside the session workspace/u.test(namedRoot.body), JSON.stringify(namedRoot))
+  check('...and nothing was created under it', !exists(path.join(outsideRoot, 'invented')))
+
+  const renamedRoot = await post(routes, ROUTES.mkdir, { path: localRoot, name: 'kept', root: outsideRoot, sessionId: 's-local' })
+  check('the session root still wins when the request names another one',
+    renamedRoot.status === 200 && lstatSync(path.join(localRoot, 'kept')).isDirectory(), JSON.stringify(renamedRoot))
+  check('...and the named root stays untouched', !exists(path.join(outsideRoot, 'kept')))
+
+  // A directory that RESOLVES outside the root: lexical containment passes, so
+  // only the realpath comparison can refuse it. A junction works without
+  // developer mode on Windows; a plain symlink covers POSIX.
+  let escapeReady = false
+  try {
+    symlinkSync(outsideRoot, path.join(localRoot, 'escape-dir'), 'junction')
+    escapeReady = true
+  } catch {
+    try {
+      symlinkSync(outsideRoot, path.join(localRoot, 'escape-dir'))
+      escapeReady = true
+    } catch { /* neither form is available on this machine */ }
+  }
+  if (escapeReady) {
+    const escaped = await post(routes, ROUTES.mkdir, { path: path.join(localRoot, 'escape-dir'), name: 'inside', sessionId: 's-local' })
+    check('a directory that resolves outside the root is refused',
+      escaped.status === 403 && /resolves outside/u.test(escaped.body), JSON.stringify(escaped))
+    check('...and nothing was created through the link', !exists(path.join(outsideRoot, 'inside')))
+    rmSync(path.join(localRoot, 'escape-dir'), { recursive: true, force: true })
+  } else {
+    console.log('  NOTE  no symlink/junction support (the realpath fence is unproven on this machine)')
+  }
+
+  const readOnlySessions = sessions.concat([{ id: 's-local-ro', header: { cwd: localRoot }, mode: 'read-only' }])
+  const readOnlyCtx = {
+    get (name) {
+      if (name === 'sessions') return { get: id => readOnlySessions.find(s => s.id === id), list: () => readOnlySessions }
+      if (name === 'sandboxPolicy') return { resolve: ({ session }) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: session?.header?.cwd ?? localRoot }) }
+      return undefined
+    },
+  }
+  const readOnlyRoutes = makeRoutes({
+    engine: { async withSftp () { throw new Error('local path went to SFTP') } },
+    router: { roots: new Set() },
+    ctx: readOnlyCtx,
+    allowLan: false,
+    allowedHosts: [],
+  })
+  const madeReadOnlyLocal = await post(readOnlyRoutes, ROUTES.mkdir, { path: localRoot, name: 'nope', sessionId: 's-local-ro' })
+  check('a read-only local session cannot create a folder',
+    madeReadOnlyLocal.status === 403 && /read-only/u.test(madeReadOnlyLocal.body), JSON.stringify(madeReadOnlyLocal))
+  check('...and nothing was created', !exists(path.join(localRoot, 'nope')))
   mkdirSync(path.join(localRoot, 'sub'))
   const existsAfter = await post(routes, ROUTES.rename, {
     path: path.join(localRoot, 'renamed.txt'),

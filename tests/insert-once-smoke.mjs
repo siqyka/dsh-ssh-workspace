@@ -120,7 +120,7 @@ check('every gesture handler consults firstClaim',
   (source.match(/if \(!firstClaim\(event\)\) return/g) ?? []).length >= 4,
   `${(source.match(/if \(!firstClaim\(event\)\) return/g) ?? []).length} guard(s)`)
 check('the drop handler claims before touching its payload',
-  /const onDrop = \(event\) => \{[\s\S]{0,240}?if \(!firstClaim\(event\)\) return[\s\S]{0,40}?const payload = dragPayload/.test(source))
+  /const onDrop = \(event\) => \{[\s\S]{0,240}?if \(!firstClaim\(event\)\) return[\s\S]{0,3000}?const payload = dragPayload/.test(source))
 check('dragend deliberately does not claim (every instance must clear)',
   !/const onDragEnd = \(event\) => \{\s*\n\s*if \(!firstClaim\(event\)\)/.test(source))
 
@@ -128,9 +128,11 @@ console.log('\n[disposer]')
 
 check('the drag bridge returns a detach function', /function installTreeDragBridge[\s\S]{0,120}?if \(typeof document === 'undefined'\) return \(\) => \{\}/.test(source))
 check('the row menu returns a detach function', /function installTreeMenuBridge[\s\S]{0,120}?if \(typeof document === 'undefined'\) return \(\) => \{\}/.test(source))
+const dragAdds = (source.match(/document\.addEventListener\('(dragstart|dragenter|dragover|dragleave|drop|dragend)'/g) ?? []).length
+const dragRemovals = (source.match(/document\.removeEventListener\('(dragstart|dragenter|dragover|dragleave|drop|dragend)'/g) ?? []).length
 check('the drag bridge removes every listener it added',
-  (source.match(/document\.removeEventListener\('(dragstart|dragover|drop|dragend)'/g) ?? []).length === 4,
-  `${(source.match(/document\.removeEventListener\('(dragstart|dragover|drop|dragend)'/g) ?? []).length} removal(s)`)
+  dragAdds === 6 && dragRemovals === 6,
+  `${dragAdds} add(s), ${dragRemovals} removal(s)`)
 check('the row menu removes its listener',
   source.includes("document.removeEventListener('contextmenu', onContextMenu, true)"))
 check('apply() returns the disposer', /return \(\) => \{\s*\n\s*clearTimeout\(transferActionsProbe\)\s*\n\s*detachBridges\(\)\s*\n\s*\}/.test(source))

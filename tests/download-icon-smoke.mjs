@@ -263,7 +263,7 @@ check('the two directions keep their own marks in the queue column',
     /React\.createElement\(DownloadIcon\),/u.test(code))
 const rowMenu = sliceBetween(
   '    function openTaskMenu (ctx, absPath, isDir, root, x, y, sessionId, selection) {',
-  '    let dragPayload = null',
+  '    /**\n     * The local blank-space menu',
   'the row-menu action list',
 )
 const menuGlyphs = [...rowMenu.matchAll(/glyph:\s*'([^']+)'/gu)].map(match => match[1]).sort()

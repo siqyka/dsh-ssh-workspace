@@ -240,6 +240,132 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   }
 }
 
+console.log('\n[a local workspace that shares a remote title keeps its own icon]')
+// Sidebar rows carry a workspace id, but the picker menu and the hero chip
+// carry only the label, so those surfaces match by title. Two workspaces can
+// legitimately share one title: `dsh-ssh-workspace` is checked out here AND
+// mounted from a host. Matching on the title alone swapped the LOCAL row's
+// folder for the remote mark (and, for a detached workspace, made it inert).
+if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
+  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const start = client.indexOf('function collectRemoteWorkspaces')
+  const end = client.indexOf('/** Update the mark source', start)
+  const rulesEnd = client.indexOf('/** Fetch /status once', end)
+  check('the mark identity code is extractable', start !== -1 && end > start && rulesEnd > end, 'marks block not found')
+  if (start !== -1 && end > start && rulesEnd > end) {
+    const sandbox = {
+      remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() },
+      knownDisabledPaths: new Set(),
+    }
+    const factory = new Function('remoteMarks', 'knownDisabledPaths',
+      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)
+    const marks = factory(sandbox.remoteMarks, sandbox.knownDisabledPaths)
+
+    const registry = [
+      { workspaceId: 'w-local', path: 'F:/GitHub/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+      { workspaceId: 'w-remote', path: 'ssh://qiyk/home/qiyk/test/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+      { workspaceId: 'w-only-remote', path: 'ssh://word/srv/site', title: 'soxtastic_ssh' },
+]
+    // The remote-only reply lands first, exactly as the panel's /status fetch does.
+    marks.collectRemoteWorkspaces(registry.filter(item => item.path.startsWith('ssh://')), [])
+    check('a remote-only reply cannot mark a title yet: it cannot rule out a local twin',
+      marks.remoteTitleMatch('dsh-ssh-workspace') === false,
+      'titles are only provable from the complete list')
+    marks.collectRemoteWorkspaces(registry, ['ssh://word/srv/site'], true)
+    check('the complete list settles the title rule', sandbox.remoteMarks.titlesSettled === true)
+    check('a title BOTH sides use identifies neither row',
+      marks.remoteTitleMatch('dsh-ssh-workspace') === false,
+      'the shared title still matched a remote claim')
+    check('...the same title cannot grey a local row either',
+      marks.detachedTitleMatch('dsh-ssh-workspace') === false)
+    check('a title only a remote workspace uses still marks',
+      marks.remoteTitleMatch('soxtastic_ssh') === true,
+      'a genuinely remote row lost its mark')
+    check('...and greys when that workspace is detached',
+      marks.detachedTitleMatch('soxtastic_ssh') === true)
+    check('a basename spelling counts as a claim on both sides',
+      marks.remoteTitleMatch('site') === true && marks.remoteTitleMatch('dsh-ssh-workspace') === false)
+    check('an unknown title never matches', marks.remoteTitleMatch('') === false && marks.remoteTitleMatch('nope') === false)
+    // A detached local twin must not become inert either: the same local set
+    // guards both rules, and this asserts they cannot drift apart.
+    check('both title rules consult one local set, not two',
+      sandbox.remoteMarks.localTitles.has('dsh-ssh-workspace'),
+      'the local claim never reached the shared set')
+    check('settling is monotonic: a second complete read keeps the rule on',
+      (() => {
+        marks.collectRemoteWorkspaces(registry, [], true)
+        return marks.remoteTitleMatch('soxtastic_ssh') === true &&
+          marks.detachedTitleMatch('soxtastic_ssh') === false &&
+          marks.remoteTitleMatch('dsh-ssh-workspace') === false
+      })(),
+      'a later read with no detach dropped the remote-only title claim')
+
+    // A fresh boot has no store answer yet, and the /status fallback only
+    // carries remote workspaces. Drive that state on its OWN instance: the
+    // assertions above already settled this one.
+    const boot = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
+    const bootMarks = new Function('remoteMarks', 'knownDisabledPaths',
+      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(boot.remoteMarks, boot.knownDisabledPaths)
+    bootMarks.collectRemoteWorkspaces(registry.filter(item => item.path.startsWith('ssh://')), ['ssh://word/srv/site'])
+    check('an unsettled rule stays silent even for a remote-only title',
+      bootMarks.remoteTitleMatch('soxtastic_ssh') === false && bootMarks.detachedTitleMatch('soxtastic_ssh') === false,
+      'the /status fallback marked a title it could not prove')
+    check('...while the id rule still works, because a path is not a guess',
+      boot.remoteMarks.ids.has('w-remote') && boot.remoteMarks.disabledIds.has('w-only-remote'))
+    bootMarks.collectRemoteWorkspaces(registry, ['ssh://word/srv/site'], true)
+    check('...and the very same titles mark once a complete read settles them',
+      bootMarks.remoteTitleMatch('soxtastic_ssh') === true && bootMarks.detachedTitleMatch('soxtastic_ssh') === true)
+    // The three mark sites are DOM decoration that this suite cannot run, so
+    // pin the rule each must call. A row matching on its title alone would
+    // re-open the collision on the one surface that actually had an id.
+    const rowSiteAt = client.indexOf(`for (const row of document.querySelectorAll('[data-row-key^="workspace:"]')`)
+    const rowSite = rowSiteAt === -1 ? '' : client.slice(rowSiteAt, rowSiteAt + 900)
+    check('the sidebar row still trusts its id before the title',
+      /remoteMarks\.ids\.has\(id\) \|\| remoteTitleMatch\(title\)/u.test(rowSite),
+      'the row decides on the title alone')
+    check('...and its detach decision uses the guarded rule, not the raw title set',
+      /remoteMarks\.disabledIds\.has\(id\) \|\| detachedTitleMatch\(title\)/u.test(rowSite),
+      'the row greys on the raw disabled-title set')
+    // A detached remote workspace can share its title with a local checkout
+    // exactly like a live one can — the real /status reply carries
+    // ssh://qiyk/tmp/dsh-ssh-workspace-acceptance beside this very repo. If the
+    // detach rule keeps only its remote half, that local row goes inert.
+    const twin = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
+    const twinMarks = new Function('remoteMarks', 'knownDisabledPaths',
+      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(twin.remoteMarks, twin.knownDisabledPaths)
+    const detachedPaths = ['ssh://qiyk/tmp/dsh-ssh-workspace', 'ssh://qiyk/tmp/soxtastic_ssh-acceptance']
+    twinMarks.collectRemoteWorkspaces([
+      { workspaceId: 'w-local', path: 'F:/GitHub/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+      { workspaceId: 'w-twin', path: 'ssh://qiyk/tmp/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+      { workspaceId: 'w-detached', path: 'ssh://qiyk/tmp/soxtastic_ssh-acceptance', title: 'soxtastic_ssh-acceptance' },
+    ], detachedPaths, true)
+    check('a DETACHED remote row sharing a local title does not grey the local row',
+      twinMarks.detachedTitleMatch('dsh-ssh-workspace') === false,
+      'the detach rule kept only its remote half')
+    check('...while a detached title no local workspace uses still greys',
+      twinMarks.detachedTitleMatch('soxtastic_ssh-acceptance') === true,
+      'a genuinely detached row lost its grey')
+
+    // The local branch must not fall through into remote identity when the list
+    // is partial: that is exactly what the /status fallback is.
+    const mixed = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
+    const mixedMarks = new Function('remoteMarks', 'knownDisabledPaths',
+      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(mixed.remoteMarks, mixed.knownDisabledPaths)
+    mixedMarks.collectRemoteWorkspaces([
+      { workspaceId: 'w-local-only', path: 'F:/GitHub/other-project', title: 'other-project' },
+      { workspaceId: 'w-remote', path: 'ssh://qiyk/home/qiyk/test/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+    ], [], false)
+    check('a partial list never promotes a local workspace to remote identity',
+      !mixed.remoteMarks.ids.has('w-local-only') && !mixed.remoteMarks.titles.has('other-project'),
+      'a local workspace leaked into the remote sets')
+    check('...and it still keeps the remote half it did see',
+      mixed.remoteMarks.ids.has('w-remote') && mixed.remoteMarks.titles.has('dsh-ssh-workspace'))
+    const idsStillAuthoritative = sandbox.remoteMarks.ids.has('w-remote')
+    check('the id rule is untouched, so a shared title never hides a real remote row',
+      idsStillAuthoritative && !sandbox.remoteMarks.ids.has('w-local'))
+  }
+}
+
 console.log('\n[the unmount hint states BOTH outcomes, and only in the tooltip]')
 // The two unmount modes have opposite consequences, so the hint has to name both
 // rather than reassure about one: "the record and its sessions are kept" is true
@@ -881,14 +1007,14 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 
   // The menu: focus moves in, arrows move between items, Escape and Tab close,
   // and it can be opened without a mouse.
-  check('the row menu takes focus when it opens',
-    liveIn('openTaskMenu', /firstEnabled\(\)\[0\]\?\.focus\?\.\(\)/u),
+  check('the menu lifecycle takes focus when a menu opens',
+    liveIn('openMenuAt', /firstEnabled\(\)\[0\]\?\.focus\?\.\(\)/u),
     'focus stays on the trigger, so ArrowDown does nothing')
   check('...and reuses the shared index arithmetic',
-    liveIn('openTaskMenu', /nextMenuIndex\(event\.key, current, items\.length\)/u),
+    liveIn('openMenuAt', /nextMenuIndex\(event\.key, current, items\.length\)/u),
     'a second copy of the wrap arithmetic is how one menu wraps and another does not')
-  check('...returns focus to the row that opened it',
-    liveIn('openTaskMenu', /taskMenuOpener = document\.activeElement/u) &&
+  check('...returns focus to the element that opened it',
+    liveIn('openMenuAt', /taskMenuOpener = document\.activeElement/u) &&
       liveIn('closeTaskMenu', /document\.contains\(opener\)\) opener\.focus\(\)/u),
     'closing leaves focus on a removed node')
   check('...can be opened from the keyboard',

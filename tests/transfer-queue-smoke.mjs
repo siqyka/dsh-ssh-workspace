@@ -896,6 +896,24 @@ console.log('\n[driver: one batch, one notice, one sentence]')
   }
 
   {
+    // A note from the gesture that started the batch (a skipped folder) has to
+    // survive to the ONE result sentence. It must not open a notice of its own:
+    // two toasts replace each other and the batch line disappears first.
+    const runtime = liftQueueRuntime()
+    const first = controllableItem('n1', 'n.bin')
+    runtime.enqueueTransferItems([first.item], undefined, 'Skipped folders: album')
+    await flushWorkers()
+    check('a note does not open a second notice', runtime.notices.length === 1, `${runtime.notices.length} notice(s)`)
+    check('...and the opening line stays the queue line',
+      runtime.notices[0].opening === 'Uploading n.bin…', runtime.notices[0].opening)
+    first.pending[0].resolve({ bytes: 10, note: 'Uploaded n.bin (10B)' })
+    await flushWorkers()
+    check('the note rides on the batch result',
+      runtime.notices[0].lastLine === 'Uploaded n.bin (10B) · Skipped folders: album',
+      runtime.notices[0].lastLine)
+  }
+
+  {
     // A cancel must reach the worker's context, and the queue must keep the
     // slot until that worker acknowledges — then start the next item.
     const runtime = liftQueueRuntime()
