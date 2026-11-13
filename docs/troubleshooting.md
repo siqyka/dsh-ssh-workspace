@@ -95,6 +95,67 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 会在启动日志里打一行 `… is no longer needed …`，并停止打补丁。机制与删除步骤见
 [upstream-workarounds.md](./upstream-workarounds.md)。
 
+## ssh:// 会话里附件读不到（ENOENT）
+
+在远端工作区会话里让模型读聊天框上传的非图片附件，得到类似：
+
+```
+cannot read "ssh://myserver/Users/me/.dsh/attachments/v1/files/…": not found
+```
+
+路径被拼成了 `ssh://<alias>/<本机绝对路径>`，说明它被当成远端路径去 SFTP 查了。聊天附件
+实际存放在运行 DSH 的本机 `$DSH_HOME/attachments`；在 `ssh://` 会话里需要**本机路径直通**。
+
+默认已经放行 `$DSH_HOME/attachments` 与 `$DSH_HOME/plugins`。检查三件事：
+
+1. 路径是否确实以本机 `$DSH_HOME` 开头（Windows 上是 `C:\Users\…\.dsh\…`；不要把它写成
+   `/Users/…` 除非那真是本机路径）。
+2. 如果配置过 `localPassthrough`，确认前缀没有写成相对路径、`ssh://` 拼写或未知变量；
+   `false` / `[]` 会关闭直通。改完需要重启 DSH。
+3. `$DSH_HOME` 本身不会被接受（避免暴露 `dsh-ssh.json` 与 SSH 密钥）；请用它的子目录。
+
+直通是词法匹配，不会因为本机存在同名文件而自动放行未配置的路径；也不 `realpath`，符号链接
+逃逸不在这条修复范围内。远端文件仍按远端路径读取，不受影响。
+
+**用 `@` 引用的本机盘符路径**：`@F:\123.txt` 这类拼写不是 attachments 副本，宿主只把它当
+**路径文本**插进提示词。插件从 `user/message` 事件里恢复这些引用，只接受 Windows 盘符 / UNC，
+并且整个 `$DSH_HOME` 即使被点名也拒绝。若仍报 not found：
+
+- 确认拼写确实是盘符或 UNC（`F:\x`、`\\server\share\x`）；`@/tmp/x` 与 `@src/a.js` 按设计
+  仍是远端 / 工作区路径。
+- 确认消息是在**插件激活之后**发出的（热重载会重新扫一次历史，但一条从未进过事件的文本
+  无从恢复）。
+- 引用表上限 256 条且先进先出；一个会话里点名过大量互不相关的本机文件后，最早的会被挤掉。
+
+## 直通了，为什么还是读不到
+
+读到 `EXECUTOR_UNAVAILABLE` 时最容易误判的一条：**直通有边界，而且边界不在本插件手里**。
+
+直通只在 `ctx.fs` 这一层接管路径——宿主官方 `read` / `write` / `edit` / `read_image`
+以及 `node:fs` 都经过它。任何**不经过 `ctx.fs`** 的读取都碰不到直通，这不是直通失效，
+也不是授权拒绝。实测（`ssh://` 会话 + `@F:\123.txt`）：
+
+| 入口 | 结果 |
+| --- | --- |
+| `ctx.fs.resolve` → `readText` | 落到本机后端，读到 `"test\n"` |
+| `ctx.fs` 的 `stat` / `readBytes` / `streamText` / `listDir` / `contains` | 全部落到本机后端 |
+| dsh-ops 的 `inspect_local_file` / `read_files` / `glob` / `grep` | `EXECUTOR_UNAVAILABLE: … only git and ripgrep (rg) are supported over the remote subprocess bridge` |
+| 带 `workdir` 的 `ops_bash` | `invalid workdir: must be an existing directory` |
+
+**为什么**：dsh-ops 把会话 cwd 原样交给本机的 `dsh-ops-worker.exe`（`lib/execution/files.js`
+的 `exchange(subprocess, { argv, cwd, … })`），而 `lib/patch-subprocess.js:223`
+的远端桥只放行 `git` 与 `rg`。worker 是本地 Windows 可执行文件，它的
+`Path::new(root).is_absolute()` + `canonicalize` 也消化不了 `ssh://` 拼写——**这不是拼写
+问题，是「本地进程 + 远端根」的结构性错配**，且它不走 `ctx.fs`，所以直通管不到。
+
+**所以：**
+
+- 换入口，不要重试同一个工具。读远端用 `ssh_workspace_exec` / `ssh_workspace_shell`；
+  读本机文件用 `ssh_workspace_transfer` 上传到该主机的 `/tmp` 再读（走 SFTP，本机侧读
+  文件不受会话 cwd 限制；落点必须在该主机已挂载根或 `/tmp` 下）。
+- 不要用另一个本机 shell 去绕（`ops_bash` 没有可用 cwd，`working_directory` 也切不到本机）。
+- 这不影响远端侧的 `read` / `glob` / `grep`：它们在 ssh 会话里本来就该走远端。
+
 ## 连接问题
 
 **先看诊断历史**：环形缓冲的**容量是 40 条**（`lib/diagnostics.js` 的 `CAPACITY`），

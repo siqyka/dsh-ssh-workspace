@@ -165,6 +165,7 @@ become inaccessible since the host no longer exists.
 | --- | --- | --- |
 | `enabled` | `true` | Master switch |
 | `announceToAgent` | `false` | Whether to inject a capability description (a system-prompt section) into every agent |
+| `localPassthrough` | `['$DSH_HOME/attachments', '$DSH_HOME/plugins']` | **Host absolute prefixes** that keep their local meaning inside an `ssh://` session; `false` / `[]` disables it. Matching is lexical only, and the whole `$DSH_HOME` root is refused |
 | `allowLan` | `false` | LAN deployment: the browser HTTP routes accept private-network source addresses (IPv4 RFC1918, IPv6 ULA/link-local) |
 | `allowedHosts` | `[]` | Extra `Host` values to admit (with `allowLan`), e.g. when the panel is reached by a LAN hostname |
 | `engine.idleTimeoutMs` | `1800000` | Recycle a connection after it stays idle this long (ms) |
@@ -178,6 +179,53 @@ become inaccessible since the host no longer exists.
 | `engine.reconnect.jitter` | `0.2` | Downward-only jitter ratio, so several hosts do not reconnect in lockstep; never exceeds the ceiling |
 
 > All four `engine` entries are optional (invalid values fall back to the defaults) and rarely need tuning.
+
+### Host-path passthrough (`localPassthrough`)
+
+An `ssh://` session treats every absolute path as **remote-absolute**. Chat attachments, however,
+live on the machine running DSH, so their handle path needs an exception:
+
+```yaml
+# The defaults; usually no need to write this out
+localPassthrough:
+  - $DSH_HOME/attachments
+  - $DSH_HOME/plugins
+```
+
+- Only **host absolute prefixes** are accepted. `$DSH_HOME`, `${DSH_HOME}`, and a leading `~`
+  are expanded; any other variable, a relative path, or an `ssh://` prefix is warned about and
+  ignored.
+- A matching path goes through the host backend; an unmatched absolute path stays remote, even
+  when a same-named file happens to exist locally (there is no `stat` / existence probe).
+- Matching is lexical: `attachments/../dsh-ssh.json` normalizes out of the prefix and does not
+  match; symlinks are not resolved.
+- **The write fence is unchanged**: passthrough chooses a world, it does not add the prefix to any
+  local writable root; `read-only` / `workspace-write` still apply.
+- Do not add the whole `$DSH_HOME` — it holds `dsh-ssh.json`, `dsh-ssh.key`, and session data; the
+  plugin refuses that prefix. If the remote host has the same prefix, the local passthrough wins;
+  this trade-off is deliberate.
+- **A host path you name with `@` also passes through**: writing `@F:\123.txt` or
+  `@"C:\Users\me\a b.txt"` in a message records that spelling in the plugin's reference
+  table (shared by the sessions of this DSH process), so the model reads it locally. Only
+  **Windows drive / UNC** spellings are accepted (a POSIX remote has no drive letters, so there is
+  no ambiguity); `@src/a.js` and `@/tmp/x` remain workspace or remote references. The table is
+  capped at 256 entries, oldest evicted first. The whole `$DSH_HOME` stays refused even when
+  named with `@` (it holds the SSH key and stored host secrets).
+- `false` or `[]` disables it; restart DSH after changing it. The defaults follow `$DSH_HOME`
+  (`~/.dsh` when unset).
+- **Passthrough has a boundary, and the boundary is `ctx.fs`**: the host's official
+  `read` / `write` / `edit` / `read_image` and `node:fs` go through that seam, so they pass.
+  **Reads that do not go through `ctx.fs` still fail.** In this deployment dsh-ops'
+  `inspect_local_file` / `read_files` / `glob` / `grep` spawn a host worker process with the
+  session cwd, so an `ssh://` cwd fails every time (`EXECUTOR_UNAVAILABLE`, text mentions
+  `only git and ripgrep`; `ops_bash` with a `workdir` reports `invalid workdir`); the host's
+  `glob` / `grep` spawn `rg` directly and stay remote. Under the ops preset `read` is replaced
+  by `inspect_local_file`, so a host file is unreadable on that path — that is expected. This
+  is a structural upstream mismatch, not an authorization denial, and retrying does not help:
+  switch entry points — read remote content with `ssh_workspace_exec` / `ssh_workspace_shell`,
+  and read a host file by uploading it to that host's `/tmp` with `ssh_workspace_transfer` and
+  reading it there. See
+  [troubleshooting.md](./docs/troubleshooting.md#直通了为什么还是读不到).
 
 ### LAN deployments (`allowLan`)
 
@@ -233,6 +281,7 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 | Binary and encoding | Text reads reject NUL / invalid UTF-8; `readBytes` returns raw bytes |
 | Write fence | Remote writes may only land inside a mounted remote workspace; anything outside returns `FS_OUTSIDE_WORKSPACE`. **The `read-only` mode also blocks remote writes** (`FS_SANDBOX_DENIED`). Reads are unrestricted |
 | Large files stream | Previews and `read` stream remote files in 256 KiB chunks instead of loading the whole file into memory |
+| Host-path passthrough | Host-absolute paths — such as non-image chat attachments — keep their local meaning inside an `ssh://` session (`read` / `read_image` / `node:fs`). By default only `$DSH_HOME/attachments` and `$DSH_HOME/plugins` pass through; every other absolute path stays remote, and matching never probes existence. A Windows drive/UNC path the user names with `@` in a message also passes through |
 | Remote changes auto-refresh | Remote `inotifywait` push events are preferred (immediate, not bound by mtime precision); without it the plugin falls back to polling — about every 2 seconds, backing off while idle (after 15 quiet rounds to 5 s, after 30 to 10 s) and snapping back to 2 s on any change. On the polling path SFTP metadata has no sub-second timestamps, so consecutive rewrites of equal size within the same second may not trigger a refresh; additions, removals, and renames always do |
 
 ### Remote execution

@@ -49,6 +49,30 @@ Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔
 会被同一 cwd 再次判为远端，形成无限互相委派（表现为预览点击后
 `Maximum call stack size exceeded`）。
 
+**本机路径直通先于远端分类。** `lib/passthrough.js` 用词法前缀判定一个裸绝对路径是否属于
+本机（默认 `$DSH_HOME/attachments`、`$DSH_HOME/plugins`）：命中的路径在 `resolve` / `lstat`
+进入远端分支**之前**交给本地后端，`node:path.resolve` 的桥接也在 POSIX 绝对分支之前做同样
+判定。路由层把路径交回本地后端时**必须去掉 `opts.cwd`**——否则被接管的 `resolve` 会按那个
+`ssh://` cwd 再次判成远端，递归到栈溢出。未命中的本机绝对路径仍是远端，匹配不做 `stat`；
+直通只改变“哪个世界”，不扩大本地可写根。
+
+**`@` 引用是同一 matcher 的第二类输入。** 宿主把用户选中的 `@` 提插成普通提示词文本，文件
+系统调用处没有任何“这来自 `@`”的元数据，因此意图只能从消息恢复：插件在 `session/created`
+时扫一遍派生历史，并在 `session/event` 的 `user/message` 上逐条提取，把**盘符 / UNC** 拼写
+喂给 `addHostReference`。matcher 只有这一张引用表（先进先出，上限 256 条），`matches` 在
+前缀判定之后按同样的分量边界再比一次；因此“用户点名过”与“配置过前缀”共用一条分类路径，
+不存在第二套直通逻辑。POSIX 绝对拼写不在此列——远端主机本来就合法拥有 `/tmp/x`。
+
+**直通的作用域只有 `ctx.fs`，这是有意为之的边界。** 判定点嵌在 `ctx.fs.resolve` / `lstat` 与
+`node:path` 的桥接里，因此它覆盖的是“经过 `ctx.fs` 的文件系统调用”；任何**绕过 `ctx.fs`、
+直接把路径交给子进程**的读取都碰不到它。典型例子是 dsh-ops：它把会话 cwd 原样作为
+`ctx.subprocess.spawn` 的 `cwd` 交给本机 worker（`lib/execution/files.js` 的
+`exchange(subprocess, { argv, cwd, … })`），而 `lib/patch-subprocess.js:223` 的远端桥只放行
+`git` 与 `rg`，于是 worker 被拒并报 `EXECUTOR_UNAVAILABLE`。这不是本插件可以就地补掉的缺口：
+worker 是本地 Windows 可执行文件，`Path::new(root).is_absolute()` + `canonicalize` 消化不了
+`ssh://` 拼写，且它只有本地文件系统访问——「本地进程 + 远端根」是结构性问题。插件因此不假装
+覆盖它，而是在系统提示里说明边界与替代入口（见 [features.md](./features.md) 的边界表）。
+
 ### 写入围栏、沙箱模式与符号链接裁决
 
 **沙箱模式与挂载根是两件事**，回答的问题不同，因此用不同的错误码：

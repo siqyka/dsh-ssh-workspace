@@ -2,6 +2,22 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
+## [0.3.3] - 2026-11-13
+
+### 修复
+
+- **`ssh://` 会话读不到聊天框上传的附件**（[#4](https://github.com/siqyka/dsh-ssh-workspace/issues/4)）：远端会话把所有裸绝对路径当成远端，本机 `$DSH_HOME/attachments/…` 被拼成 `ssh://<alias>/…` 走 SFTP。新增 `localPassthrough`（默认 `$DSH_HOME/attachments`、`$DSH_HOME/plugins`），在 `ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 的远端分支**之前**做词法前缀直通；未命中前缀的路径仍按远端解释，不做存在性探测。交给本地后端时剥离远端 `cwd` 以免递归回自身；写围栏不变，整目录 `$DSH_HOME` 被拒绝。
+- **`@F:\…` 形式的本机路径引用变成远端路径**：宿主把 `@` 提插成普通提示词文本，文件系统调用处没有元数据可查。插件改为从 `session/created` 的历史与 `session/event` 的 `user/message` 恢复引用，只接受 Windows 盘符 / UNC 并交给同一个 matcher（先进先出，上限 256 条）；`@src/a.js`、`@/tmp/x` 仍是工作区 / 远端路径。
+- **提示词不再承诺直通管不到的东西**：直通只覆盖经过 `ctx.fs` 的调用，dsh-ops 的 `inspect_local_file` / `read_files` / `glob` / `grep` 与宿主 `glob` / `grep` 绕过它，`ssh://` cwd 下分别报 `EXECUTOR_UNAVAILABLE`（`only git and ripgrep`）与 `invalid workdir`。`LOCAL_PASSTHROUGH_GUIDANCE` 写明这条边界与替代入口，不再让模型空转重试。
+
+### 测试
+
+- 新增 `local-passthrough-smoke`（88 项）；`scripts/reverse-verify-passthrough.mjs` 20 confirmed / 0 not。
+
+### 文档
+
+- README 中英新增「本机路径直通（`localPassthrough`）」；`docs/features.md` 补规则表与「直通的边界就是 `ctx.fs`」；`docs/troubleshooting.md` 新增「直通了，为什么还是读不到」；`docs/architecture.md` 说明直通先于远端分类、`@` 引用是同一 matcher 的第二类输入。
+
 ## [0.3.2] - 2026-11-11
 
 ### 新增

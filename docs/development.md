@@ -14,9 +14,9 @@
 | HTTP routes | 31 | `lib/routes.js` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
-| modules under `lib/` | 48 | directory listing |
-| test suites | 82 | `tests/run.mjs` |
-| passing assertions (sampled) | 4003 | measured 2026-11-11 |
+| modules under `lib/` | 49 | directory listing |
+| test suites | 83 | `tests/run.mjs` |
+| passing assertions (sampled) | 4091 | measured 2026-11-13 |
 
 <!-- doc-numbers:end -->
 
@@ -38,6 +38,7 @@
 | `lib/hosts.js` | 主机解析：存储优先、`~/.ssh/config` 回退、行渲染 |
 | `lib/mode-gate.js` | 远端写入的统一门禁：`read-only` / `workspace-write` / `danger-full-access` 三态，加上「未挂载」「超出会话工作区」两类范围拒绝，被六条可写路径共用（工具 / shell / subprocess / 终端 / 传输路由）；判定失败时 fail-closed 且文案不谎称“仅可查看”；嵌套的链接不归它管 |
 | `lib/path-binding.js` | 探测 `node:path.isAbsolute` 是不是**通过模块绑定被读的**：探测期间换成记账包装，函数值形式被捕获下来的 schema 永远碰不到它。只有 `patch-projection.js` 的退役探测一个调用方：「宿主接受 `ssh://`」有两种成因，只有其中一种意味着补丁可以删 |
+| `lib/passthrough.js` | 本机路径直通的唯一实现：配置前缀展开、词法归一化与边界匹配、`$DSH_HOME` 整目录拒绝，以及 `@` 引用表（`hostReferencePathsInText` 提取、`addHostReference` 登记、先进先出上限 256，只在 win32 接受盘符/UNC）；不 `stat`、不 `realpath`、不调用被补丁的 `path.isAbsolute`。`ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 的四处接线都从它取同一个 matcher，只在远端分类之前判定路径属于哪个世界 |
 | `lib/capabilities.js` | 远端环境自检：7 项工具与 4 项环境事实一次往返问完，三态 `present` / `absent` / `unknown` 不能合并——`unknown` 不带安装提示 |
 | `lib/config-audit.js` | `~/.ssh/config` 审计：本插件读了什么、故意不支持什么，`ignored` / `lost` / `refused` 三种判定不合并，挂在 `HostStore.listing()` 每行的 `unsupported` 上 |
 | `lib/audit.js` | 远端命令审计：容量 200 的有界环，脱敏**在写入时**发生而不是导出时补第二次。它不是沙箱：远端命令以登录用户权限运行，这里只能记录 |
@@ -147,22 +148,22 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **82 个套件里 76 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
+于是 **83 个套件里 77 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
 `boot` / `tool-schemas` 缺真实装配树，`live` / `acceptance` 缺真实主机）；裸检出实测
-**3759 项通过断言**。生成表那一行是**装配树采样值**（2026-11-11：4003 项），由
+**3847 项通过断言**。生成表那一行是**装配树采样值**（2026-11-13：4091 项），由
 `node scripts/doc-numbers.mjs --assertions N` 打时间戳。
 带 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 时，`projection-real` / `lifecycle` /
 `tool-schemas` 三个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
-**79 个套件通过、1 个部分运行（`boot`）、2 个 SKIP**（`live` / `acceptance`）；实测
-**4003 项通过断言**。
+**80 个套件通过、1 个部分运行（`boot`）、2 个 SKIP**（`live` / `acceptance`）；实测
+**4091 项通过断言**。
 换一台机器、换一个宿主版本，断言总数就会变，所以只保留采样值。
 
 **两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
 
 - `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` 三个再跑起来，
-  通过套件数 76 → 79；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
+  通过套件数 77 → 80；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
   断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，82 个套件全部运行、
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，83 个套件全部运行、
   零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
@@ -228,6 +229,7 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `locale-register-smoke` | 无 | 21 | 中英词典注册、重复注册不污染、`translate` 回落 |
 | `detach-smoke` | 无 | 83 | 停用清单读写与脏数据退化、路径包含判定、`ctx.fs` 十个方法逐个断言被拒、重新启用两条路径、shell / terminal 拒绝且不拨号、工作区外照常可用、跨分区写入隔离、启用不得经过围栏探测、**沙箱模式围栏（`read-only` 拒写且不拨号）、三个围栏错误码的可分性、`/tmp` 对写围栏可达而对停用 / 探针仍按原始挂载根** |
 | `probe-smoke` | 无 | 20 | 内建桥三条身份探针无活连接时不拨号、挂载根外必须 `ENOENT`、有连接时取真实属性、broken 记录不算连接（直接数 `withSftp` / `acquire` 次数） |
+| `local-passthrough-smoke` | 无 | 88 | 本机路径直通：默认/展开/关闭、边界与 `..` 归一化、Windows 大小写（POSIX 跳过）、`path.resolve` 在远端 cwd 前直通且 `relative` 返回原路径、热重载换 matcher、`RemoteFileSystem.resolve` / `lstat` 剥离 cwd 防递归、未命中与已存在但未配置的本机文件仍远端、无本机后端报 `FS_IO_ERROR`；`@` 引用：引号/裸拼写提取（含全角标点截断、尾随分隔符、重复去重）、`addHostReference` 的 win32 门禁与整 `$DSH_HOME` 拒绝、目录点名覆盖子项、256 条先进先出淘汰；并静态校验接线与唯一实现 |
 | `phase6-smoke` | 无（有真框架时更全） | 36 | 失败与规模路径的回归：断连 close 不误判完成、rename 回退不误删目标、`listDir` 无 N+1 stat、`StreamTail` join 缓存 |
 | `watch-lifecycle-smoke` | 无 | 8 | 变更监视的降级与销毁：推送死了回退轮询之后，`close()` 必须连轮询那一支一起关掉——只关推送分支会把定时器、SFTP 轮询和连接持有者一直漏到进程结束 |
 | `watch-recovery-smoke` | 无 | 28 | 变更监视在断线后**不死**：策略表（连接健康 / 无重连循环 / 循环已放弃 → 上报；断线且循环在跑 → 重试）逐条执行而非 grep，退避阶梯有上限，真实 `watch()` 在链路断开时继续尝试、恢复后补一次重扫，而健康链路上的失败仍然上报并停止轮询 |

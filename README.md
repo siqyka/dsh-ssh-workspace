@@ -152,6 +152,7 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | --- | --- | --- |
 | `enabled` | `true` | 总开关 |
 | `announceToAgent` | `false` | 是否向每个 agent 注入能力说明（系统提示词段落） |
+| `localPassthrough` | `['$DSH_HOME/attachments', '$DSH_HOME/plugins']` | 在 `ssh://` 会话中保留本机语义的**本机绝对前缀**；`false` / `[]` 关闭。只做词法前缀匹配，不接受整目录 `$DSH_HOME` |
 | `allowLan` | `false` | 局域网部署：浏览器的 HTTP 路由接受私网来源地址（IPv4 RFC1918、IPv6 ULA/链路本地） |
 | `allowedHosts` | `[]` | 额外放行的 `Host` 值（配合 `allowLan`，如面板经局域网主机名访问时） |
 | `engine.idleTimeoutMs` | `1800000` | 连接空闲超过该时长后回收（毫秒） |
@@ -165,6 +166,43 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | `engine.reconnect.jitter` | `0.2` | 向下抖动的比例，用来避免多主机同时重连；不会超过上限 |
 
 > `engine` 下各项均为可选（非法值回落默认），通常无需配置。
+
+### 本机路径直通（`localPassthrough`）
+
+`ssh://` 会话默认把所有绝对路径当成**远端绝对路径**。聊天框上传的附件却存在运行 DSH 的这台
+机器上，所以它的句柄路径需要一个例外：
+
+```yaml
+# 默认值；通常不用写
+localPassthrough:
+  - $DSH_HOME/attachments
+  - $DSH_HOME/plugins
+```
+
+- 只接受**本机绝对路径前缀**；`$DSH_HOME`、`${DSH_HOME}` 和开头 `~` 会被展开，其它变量、
+  相对路径、`ssh://` 前缀会告警并忽略。
+- **`@` 显式引用的本机路径**同样直通：你在消息里用 `@F:\123.txt` / `@"C:\a b.txt"` 点名一个
+  Windows 盘符或 UNC 路径（`@` 必须在行首或空白之后），它按本机路径读取，即使没写进上面的前缀。
+  这个例外只认盘符与 UNC——POSIX 远端没有盘符，拼写因此无歧义；`@src/a.js`、`@/tmp/x` 仍是
+  远端引用。登记表进程内共享、上限 256 条（先进先出），重启后按会话历史重新登记，所以恢复的
+  会话照样能读到；整目录 `$DSH_HOME` 即使被 `@` 点名也拒绝（那里有 SSH 私钥）。
+- 命中前缀的路径在本会话里走本机后端；未命中的绝对路径仍是远端，不会因为本机恰好存在同名
+  文件而改判（没有 `stat` / 存在性探测）。
+- 匹配是词法的：`attachments/../dsh-ssh.json` 归一化后不匹配；不解析符号链接。
+- **写围栏不变**：直通只决定“哪个世界”，不把前缀加入本地可写根；`read-only` /
+  `workspace-write` 的本地限制照旧。
+- 不要把整个 `$DSH_HOME` 加进来——那里有 `dsh-ssh.json`、`dsh-ssh.key` 和会话数据；插件
+  会拒绝这个前缀。远端若存在同名前缀，按本机直通优先，文档明确接受这一取舍。
+- `false` 或 `[]` 关闭直通；设置后需重启 DSH 生效。默认值跟随 `$DSH_HOME`（未设置时是
+  `~/.dsh`）。
+- **直通有边界，边界是 `ctx.fs`**：宿主官方 `read` / `write` / `edit` / `read_image` 与
+  `node:fs` 走这条缝，直通对它们生效；**不经过 `ctx.fs` 的读取仍然读不到**。本部署里
+  dsh-ops 的 `inspect_local_file` / `read_files` / `glob` / `grep` 会带着会话 cwd 启动本机
+  worker 进程，`ssh://` cwd 下必然失败（`EXECUTOR_UNAVAILABLE`，文案带
+  `only git and ripgrep`；带 `workdir` 的 `ops_bash` 报 `invalid workdir`）。这是上游的结构性
+  错配，不是授权拒绝，重试无用——换入口：读远端用 `ssh_workspace_exec` / `ssh_workspace_shell`，
+  读本机文件用 `ssh_workspace_transfer` 上传到该主机 `/tmp` 再读。详见
+  [troubleshooting.md](./docs/troubleshooting.md#直通了为什么还是读不到)。
 
 ### 局域网部署（`allowLan`）
 
@@ -214,6 +252,7 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | 二进制与编码 | 文本读取拒绝 NUL / 非法 UTF-8；`readBytes` 原样返回字节 |
 | 写入围栏 | 远端写入只允许落在已挂载的远端工作区内，越界返回 `FS_OUTSIDE_WORKSPACE`；**「仅可查看」模式同样会挡住远端写入**（`FS_SANDBOX_DENIED`）。读取不受限制 |
 | 大文件流式读取 | 预览与 `read` 按块（256 KiB）流式读取，不再整文件进内存 |
+| 本机路径直通 | 聊天框上传的非图片附件等**本机绝对路径**在 `ssh://` 会话里仍按本机路径解析（`read` / `read_image` / `node:fs`）；默认只放行 `$DSH_HOME/attachments` 与 `$DSH_HOME/plugins`，其余绝对路径仍按远端解释，**不做存在性探测**。消息里用 `@` 点名的 Windows 盘符 / UNC 路径同样直通 |
 | 远端变更自动刷新 | 优先用远端 `inotifywait` 推送事件（即时、不受 mtime 精度限制）；未安装时回退到轮询——基础约 2 秒一次，空闲目录自适应退避（连续 15 轮无变更退至 5 秒、30 轮至 10 秒封顶），任一变更立即回到 2 秒；轮询路径下 SFTP 元数据无亚秒时间戳，同一秒内等长的连续改写可能不触发刷新，增、删、改名总能感知 |
 
 ### 远端执行

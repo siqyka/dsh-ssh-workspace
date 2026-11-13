@@ -56,6 +56,64 @@
 
 详见 [architecture.md](./architecture.md) 的「接管 ctx.fs」。
 
+### 本机路径直通（localPassthrough）
+
+**问题**：`ssh://` 会话的绝对路径默认落到远端主机根。聊天框上传的非图片附件却存在运行 DSH
+的本机，模型拿到的句柄是 `$DSH_HOME/attachments/v1/files/<digest>/<name>`；不直通时它会被
+解释成 `ssh://<alias>/<本机绝对路径>`，`read` / `read_image` / `node:fs` 都得到 ENOENT。
+
+**规则**（`lib/passthrough.js` 是唯一实现）：
+
+| 输入 | 结果 |
+| --- | --- |
+| 本机绝对路径，命中配置前缀（默认 `$DSH_HOME/attachments`、`$DSH_HOME/plugins`） | 本机后端；读由宿主本地策略决定 |
+| 本机绝对路径，未命中前缀（例如 `/Users/me/notes`、`C:\work\x`） | 仍是远端，与未开直通时一致 |
+| 前缀下用 `..` 逃出去的路径（`attachments/../dsh-ssh.json`） | `normalize` 后不命中 → 远端 |
+| `ssh://` 拼写 | 永远远端；配置里出现会告警并忽略 |
+| 相对路径 | 跟随 cwd，不变 |
+| 命中前缀的写入 | 走本机后端，**仍受本机沙箱与可写根围栏**；不把前缀加入任何 writableRoot |
+| 整个 `$DSH_HOME` | 不支持，配置会被拒绝（会暴露 `dsh-ssh.json`、`dsh-ssh.key` 与会话库） |
+| 用户在消息里 `@` 点名的 Windows 盘符 / UNC 路径（`@F:\\123.txt`） | 本机；由消息文本恢复意图，不靠拼写猜 |
+| `@` 点名以外的一切 Windows 盘符 / UNC 路径 | 仍是远端（`node:fs` 的盘符拼写本来也不会出现在远端） |
+| `@src/a.js`、`@/tmp/x` | 工作区 / 远端，与宿主 `@` 语法一致 |
+| 非 Windows 平台上的 `@f:\x` 一类盘符拼写 | 不登记，仍是远端 / 工作区 |
+
+默认值来自 `$DSH_HOME`（未设置时 `~/.dsh`）；`localPassthrough: false` 或 `[]` 关闭。
+匹配是**词法**的：不 `stat`、不检查存在性、不 `realpath`。因此本机恰好有一个未命中前缀的
+同名文件也不会改变判定；这是为了不让“这一刻有没有这个文件”改变路径属于哪个世界。符号链接
+逃逸是已知残余风险：直通只解决“路径属于哪个世界”，不扩大本机读权限，也不假装 `realpath`。
+远端主机上存在同名前缀时按本机前缀优先，这是显式取舍。
+
+**`@` 引用这条路为什么必须看消息**：宿主的 `dsh-file-reference` 把选中的文件拼成普通提示词
+文本（`@path` / `@"path with spaces"`），除文本外没有任何元数据；`dsh-file-reference-local`
+的 `list()` 也只扫工作区 cwd。所以“这个路径来自用户点名”只存在于消息里：插件监听
+`session/created`（重启后重扫历史，`session.deriveMessages()`）与 `session/event` 的
+`user/message`，用 `hostReferencePathsInText` 抽出拼写，再交给 `addHostReference`。
+判据只有一条：**Windows 盘符或 UNC**。POSIX 远端主机没有盘符，这个拼写因此无歧义地指向本机；
+`/tmp/x` 两边都合法，只能由显式前缀决定，绝不因为 `@` 就改判。提取尊重引号形式，未加引号的
+写法在空白或全角标点处结束（中文正文常不写空格），末尾的 ASCII 标点会被剥掉。引用表上限
+256 条（先进先出），整个 `$DSH_HOME` 即使被点名也拒绝——那里有私钥与宿主凭据，而 `@` 很容易
+从不可信文本里粘贴进来。
+
+**直通的边界就是 `ctx.fs`。** 直通的判定点在 `ctx.fs.resolve` / `lstat` 与 `node:path` 的桥接里，
+所以只有**经过 `ctx.fs`** 的文件系统调用会命中它（宿主 `read` / `write` / `edit` / `read_image`、
+插件自己的工具、`node:fs`）。绕开 `ctx.fs` 的读取仍然碰不到本机后端：
+
+| 入口 | 是否走 `ctx.fs` | `ssh://` 会话里读本机路径 |
+| --- | --- | --- |
+| 宿主 `read` / `write` / `edit` / `read_image` | 是 | 直通生效 |
+| `node:fs`（经插件桥接） | 是 | 直通生效 |
+| `dsh-tool-fs-search` 的 `glob` / `grep`（直接 spawn `rg`） | 否 | 仍按远端执行（远端路径正确；本机路径读不到） |
+| dsh-ops 的 `inspect_local_file` / `read_files` / `glob` / `grep` | 否 | `EXECUTOR_UNAVAILABLE` |
+| `ops_bash`（带 `workdir`） | 否 | `invalid workdir` |
+
+dsh-ops 把**会话 cwd 原样**交给本机的 `dsh-ops-worker.exe`；`ssh://` cwd 在
+`lib/patch-subprocess.js` 的远端桥上只放行 `git` 与 `rg`，worker 因此被拒。worker 是本地
+Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 `ssh://` 拼写——这是
+「本地进程 + 远端根」的结构性错配，不是拼写问题，也不是授权拒绝；**重试与换本机 shell 都无用**。
+替代入口：读远端用 `ssh_workspace_exec` / `ssh_workspace_shell`，读本机文件用
+`ssh_workspace_transfer` 上传到该主机 `/tmp` 再读。
+
 ### 写入的两道围栏是两件事
 
 | 围栏 | 回答的问题 | 拒绝时的码 |
@@ -318,6 +376,7 @@
 | --- | --- | --- |
 | `enabled` | `true` | 总开关；`false` 时插件完全不安装 |
 | `announceToAgent` | `false` | 是否向每个 agent 注入能力说明（系统提示词段落） |
+| `localPassthrough` | `['$DSH_HOME/attachments', '$DSH_HOME/plugins']` | 在 `ssh://` 会话中保留本机语义的本机绝对前缀；`false` / `[]` 关闭。词法匹配，不接受整目录 `$DSH_HOME`。消息里 `@` 点名的 Windows 盘符 / UNC 路径同样直通（引用表上限 256） |
 | `engine.idleTimeoutMs` | `1800000` | 连接空闲超过该时长后回收（毫秒） |
 | `engine.connectTimeoutMs` | `15000` | 单次 SSH 握手超时（毫秒） |
 | `engine.keepaliveIntervalMs` | `15000` | keepalive 心跳间隔（毫秒） |

@@ -75,13 +75,14 @@
 
 ### 1.5 曾列为待办、现已完成（防止重复开工）
 
-- 0.3.1 已完成本地提交、远端推送、`v0.3.1` tag 与 npm 发布；0.3.2 沿用同一条链路（提交 → `npm version` → `git push --follow-tags` → CI 发布），`origin/main` 与 npm latest 跟最新 tag 走。
+- 0.3.1 已完成本地提交、远端推送、`v0.3.1` tag 与 npm 发布；0.3.2 / 0.3.3 沿用同一条链路（提交 → `npm version` → `git push --follow-tags` → CI 发布），`origin/main` 与 npm latest 跟最新 tag 走。
 - 27 个零引用 i18n 键已删除（335 → 308），包括两个边界键的配套改动；`transfer.uploadingName` / `queue.cancelling` / `queue.cancelItem` / `queue.cancelled` 未误伤。
 - `scripts/reverse-verify-archive.mjs` 的 7 条漂移锚点已随源码更新，现在 **20/20 全 RED**（2026-11-08 实测，exit 0，源文件 sha256 与跑前一致）。
 - P2 队列暂停/重试、P3 toast 详情/复制/重试、P4 远端新建文件夹、P5 批量删除/下载均已落地（`resolveTargets`、`enqueueDownloadsInto`；旧 `handleBatchDownload` 与 `rm -rf` 均为 0 命中）。
 - 拖拽落点插入已完成：`dragover`/`drop` 从 `caretRangeFromPoint` 映射到 composer 的 detect 偏移，第一个 chip 落在指针处；视觉光标、映射退化与测试见 `docs/ui.md` 与 `tests/composer-drop-point-smoke.mjs`。
 - 系统文件拖入远端「文件」树上传已完成（2026-11-11）：`osDropPlan` 用宿主 `li` 嵌套回答目标目录，`splitDroppedFolders` 只跳过文件夹、不递归，树内 capture 拦住宿主附件、树外保持宿主行为；共享 `queueTreeUploads` 入队，测试见 `tests/tree-os-drop-smoke.mjs`。
 - 2026-11-09 门禁收口：`run.mjs` 增加 `partial` 第三态（`tests/support/run-state.mjs` + `run-state-smoke`），默认 71 passed / 6 skipped、装配树 74 passed / 1 partial / 2 skipped；`reverse-verify-future` 19/0；F-10 判定收敛、F-11 触发未满足（见 §1.2 / §1.3）。
+- 本机路径直通（`localPassthrough`，issue #4）已落地（2026-11-13）：`lib/passthrough.js` 做词法前缀匹配（默认 `$DSH_HOME/attachments` / `plugins`），`ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 在远端分类前直通本机；剥离 cwd 防递归，未命中路径仍远端，不做 `stat`，写围栏不变；测试见 `tests/local-passthrough-smoke.mjs`。
 - C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分仍待批准。
 
 **版本约定**：未明确说“更新版本 / 发布 / 打 tag”时，不改版本号、不发布；发布前按 README 的发布检查表走（`npm run check` 必须全绿）。
@@ -114,11 +115,12 @@
 
 ## 4. 验证证据的缺口与口径
 
-- **默认门禁**：`node tests/run.mjs`，最近一次实测 `76 passed, 6 skipped, 0 failed`（82 套件，3759 项断言）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
-- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 后为 `79 passed, 1 partial, 2 skipped, 0 failed`（82 套件，4003 项断言）；`boot` 为 `partial`（已跑 30 项，内部 remote-host 段仍 SKIP），`live` / `acceptance` 仍 SKIP。默认不在门禁内的 6 个按环境套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `live` / `acceptance`。
+- **默认门禁**：`node tests/run.mjs`，最近一次实测 `77 passed, 6 skipped, 0 failed`（83 套件，3847 项断言）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
+- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 后为 `80 passed, 1 partial, 2 skipped, 0 failed`（83 套件，4091 项断言）；`boot` 为 `partial`（已跑 30 项，内部 remote-host 段仍 SKIP），`live` / `acceptance` 仍 SKIP。默认不在门禁内的 6 个按环境套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `live` / `acceptance`。
 - **`run.mjs` 的跳过判定（已修）**：`tests/run.mjs:186-189` 先前只要输出里出现行首 `SKIP` 就把整套记为 skipped，没有看「跑了几项」。默认口径下 `tests/boot-smoke.mjs:32` 因 `DSH_CORE_ROOT` 未设置而打印 SKIP 并以 `0 passed` 退出，因此早先的 `76 passed / 6 skipped` 没有高估；设 `DSH_CORE_ROOT` 后 boot 真的跑 30 项（`tests/boot-smoke.mjs:198` 只是内部 remote-host 段 SKIP），旧 runner 却把整套记为 skipped。第三态 `partial` 已由 `tests/support/run-state.mjs` 与 `tests/run-state-smoke.mjs` 引入。
 - **`scripts/reverse-verify-archive.mjs`**：20 个变异全部 RED（2026-11-08 实测），跑前备份、跑后逐字节还原。它是评审动作，**不进 CI**——它会改写源文件。
 - **`scripts/reverse-verify-tree-drag.mjs`：17 confirmed / 0 not（2026-11-09 实测，exit 0）**：本轮三个行为各配一组变异——本地空白菜单（解析最近目录 / 根内栅栏 / 行按钮不算空白 / 展开目录的子列表算空白 / 远端根不进入 / 项目数 / 只读只禁用新建）、多选拖入（载荷退回单路径 / 只插第一项 / 行菜单退回单行 / 每项各聚焦一次 / 去掉去重 / 中途失败即中止 / 丢掉接收卡）、本地 mkdir 分支（边界改读请求 / 跳过 realpath 父目录检查 / 接受远端工作区）。同样是评审动作、不进 CI。
+- **`scripts/reverse-verify-passthrough.mjs`：20 confirmed / 0 not（2026-11-13 实测，exit 0）**：本机路径直通的 20 个变异，覆盖三段——matcher 段（默认前缀丢掉 attachments / 未知变量被展开 / 前缀匹配忽略分量边界 / 整 `$DSH_HOME` 被接受 / 非 win32 也认盘符 / 非盘符拼写进引用表 / 引用表不设上限 / 命中不了自己 / 引号形式不提取 / 提取放过 POSIX 绝对路径）、路由段（剥 cwd 改成原样透传 / 不再认直通拼写 / `path.resolve` 无视 matcher / `path.relative` 不再原样返回 / 热重载留旧 matcher / 安装点漏传 matcher / 内建桥漏传 matcher）、接线段（监听器把事件当消息 / 恢复的会话不再重扫 / 提示词丢掉边界段）。修变异时还发现并补了四处测试空洞：POSIX 拼写即使平台是 win32 也不能进引用表、提示词必须写明「只覆盖经过 ctx.fs」、消息提取器的 role / block 判定要真跑一遍、监听器必须把 `event.data` 而不是 `event` 交给提取器。**同样不进 CI**——它会改写源文件。
 - **`scripts/reverse-verify-future.mjs`：19 confirmed / 0 not（2026-11-09 复跑，exit 0）**：四条漂移均已落位——
   - F-04 wildcard：破坏点改为 `lib/config-audit.js:236` 的 `selects(section, alias)` → `isExact(...)`，实测 2 红；
   - F-04 repeated：删除 `lib/config-audit.js:243` 的 `seen.has(keyword)` 守卫，实测 1 红；
