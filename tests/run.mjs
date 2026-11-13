@@ -101,6 +101,7 @@ const SUITES = [
   'locale-register',
   'detach',
   'probe',
+  'local-passthrough',
   'lifecycle',
   'phase6',
   'jump-chain',
