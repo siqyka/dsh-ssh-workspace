@@ -2,6 +2,38 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
+## [0.3.4] - 2026-11-14
+
+### 新增
+
+**文件引用**
+
+- **显式本机 scheme（默认 `local:`，面板可改）**：`local:/Volumes/SSD/a.md`、`local:F:\123.txt` 这类拼写无条件按本机读取，路径部分是去掉前缀后的绝对路径；名字存 `dsh-ssh.json` 的 `passthrough.scheme`，在面板「文件引用设置」里保存即写穿 live matcher（不必重启），`config.localPassthroughScheme` 只是首次默认。未启用的前缀**明确拒绝**（`FS_PERMISSION_DENIED`）——静默转远端会让用户以为前缀生效，交给本机后端则等于让模型给自己授权（`local:/etc/passwd` 会真的读出来）。
+- **`@` 裸 POSIX 拼写远端优先、miss 回退本机（勾选项，默认关）**：`@/Volumes/SSD/PARAMS.md` 在 POSIX 主机上先进引用表，读远端报不存在且开关打开，才试一次本机同名文件，并在返回文本末尾附 `[ssh-workspace]` 来源说明（`readBytes` 只记日志，避免破坏图片魔数嗅探）。只对点名路径、只挂在读动词上；写、`glob`、`grep`、`listDir` 绝不回退，方向永远是远端先。
+- 新增第 32 条路由 `POST /api/dsh-ssh-workspace/passthrough/settings` 与 `/status.passthrough` 字段；`lib/passthrough-settings.js` 是这两个设置的唯一写入者。
+
+### 变更
+
+- **scheme 规则收成一份，并由服务端下发**：前缀名**至少 3 个字符**（1 个字符会与 Windows 盘符抢 `c:/x` 这段文本）；保留名从 `ssh` 扩成 `SCHEMES_IN_USE` 冻结表（`ssh` / `file` / `sftp` / `dsh-app` / 常见 URL scheme），每条带理由且理由原样进拒绝文案——`file` 尤其不能配，因为 `formatRemoteFileUrl` 为**远端**路径写 `file:///srv/x`，同一个拼写会在两台机器之间换含义。`/status.passthrough.schemeRules` 下发最短长度、语法、两个大小写字段与整张表，客户端不再保存第二份正则与 `=== 'ssh'`。
+- **存量不可用值：静默降级改为降级 + 可见提示**：`file` / `c` 这类上一版合法的名字，读回仍降级到默认且不回写用户文件，但 `activate()` 记 `warn`，`/status.passthrough.schemeWarning` 给出存储值、生效值与原因，面板顶部渲染一行提示，只有重新保存才写穿 store。
+- **面板直通一区改为两级标题**：「文件引用设置」（`h3`）压「显式文件引用 scheme」（`h4`）；`passthrough.scheme` 仍是输入框的可访问名，改区标题不连带改字段名。
+
+### 修复
+
+- **空白处右键越出文件面板**：查找范围原一路放宽到 `document`，会话正文里右键会借到第一块文件面板的目录菜单，本地与远端面板并排时也会互相借。现在作用域就是指针所在的 `[data-files-page]`，页面以外一律交还浏览器；行菜单不加这层门禁，预览标签里的行照旧可弹。
+- **反向验证脚本被打断会把变异留在源码里**：两个脚本原来只在 `finally` 里还原，管道被截断（EPIPE）、Ctrl-C 或崩溃都走不到。现在先落 `<file>.reverse-backup` 再改文件，恢复挂到 `exit` 与 `SIGINT` / `SIGTERM` / `SIGHUP` / `SIGBREAK` 上，下一轮用遗留备份自愈。
+- **一条恒真的大小写断言**：`local-passthrough-smoke` 收尾的 `check(..., true)` 等于在 Windows 以外的所有主机上什么都没测。改成把 `win32` 与 `darwin` 各自 pin 进 matcher并**成对**断言（同一 fixture、相反答案）。行为未变，是补测。
+
+### 测试
+
+- `local-passthrough-smoke` 88 → 231、`client-shape-smoke` 307 → 324、`tree-blank-menu-smoke` 16 → 40 项；新增 `scripts/reverse-verify-blank-menu.mjs`，`reverse-verify-passthrough` 37 → 43 条变异全部转红。
+- 0.3.4 的第一次 CI 跑红在 `local-passthrough-smoke`：Windows 形状的夹具没有钉平台，而提取器与默认前缀都按进程平台分派，于是断言只在 Windows 检出上成立。夹具改为显式 `platform: 'win32'` 与显式前缀，产品行为不变。
+- 裸检出 **77 passed / 6 skipped / 0 failed（83 套件，4259 项断言）**；真实装配树 **80 passed / 1 partial / 2 skipped**。
+
+### 文档
+
+- `docs/ui.md` 新增「面板：文件引用设置」一节；`docs/protocol.md` 补 scheme 规则与 `schemeWarning`；`docs/troubleshooting.md` 补「配的 `file:` 突然不生效」与「macOS 上 `@` 点了读不到本机同名文件」两条；`docs/features.md`、`docs/architecture.md` 与两个 README 同步 scheme、回退的两道门与空白菜单作用域。
+
 ## [0.3.3] - 2026-11-13
 
 ### 修复

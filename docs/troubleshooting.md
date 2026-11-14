@@ -127,6 +127,42 @@ cannot read "ssh://myserver/Users/me/.dsh/attachments/v1/files/…": not found
   无从恢复）。
 - 引用表上限 256 条且先进先出；一个会话里点名过大量互不相关的本机文件后，最早的会被挤掉。
 
+**Windows 主机上 `@/home/me/x.md` 读不到**：这类拼写从一开始就没进引用表——`@` 引用只收
+**该主机上**有本机含义的拼写（Windows 上收盘符与 UNC，POSIX 上收 POSIX 绝对路径，见
+「`@` 引用的规则」），所以它始终按远端解释，面板里的回退开关对它也不生效：回退只服务
+**被收进引用表**的拼写，而这条从未进表。这不是回退失效，是引用表按平台收窄的结果。
+想在 Windows 上读本机文件，写盘符（`@F:\x`）、UNC（`@\\server\share\x`），或加 `local:`
+前缀——但前缀剥掉后仍必须是本机绝对路径，`local:/home/me/x.md` 在 Windows 上同样找不到。
+
+**POSIX 主机上 `@/Volumes/SSD/x.md` 读不到**：这类拼写两边都合法，所以默认按**远端**解释，
+报的多半是 `ssh://<alias>/Volumes/SSD/x.md` 不存在。两种修法：
+
+- 显式点名本机：写成 `local:/Volumes/SSD/x.md`（前缀名是面板「文件引用设置」一区 →「显式文件引用
+  scheme」里的「本机路径前缀」，默认 `local`）。路径部分就是去掉前缀后的绝对路径；前缀大小写不敏感，
+  0–3 个 `/` 都收。
+- 或者勾上面板同一区里的「远端不存在时回退本机同名文件」：这样 `@/Volumes/SSD/x.md` 仍**先**按远端
+  解析，只有远端确实报不存在时才试一次本机，回退来的内容末尾会带一行
+  `[ssh-workspace] 注意：远端不存在 …`。开关默认关闭。
+
+排查时注意：**未启用的前缀会被明确拒绝**，报 `FS_PERMISSION_DENIED`（文案提示把它加进
+`localPassthrough` 或用 `@` 点过名），而不是悄悄按远端去找——看到这个错误说明拼写对、授权不对。
+回退只覆盖读（`read` / `read_image` / `streamText` / `lstat`）；写、`glob`、`grep` 与列目录
+永远只走远端，所以「搜索找不到本机文件」是预期行为，不是回退失效。
+
+**两种 not found 文案要分清**（同是 `FS_NOT_FOUND`，下一步动作完全不同）：
+
+- 「…the host copy "<path>" is missing as well…」——回退**试过**了，两边都没有。再试本机毫无
+  意义；只有显式 `${scheme}:<绝对路径>` 才能钉住一次本机读。
+- 「…this path was read on the remote host only…」——回退**没资格**试（开关没开，或这条拼写
+  根本没进引用表）。文案会给出 scheme 写法；POSIX 主机上还会多一句「或者勾上面板的回退开关」，
+  **Windows 主机上没有这句**，因为裸 POSIX 拼写在 Windows 上永远进不了表，建议它等于骗人。
+
+一个容易被当成 bug 的细节：**装饰过的 not found 多半到不了模型眼前**。宿主 `read` 工具先
+`resolve` 再 `stat`，`stat` 一返回 undefined 就抛它自己的
+`cannot read "<displayPath>": not found`——插件的文案只在这条 stat 之后的读（大文件
+`streamText`、`read_image` 的 `readBytes`、预览的 `readText`）与插件的 `lstat` 上可见。
+所以「报错里没有那句提示」不代表插件没做判断。
+
 ## 直通了，为什么还是读不到
 
 读到 `EXECUTOR_UNAVAILABLE` 时最容易误判的一条：**直通有边界，而且边界不在本插件手里**。
@@ -155,6 +191,29 @@ cannot read "ssh://myserver/Users/me/.dsh/attachments/v1/files/…": not found
   文件不受会话 cwd 限制；落点必须在该主机已挂载根或 `/tmp` 下）。
 - 不要用另一个本机 shell 去绕（`ops_bash` 没有可用 cwd，`working_directory` 也切不到本机）。
 - 这不影响远端侧的 `read` / `glob` / `grep`：它们在 ssh 会话里本来就该走远端。
+
+### 我配的 `file:` 突然不生效了
+
+上一版允许 `file` / `sftp` / `dsh-app` 以及 1–2 个字符的名字作为本机前缀，这一版全部拒绝：
+`file:///` 正是本插件为**远端**路径写出的 URI，`c:` 会和 Windows 盘符抢同一段文本。
+**存量的旧值不会被悄悄丢掉，也不会被悄悄改写**：读回时降级到默认前缀，但面板「文件引用设置」
+一区顶部会出现一行
+
+> 已保存的前缀 `file` 现在不可用（…），当前生效的是 `local`；请重新保存以确认。
+
+这行来自 `/status` 的 `passthrough.schemeWarning`（`{stored, effective, code, message}`），
+同时日志里有一条 `warn`。在输入框里重新保存一个合法的名字（至少 3 个字符）即完成迁移——
+只有重新保存才写穿 `dsh-ssh.json`。**注意换名字之后**，之前写下的旧前缀拼写
+（例如 `file:/x`）既不是本机也不是远端工作区路径，会按远端相对路径解释，需要一起改。
+
+### macOS 上 `@` 点了却读不到本机同名文件
+
+症状：文件确实在本机，`@` 也点了名，回退开关也打开，但读取仍在远端，或报本机回退没有尝试。
+原因是**大小写**：macOS 的 APFS 默认大小写不敏感，但插件在 darwin 上**不折叠**路径大小写——
+`@/Volumes/SSD/x.md` 被点名，模型写 `/volumes/ssd/x.md` 时两者不是同一个引用，回退闸门判
+false。这是已决定保留的取舍（折叠会让大小写敏感的 APFS 卷上出现误放行），失败方向是
+fail closed。**自救**：用显式前缀拼出真实大小写，`local:/Volumes/SSD/x.md`；或者把 `@` 点名的
+拼写改成与文件一致的大小写。见 [features.md](./features.md) 的「本机路径直通」。
 
 ## 连接问题
 

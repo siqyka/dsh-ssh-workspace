@@ -153,6 +153,8 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 | `enabled` | `true` | 总开关 |
 | `announceToAgent` | `false` | 是否向每个 agent 注入能力说明（系统提示词段落） |
 | `localPassthrough` | `['$DSH_HOME/attachments', '$DSH_HOME/plugins']` | 在 `ssh://` 会话中保留本机语义的**本机绝对前缀**；`false` / `[]` 关闭。只做词法前缀匹配，不接受整目录 `$DSH_HOME` |
+| `localPassthroughScheme` | `local` | 显式点名本机路径的 scheme 名（`local:/abs/path`）。**≥ 3 个字符**，小写字母、数字与 `+ - .`；`ssh` / `file` / `sftp` / `dsh-app` 与常见 URL scheme 是保留名（清单由 `/status` 下发）；**一次只能配一个**，换名字即整体替换；前缀名不区分大小写、路径按平台。**只是首次默认**，面板里存过之后以存储为准 |
+| `localPassthroughFallback` | `false` | `@` 点名的 POSIX 绝对路径先按远端解析，远端**确实不存在**时是否回退读本机同名文件（只读）；同样只是首次默认，面板里保存过之后以 `dsh-ssh.json` 为准 |
 | `allowLan` | `false` | 局域网部署：浏览器的 HTTP 路由接受私网来源地址（IPv4 RFC1918、IPv6 ULA/链路本地） |
 | `allowedHosts` | `[]` | 额外放行的 `Host` 值（配合 `allowLan`，如面板经局域网主机名访问时） |
 | `engine.idleTimeoutMs` | `1800000` | 连接空闲超过该时长后回收（毫秒） |
@@ -186,6 +188,23 @@ localPassthrough:
   这个例外只认盘符与 UNC——POSIX 远端没有盘符，拼写因此无歧义；`@src/a.js`、`@/tmp/x` 仍是
   远端引用。登记表进程内共享、上限 256 条（先进先出），重启后按会话历史重新登记，所以恢复的
   会话照样能读到；整目录 `$DSH_HOME` 即使被 `@` 点名也拒绝（那里有 SSH 私钥）。
+- **显式 scheme 点名**：`local:/Volumes/SSD/a.md`（POSIX）与 `local:F:\123.txt`（Windows）
+  无条件按本机读取，路径部分是去掉前缀后的绝对路径。前缀名就是 `localPassthroughScheme`，
+  在面板「文件引用设置」一区的「显式文件引用 scheme」里改（输入框的可访问名仍是「本机路径前缀」），
+  保存即生效（不必重启）。未启用的前缀**明确拒绝**
+  （`FS_PERMISSION_DENIED`），不会悄悄变成远端路径去试；`ssh:` 是保留名，配不上。
+  **同一时间只能配一个前缀**：换名字就是整体替换，旧前缀立刻失效，两个不会并列。
+  名字至少 **3 个字符**（1 个字符会与 Windows 盘符抢同一段文本，如 `c:/x`）；
+  `file:` / `sftp:` / `dsh-app:` 与常见 URL scheme 也被保留（`file:///` 是本插件为远端路径写出的
+  URI，同一拼写不能两头都占）。前缀名本身不区分大小写，冒号后的路径部分按平台
+  （Windows 不区分、macOS/Linux 区分）。
+  这个前缀只对匹配的前缀与 `@` 点名的路径有效——它不会把裸的 `F:\123.txt` 或 `/tmp/x`
+  变成本机读。
+- **远端优先、miss 再回退（可选）**：勾上「远端不存在时回退本机同名文件」后，`@/Volumes/SSD/PARAMS.md`
+  这类 POSIX 绝对路径仍先按远端解析；只有远端**确实报不存在**时，才试一次本机同名文件，并在
+  返回内容末尾附 `[ssh-workspace]` 说明来源。回退只发生在读（`read` / `read_image` /
+  `streamText` / `lstat`），写、`glob`、`grep` 与目录列表**从不回退**；关掉这个开关即恢复
+  「POSIX 绝对路径全是远端」。
 - 命中前缀的路径在本会话里走本机后端；未命中的绝对路径仍是远端，不会因为本机恰好存在同名
   文件而改判（没有 `stat` / 存在性探测）。
 - 匹配是词法的：`attachments/../dsh-ssh.json` 归一化后不匹配；不解析符号链接。
@@ -252,7 +271,7 @@ localPassthrough:
 | 二进制与编码 | 文本读取拒绝 NUL / 非法 UTF-8；`readBytes` 原样返回字节 |
 | 写入围栏 | 远端写入只允许落在已挂载的远端工作区内，越界返回 `FS_OUTSIDE_WORKSPACE`；**「仅可查看」模式同样会挡住远端写入**（`FS_SANDBOX_DENIED`）。读取不受限制 |
 | 大文件流式读取 | 预览与 `read` 按块（256 KiB）流式读取，不再整文件进内存 |
-| 本机路径直通 | 聊天框上传的非图片附件等**本机绝对路径**在 `ssh://` 会话里仍按本机路径解析（`read` / `read_image` / `node:fs`）；默认只放行 `$DSH_HOME/attachments` 与 `$DSH_HOME/plugins`，其余绝对路径仍按远端解释，**不做存在性探测**。消息里用 `@` 点名的 Windows 盘符 / UNC 路径同样直通 |
+| 本机路径直通 | 聊天框上传的非图片附件等**本机绝对路径**在 `ssh://` 会话里仍按本机路径解析（`read` / `read_image` / `node:fs`）；默认只放行 `$DSH_HOME/attachments` 与 `$DSH_HOME/plugins`，其余绝对路径仍按远端解释，**不做存在性探测**。消息里用 `@` 点名的 Windows 盘符 / UNC 路径同样直通；`local:/abs/path` 这类显式前缀点名本机（前缀名可改），未启用的前缀明确拒绝而不是猜 |
 | 远端变更自动刷新 | 优先用远端 `inotifywait` 推送事件（即时、不受 mtime 精度限制）；未安装时回退到轮询——基础约 2 秒一次，空闲目录自适应退避（连续 15 轮无变更退至 5 秒、30 轮至 10 秒封顶），任一变更立即回到 2 秒；轮询路径下 SFTP 元数据无亚秒时间戳，同一秒内等长的连续改写可能不触发刷新，增、删、改名总能感知 |
 
 ### 远端执行
@@ -358,7 +377,7 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 | [protocol.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/protocol.md) | `ssh://` 路径协议：语法、规范化、显示规则、`file:` URI、写入围栏与停用围栏 |
 | [hosts.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/hosts.md) | 主机配置与认证：存储格式、`~/.ssh/config` 回退、面板管理 |
 | [tools.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/tools.md) | Agent 工具参考：11 个 `ssh_workspace_*` 工具（含 `reverse_forward`） |
-| [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记、端口转发与持久会话区 |
+| [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记、端口转发与持久会话区、文件引用设置 |
 | [forward-persistence.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/forward-persistence.md) | 端口转发持久化：意图与事实的分离、两条断开路径的一致性、自动开启 |
 | [development.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/development.md) | 开发、调试与发布：源码结构、依赖解析、打包流程 |
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 |

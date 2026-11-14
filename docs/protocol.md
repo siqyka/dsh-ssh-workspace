@@ -90,6 +90,28 @@ ssh://<主机别名>/<远端绝对路径>
 不能在本机（例如 Windows）用 `pathToFileURL` 得到盘符拼写——宿主只用它
 换算相对路径（`new URL(url).pathname`），POSIX 拼写才能得到 `/` 连接的答案。
 
+## 本机 scheme 的前缀规则
+
+`local:` 这类前缀名由 `lib/passthrough.js` 定义——**规则只有那一份**，服务端校验、路由
+错误文案、面板提示与本文件都从它派生，面板通过 `/status` 的 `passthrough.schemeRules`
+拿到同一张表，不再保存第二份正则或保留名清单：
+
+| 字段 | 含义 |
+| --- | --- |
+| `minLength` | 前缀名最短长度（当前 **3**）。1 个字符会让 `parseLocalScheme('c:/x','c')` 剥成 `/x`，与 Windows 盘符抢同一段文本 |
+| `pattern` | 前缀名语法：小写字母开头，其余字母 / 数字 / `+` `-` `.` |
+| `caseInsensitiveName` | 恒 `true`——`Local:` / `LOCAL:` 等价于 `local:` |
+| `caseInsensitivePath` | 冒号后的**路径**是否折叠大小写，等于 `process.platform === 'win32'`（darwin 不折叠是决定，见 [features.md](./features.md)） |
+| `reserved` | 保留名整表 `[{name, group, reason}]`，`reason` 原样进拒绝文案 |
+
+保留名含 `ssh`（远端语法，永远优先）、`file`（见上一节：本插件为**远端**路径写出
+`file:///…`，同一拼写不能同时代表两台机器）、`sftp`、`dsh-app`，以及常见 URL scheme
+（`http` / `https` / `ws` / `wss` / `data` / `blob` / `about` / `javascript` / `mailto`）。
+
+存量值另有 `passthrough.schemeWarning`：store 里存着一个现在不合法的名字时（上一版允许
+`file`、`c` 这类），它给出 `{stored, effective, code, message}`，面板据此提示重新保存；
+**读路径不回写**用户的 store，只有重新保存才写穿。
+
 ## 与会话 / cwd 校验的关系
 
 会话 header 要求 `cwd` 通过 `path.isAbsolute` 校验，而任何平台解析器都不把

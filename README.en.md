@@ -166,6 +166,8 @@ become inaccessible since the host no longer exists.
 | `enabled` | `true` | Master switch |
 | `announceToAgent` | `false` | Whether to inject a capability description (a system-prompt section) into every agent |
 | `localPassthrough` | `['$DSH_HOME/attachments', '$DSH_HOME/plugins']` | **Host absolute prefixes** that keep their local meaning inside an `ssh://` session; `false` / `[]` disables it. Matching is lexical only, and the whole `$DSH_HOME` root is refused |
+| `localPassthroughScheme` | `local` | Scheme name for explicitly naming a host path (`local:/abs/path`). At least **3 characters**; lowercase letters, digits and `+ - .`; `ssh` / `file` / `sftp` / `dsh-app` and the common URL schemes are reserved (the list is published by `/status`); **only one prefix at a time**, saving another replaces it; the name is case-insensitive while the path follows the platform. **First default only** — once saved in the panel, the store wins |
+| `localPassthroughFallback` | `false` | Whether an `@`-named POSIX absolute path falls back to the host copy after the remote reports it absent. Also a first default only |
 | `allowLan` | `false` | LAN deployment: the browser HTTP routes accept private-network source addresses (IPv4 RFC1918, IPv6 ULA/link-local) |
 | `allowedHosts` | `[]` | Extra `Host` values to admit (with `allowLan`), e.g. when the panel is reached by a LAN hostname |
 | `engine.idleTimeoutMs` | `1800000` | Recycle a connection after it stays idle this long (ms) |
@@ -211,6 +213,29 @@ localPassthrough:
   no ambiguity); `@src/a.js` and `@/tmp/x` remain workspace or remote references. The table is
   capped at 256 entries, oldest evicted first. The whole `$DSH_HOME` stays refused even when
   named with `@` (it holds the SSH key and stored host secrets).
+- **Naming a host path explicitly with a scheme**: `local:/Volumes/SSD/a.md` (POSIX) and
+  `local:F:\123.txt` (Windows) always read on this machine; the path is the absolute path
+  after the prefix. The prefix name is `localPassthroughScheme` and is edited in the panel's
+  "File reference settings" zone, in its "Explicit file reference scheme" block (the input's own
+  accessible name stays "Host scheme"), taking effect on save (no restart). A scheme you did not
+  enable is **refused loudly** (`FS_PERMISSION_DENIED`) rather than quietly retried as a
+  remote path; `ssh:` is reserved and cannot be configured. **Only one prefix can be configured
+  at a time**: saving a different name replaces it wholesale, and the old one stops working
+  immediately — the two are never listed side by side. The name needs at least **3 characters**
+  (one character would compete with a Windows drive letter such as `c:/x`); `file:`, `sftp:`,
+  `dsh-app:` and the common URL schemes are reserved as well (`file:///` is the URI this plugin
+  writes for *remote* paths, so one spelling cannot mean both machines). The prefix NAME is
+  case-insensitive; the path after the colon follows the platform (case-insensitive on Windows,
+  case-sensitive on macOS/Linux). The prefix unlocks the spellings
+  it names and the `@` references — it never turns a bare `F:\123.txt` or `/tmp/x` into a host
+  read.
+- **Remote first, host copy on a miss (optional)**: with "fall back to this machine when the
+  remote lacks it" checked, a POSIX absolute path such as `@/Volumes/SSD/PARAMS.md` still
+  resolves remotely first. Only when the remote **really reports it absent** does the plugin
+  try the host copy once, appending a `[ssh-workspace]` note that names the source. The
+  fallback covers reads only (`read` / `read_image` / `streamText` / `lstat`); writes, `glob`,
+  `grep` and directory listings **never** fall back. Unchecking it restores "every POSIX
+  absolute path is remote".
 - `false` or `[]` disables it; restart DSH after changing it. The defaults follow `$DSH_HOME`
   (`~/.dsh` when unset).
 - **Passthrough has a boundary, and the boundary is `ctx.fs`**: the host's official
@@ -281,7 +306,7 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 | Binary and encoding | Text reads reject NUL / invalid UTF-8; `readBytes` returns raw bytes |
 | Write fence | Remote writes may only land inside a mounted remote workspace; anything outside returns `FS_OUTSIDE_WORKSPACE`. **The `read-only` mode also blocks remote writes** (`FS_SANDBOX_DENIED`). Reads are unrestricted |
 | Large files stream | Previews and `read` stream remote files in 256 KiB chunks instead of loading the whole file into memory |
-| Host-path passthrough | Host-absolute paths — such as non-image chat attachments — keep their local meaning inside an `ssh://` session (`read` / `read_image` / `node:fs`). By default only `$DSH_HOME/attachments` and `$DSH_HOME/plugins` pass through; every other absolute path stays remote, and matching never probes existence. A Windows drive/UNC path the user names with `@` in a message also passes through |
+| Host-path passthrough | Host-absolute paths — such as non-image chat attachments — keep their local meaning inside an `ssh://` session (`read` / `read_image` / `node:fs`). By default only `$DSH_HOME/attachments` and `$DSH_HOME/plugins` pass through; every other absolute path stays remote, and matching never probes existence. A Windows drive/UNC path the user names with `@` in a message also passes through, and an explicit `local:/abs/path` names this machine (the prefix name is configurable); a scheme you did not enable is refused rather than guessed at |
 | Remote changes auto-refresh | Remote `inotifywait` push events are preferred (immediate, not bound by mtime precision); without it the plugin falls back to polling — about every 2 seconds, backing off while idle (after 15 quiet rounds to 5 s, after 30 to 10 s) and snapping back to 2 s on any change. On the polling path SFTP metadata has no sub-second timestamps, so consecutive rewrites of equal size within the same second may not trigger a refresh; additions, removals, and renames always do |
 
 ### Remote execution
@@ -399,7 +424,7 @@ Explicitly **not supported**:
 | [protocol.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/protocol.md) | The `ssh://` path protocol: syntax, normalization, display rules, `file:` URIs, the write fence and the detached fence |
 | [hosts.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/hosts.md) | Host configuration & auth: storage format, `~/.ssh/config` fallback, panel management |
 | [tools.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/tools.md) | Agent tool reference: the 11 `ssh_workspace_*` tools (including `reverse_forward`) |
-| [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md) | UI guide: the panel, the dual "Add workspace" entry, remote-workspace marks, the port-forward and persistent-shell sections |
+| [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md) | UI guide: the panel, the dual "Add workspace" entry, remote-workspace marks, the port-forward and persistent-shell sections, the file-reference section |
 | [forward-persistence.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/forward-persistence.md) | Port-forward persistence: intent vs. fact, the two disconnect paths agreeing, auto-start |
 | [development.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/development.md) | Development, debugging & release: source layout, dependency resolution, packaging |
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | Upstream workaround register: host defects, the one-line fix, the self-retiring signal, and the removal steps |
