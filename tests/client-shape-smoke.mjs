@@ -1781,9 +1781,24 @@ console.log('\n[the scheme rules are published, not duplicated]')
     sliceBody('installTreeSelectionBridge').includes('selectReduced'.replace('d', '')) === false &&
       /selectReduce\(state\.selection/u.test(source),
     'the tree bridge grew a private selector')
-  check('the plugin no longer registers a right-sidebar tab type',
-    !/sidebarRightTabs/u.test(source) && !/sidebar\.right\.pane\.tab/u.test(source),
+  // The plugin's own right-sidebar tab is GONE on request. What must not come
+  // back is a second tab TYPE (a `sidebarRightTabs` registration) or a body
+  // occupying a cell key of this plugin's own invention.
+  //
+  // `sidebar.right.pane.tab` is no longer forbidden outright: the recent-commit
+  // strip deliberately SHADOWS the seat the official forge tab already owns —
+  // same cell key (`FORGE_TAB_KEY`, i.e. the forge package's TAB_ID
+  // `@deepseek-ai/dsh-experimental-client-ui-forge`), lower priority, shipped
+  // registration left installed. That is an occupant of an existing cell, not a
+  // tab type, and the distinction is exactly what these two checks pin: one
+  // registration body, keyed to the official tab.
+  check('the plugin registers no right-sidebar tab type of its own',
+    !/sidebarRightTabs/u.test(source),
     'the deleted tab type is still registered somewhere')
+  check('...and no right-sidebar tab body invents a cell key of its own',
+    (source.match(/name: 'sidebar\.right\.pane\.tab'/gu) ?? []).length === 1 &&
+      /key: FORGE_TAB_KEY/u.test(source),
+    'a second right-sidebar tab body came back (expected exactly one, shadowing the forge tab key)')
   check('...and the mounted-workspace row offers no browser entry',
     !/browse\.entry/u.test(source) && !/openWorkspaceBrowser/u.test(source),
     'the removed "浏览文件" button is still wired')

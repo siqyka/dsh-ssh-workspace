@@ -23,7 +23,7 @@
 
 触发后弹出锚定菜单（宽约 300px），包含两行：
 
-- **本地**（FolderIcon）：转交 DSH 原生目录选择器——桌面端走 preload 桥 `__DSH_DIRECTORY_PICKER__`，否则走 `uiWorkspace.pickDirectory()`。
+- **本地**（FolderIcon）：渲染本部署已安装的 browse occupant 组件（`directory-picker-browse` 的 `BrowseDirectoryFlow`，与插件安装前「添加工作区」弹出的是同一个对话框、同一套 locale 与 `listDirectory`/`createDirectory` 调用，经 `ctx.slots.entries(hole)` 取原始条目复用）；部署里没有 browse occupant 时（桌面 preload 桥 / native-only 组合）才回落 `__DSH_DIRECTORY_PICKER__` / `uiWorkspace.pickDirectory()`。
 - **远程**（远程标记图标）：打开「新建远程工作区」对话框。
 
 锚定机制：触发按钮不传给插槽占用者，因此插件在捕获阶段监听 `mousedown` 记住最近一次按钮位置（3 秒内有效，避免键盘快捷键打开时菜单"瞬移"），弹出层定位在按钮右侧 8px 处，并钳制在视口内；窗口 resize 时重新定位。点击菜单外部或按 Esc 关闭。

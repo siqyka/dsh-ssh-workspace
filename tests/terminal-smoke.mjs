@@ -77,7 +77,9 @@ function fakeEngine () {
     assertNotDisabled () {},
     async openChannel (alias, command, options) {
       const { channel, state } = fakeChannel()
-      opens.push({ alias, command, options, state })
+      // Snapshot the abort state the router handed to the open: a signal that
+      // fires later must not be visible here, and a pre-aborted one must be.
+      opens.push({ alias, command, options, state, abortedAtOpen: options?.signal?.aborted === true })
       return { channel, release: () => { state.released += 1 } }
     },
   }
@@ -178,6 +180,38 @@ console.log('\n=== terminal smoke ===\n')
   await handle.terminate()
   check('terminate closes the channel', opens[0].state.closed === true)
   check('repeated terminate releases the hold once', opens[0].state.released === 1, `released=${opens[0].state.released}`)
+}
+
+{
+  // The host's `spec.signal` bounds the allocation, not the terminal: the local
+  // backend passes it to node-pty's spawn and the process outlives the call.
+  // The browser terminal's create() call carries a per-request signal that
+  // aborts when that RPC settles, so the SSH channel must not follow it.
+  const { engine, opens } = fakeEngine()
+  const router = new RemoteTerminalRouter({ engine })
+  const controller = new AbortController()
+  const handle = await router.spawnTerminal({
+    cwd: 'ssh://gamma/srv/app', rows: 24, cols: 80, argv: ['bash'], signal: controller.signal,
+  })
+  controller.abort(new Error('the create() RPC settled'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  check('aborting spec.signal after open leaves the PTY open',
+    opens[0].state.closed === false && opens[0].abortedAtOpen === false,
+    `closed=${opens[0].state.closed} abortedAtOpen=${opens[0].abortedAtOpen}`)
+  await handle.terminate()
+  check('the terminal still terminates on request', opens[0].state.closed === true)
+}
+
+{
+  // A signal that is already aborted must stop the open before a live PTY exists.
+  const { engine, opens } = fakeEngine()
+  const router = new RemoteTerminalRouter({ engine })
+  const controller = new AbortController()
+  controller.abort()
+  await router.spawnTerminal({
+    cwd: 'ssh://delta/srv/app', rows: 24, cols: 80, argv: ['bash'], signal: controller.signal,
+  })
+  check('an already-aborted spec.signal aborts the open', opens[0].abortedAtOpen === true)
 }
 
 {
