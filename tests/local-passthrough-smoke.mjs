@@ -167,7 +167,7 @@ console.log('\n[2] lexical matching boundaries')
   // The fixture is Windows-shaped on purpose: a matcher pinned to `win32` must
   // fold a Windows path, and reusing the host's own spelling would make the
   // assertion true for the wrong reason on Windows and false on POSIX.
-  const windowsPinned = buildPassthrough(undefined, {
+  const windowsPinned = buildPassthrough(['C:\\Users\\me\\.dsh\\attachments'], {
     env: { DSH_HOME: 'C:\\Users\\me\\.dsh' },
     home: 'C:\\Users\\me',
     platform: 'win32',
@@ -368,29 +368,35 @@ console.log('\n[6] @ host references named by the user')
       !isWindowsHostPath('') &&
       !isWindowsHostPath(42))
 
+  // The extractor's spelling rules follow the platform by design (drive/UNC on
+  // Windows, POSIX absolute elsewhere). A Windows-shaped fixture must pin
+  // `win32`, or the same assertions are true on a Windows checkout and false
+  // in CI — which is exactly how this shipped red once.
+  const win32Text = text => hostReferencePathsInText(text, { platform: 'win32' })
+
   const text = '读 @F:\\123.txt，还有 @"C:\\Users\\me\\a b.txt" 和 @src/a.js 与 @/tmp/x'
-  const extracted = hostReferencePathsInText(text)
+  const extracted = win32Text(text)
   check('quoted and unquoted @ host paths are extracted in message order',
     JSON.stringify(extracted) === JSON.stringify(['C:\\Users\\me\\a b.txt', 'F:\\123.txt']),
     JSON.stringify(extracted))
   check('a trailing separator belongs to the punctuation, not the path',
-    JSON.stringify(hostReferencePathsInText('see @F:\\dir\\ and @F:\\a.txt.')) ===
+    JSON.stringify(win32Text('see @F:\\dir\\ and @F:\\a.txt.')) ===
       JSON.stringify(['F:\\dir', 'F:\\a.txt']))
   check('a mention glued to a word is not a reference',
-    hostReferencePathsInText('mail x@F:\\mail.txt').length === 0)
+    win32Text('mail x@F:\\mail.txt').length === 0)
   check('an @ right after CJK text is still a reference',
-    JSON.stringify(hostReferencePathsInText('读@F:\\a.txt')) === JSON.stringify(['F:\\a.txt']) &&
-      JSON.stringify(hostReferencePathsInText('路径：@F:\\a.txt')) === JSON.stringify(['F:\\a.txt']))
+    JSON.stringify(win32Text('读@F:\\a.txt')) === JSON.stringify(['F:\\a.txt']) &&
+      JSON.stringify(win32Text('路径：@F:\\a.txt')) === JSON.stringify(['F:\\a.txt']))
   check('a quoted path may contain spaces and CJK text',
-    JSON.stringify(hostReferencePathsInText('@"C:\\Users\\me\\目录 名\\x.txt"')) ===
+    JSON.stringify(win32Text('@"C:\\Users\\me\\目录 名\\x.txt"')) ===
       JSON.stringify(['C:\\Users\\me\\目录 名\\x.txt']))
   check('a UNC mention is extracted',
-    JSON.stringify(hostReferencePathsInText('@\\\\server\\share\\x.txt')) ===
+    JSON.stringify(win32Text('@\\\\server\\share\\x.txt')) ===
       JSON.stringify(['\\\\server\\share\\x.txt']))
   check('the same path twice in one message is returned once',
-    hostReferencePathsInText('@F:\\a.txt and @f:\\A.TXT').length === 1)
+    win32Text('@F:\\a.txt and @f:\\A.TXT').length === 1)
   check('empty and non-string text yields no references',
-    hostReferencePathsInText('').length === 0 && hostReferencePathsInText(42).length === 0)
+    win32Text('').length === 0 && win32Text(42).length === 0)
 
   const matcher = windowsMatcher()
   check('a drive path stays remote until the user names it',
@@ -546,9 +552,9 @@ console.log('\n[7] source wiring and single implementation')
     content: [{ type: 'text', text: 'read @F:\\123.txt' }, { type: 'text', text: 'and @F:\\b.txt' }],
   }
   check('the message extractor reads every text block of a user message',
-    JSON.stringify(hostReferencesInMessage(userMessage)) ===
+    JSON.stringify(hostReferencesInMessage(userMessage, { platform: 'win32' })) ===
       JSON.stringify(['F:\\123.txt', 'F:\\b.txt']),
-    JSON.stringify(hostReferencesInMessage(userMessage)))
+    JSON.stringify(hostReferencesInMessage(userMessage, { platform: 'win32' })))
   check('a non-user message contributes no references',
     hostReferencesInMessage({ ...userMessage, role: 'assistant' }).length === 0 &&
       hostReferencesInMessage(undefined).length === 0 &&
