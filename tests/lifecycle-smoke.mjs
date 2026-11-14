@@ -56,15 +56,15 @@ const EXPECTED_TOOLS = [
 ]
 // Route paths the browser half must expose. Kept in step with ROUTES in
 // lib/routes.js: hosts, host save/delete/forget-key/disconnect/reconnect,
-// test, ls, status, self-check, support-bundle, mount, unmount, enable,
-// forward, unforward, the six saved-forward routes
+// test, ls, status, self-check, passthrough settings, support-bundle, mount,
+// unmount, enable, forward, unforward, the six saved-forward routes
 // (save/toggle/delete/remember/probe/settings), transfer, download,
 // download-tree, upload and upload-chunk.
 //
 // The number is pinned rather than derived on purpose: deriving it from ROUTES
 // would make "a route was added but never registered" pass, which is the thing
 // this assertion exists to notice.
-const EXPECTED_ROUTES = 31
+const EXPECTED_ROUTES = 32
 
 let failures = 0
 let passes = 0

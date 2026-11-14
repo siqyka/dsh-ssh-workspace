@@ -1029,18 +1029,34 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   // The empty space below the rows is the gesture whose default is "nothing
   // happens": the button carrying the alias and remote path lives in the panel
   // HEADER, which is a sibling of the scrolled list, so the narrowest container
-  // holding the pointer need not hold the button either. The search must widen
-  // outward — pointer container, then the whole page, then the document — and
-  // stop at the first scope that has one. The old `?? document` fallback never
-  // fired, because a container DID match (the navigator) and simply held no
-  // button, which is why right-clicking the blank area still answered nothing.
-  check('the blank-area menu widens its search instead of giving up',
-    liveIn('installTreeMenuBridge', /if \(page !== null && page !== narrow\) holders\.push\(page\)/u) &&
-      liveIn('installTreeMenuBridge', /holders\.push\(document\)/u),
+  // holding the pointer does not hold the button either. The search therefore
+  // widens outward to the PAGE the pointer is in — and stops there.
+  //
+  // It must stop there. Widening to the document is the bug this pair of
+  // assertions previously described as correct: with nothing matching between
+  // the pointer and <body>, a right-click in the CONVERSATION resolved to the
+  // first file panel anyone had rendered and opened its directory menu, and a
+  // LOCAL panel beside a remote one could borrow the other host's directory.
+  check('the blank-area menu widens to the Files page, not the document',
+    liveIn('installTreeMenuBridge', /const scope = blankMenuScopeOf\(target\)/u) &&
+      liveIn('blankMenuScopeOf', /const page = target\.closest\(OS_PAGE_SELECTOR\)/u) &&
+      liveIn('blankMenuScopeOf', /page\.querySelector\('\[data-sshwsp-dir\]'\)/u),
     'a single-container lookup answers nothing whenever the header is a sibling of the list')
-  check('...and stops at the first scope that carries the button',
-    liveIn('installTreeMenuBridge', /if \(button !== null\) break/u),
-    'a later, wider scope would override the panel the pointer is actually in')
+  check('...and never reaches past that page for a button',
+    // `openForBlank` is an inner arrow, so it is sliced from the bridge body by
+    // its own declaration instead of by `bodyOf` (which keys on `function` and
+    // `const` at the module's indentation). No `document` may appear in it: a
+    // document-scoped lookup is exactly how the conversation window used to
+    // borrow the first file panel on screen.
+    (() => {
+      const body = bodyOf('installTreeMenuBridge')
+      const start = body.indexOf('const openForBlank = (event, target) => {')
+      if (start < 0) return false
+      const end = body.indexOf('\n      }', start)
+      const slice = end < 0 ? body.slice(start) : body.slice(start, end)
+      return !/document/u.test(slice) && !/holders/u.test(body)
+    })(),
+    'a document-level fallback is how the conversation window opened a file panel menu')
 
   // A browser refuses to elaborate on a request that died on the wire: every
   // cause arrives as the same four words. Both upload paths must translate that
@@ -1604,6 +1620,130 @@ console.log('\n[the toast window, measured on the code that ships]')
       transfers.live().length === 1 && transfers.live()[0]?.ms === 7000,
       `ms=${transfers.live()[0]?.ms}`)
   }
+}
+
+// ---------------------------------------------------------------------------
+// The file-reference zone: two titles, and they are not interchangeable
+// ---------------------------------------------------------------------------
+// The section used to carry one heading ("Host Path Passthrough"). It now
+// carries two levels: a zone heading ranked with "Hosts" and "Port forwards",
+// and, under it, the heading of the scheme box itself. The two are separate keys
+// on purpose — `passthrough.scheme` is ALSO the accessible name of the input, so
+// renaming the zone must never rename the field. Pinning the keys rather than
+// only the sentences is what makes a later rename fail loudly instead of
+// collapsing the two levels back into one line.
+console.log('\n[the file-reference zone: two titles, and they are not interchangeable]')
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  check('the file-reference zone has its own heading key, in both dictionaries',
+    (source.match(/'passthrough\.group':/gu) ?? []).length === 2,
+    `${(source.match(/'passthrough\.group':/gu) ?? []).length} definition(s) — zh and en both need one`)
+  check('...and the zone heading is the new name',
+    source.includes("'passthrough.group': '文件引用设置'") &&
+      source.includes("'passthrough.group': 'File reference settings'"),
+    'the zone heading still reads as the old single title')
+  check('the scheme heading is the renamed one',
+    source.includes("'passthrough.title': '显式文件引用 scheme'") &&
+      source.includes("'passthrough.title': 'Explicit file reference scheme'"),
+    'the scheme heading was not renamed')
+  // A leftover copy of the old title is a SECOND name for the same zone, which
+  // is how the panel came to describe one block two ways.
+  check('the previous section title survives nowhere in the dictionaries',
+    !source.includes("'Host Path Passthrough'") &&
+      !source.includes("'passthrough.title': '本机路径直通'"),
+    'a dictionary still carries the previous title')
+  check('the zone heading renders as a section head, like the other panel sections',
+    isLive(source, /jsx\('div', \{ className: 'sshwsp-section-head', children: \[\s*jsx\('h3', \{ children: t\('passthrough\.group'\) \}\),/u),
+    'the zone heading is gone, or it is no longer the section head')
+  check('the scheme heading renders BELOW it, as an h4',
+    isLive(source, /jsx\('h4', \{ children: t\('passthrough\.title'\) \}\)/u) &&
+      !isLive(source, /jsx\('h3', \{ children: t\('passthrough\.title'\) \}/u),
+    'the two headings are one level again, so the block has one title')
+  check('the h4 follows the section head rather than preceding it',
+    (() => {
+      const head = source.indexOf("jsx('h3', { children: t('passthrough.group') })")
+      const sub = source.indexOf("jsx('h4', { children: t('passthrough.title') })")
+      return head >= 0 && sub > head
+    })(),
+    'the subheading renders above the zone it belongs to')
+  check('the h4 is styled one level down from the h3',
+    /\.sshwsp h4 \{ font-size: 12px; font-weight: 400; margin: 0 0 10px;/u.test(source) &&
+      /\.sshwsp h3 \{ font-size: 12px; font-weight: 500;/u.test(source),
+    'no lighter h4 rule — the subheading looks identical to the zone head, or is unstyled')
+  check('the scheme box keeps its own accessible name',
+    source.includes("'aria-label': t('passthrough.scheme')") &&
+      source.includes("'passthrough.scheme': '本机路径前缀'"),
+    'the input is named by a title now, so its field label moved with the zone')
+}
+
+// ---------------------------------------------------------------------------
+// The scheme rules are PUBLISHED, not duplicated
+// ---------------------------------------------------------------------------
+// The server owns the syntax, the minimum length and the reserved names, and the
+// panel receives them through `status.passthrough.schemeRules`. The bundle used
+// to keep a second copy (a regex plus `=== 'ssh'`), which is how a name the
+// server accepts can be refused on screen, or one it refuses promised. These
+// assertions exist to make that copy fail loudly if it comes back.
+console.log('\n[the scheme rules are published, not duplicated]')
+{
+  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const start = source.indexOf('const savePassthroughScheme = async () => {')
+  const end = source.indexOf('const handleUnforward', start)
+  const body = start < 0 || end <= start ? '' : source.slice(start, end)
+  check('the scheme saver reads the rules the server publishes',
+    body !== '' && /status\.passthrough\?\.schemeRules/u.test(body),
+    'the saver no longer reads schemeRules, so it must be validating from a local copy')
+  check('...and carries no second copy of the reserved names',
+    !/===\s*'ssh'/u.test(body),
+    'the bundle hardcodes the ssh reservation again')
+  check('...nor a second copy of the scheme syntax',
+    !/\[\^a-z\]/u.test(body) && !/a-z0-9\+\.-/u.test(body),
+    'the bundle hardcodes the scheme regex again')
+  check('...and each refusal has its own message, not one generic failure',
+    /passthrough\.schemeTooShort/u.test(body) &&
+      /passthrough\.schemeReserved/u.test(body) &&
+      /passthrough\.schemeInvalid/u.test(body),
+    'the saver collapsed the refusals into one sentence')
+
+  // Every scheme key must exist in BOTH dictionaries: a key defined only in
+  // Chinese leaves the English panel silent about the same refusal.
+  for (const key of ['schemeHint', 'schemeTooShort', 'schemeReserved', 'schemeInvalid', 'schemeSaved', 'schemeWarning']) {
+    const count = (source.match(new RegExp(`'passthrough\\.${key}':`, 'gu')) ?? []).length
+    check(`'passthrough.${key}' is defined in both dictionaries`, count === 2, `${count} definition(s)`)
+  }
+  // The hint is the only place the panel states the rules the user cannot see
+  // being applied. All four of them have to be there, in both languages: one
+  // prefix at a time, the 3-character minimum, the reserved list living on the
+  // server, and the NAME/path case split.
+  const hintLines = source.split('\n').filter(line => line.includes("'passthrough.schemeHint':"))
+  check('the hint is one line per language',
+    hintLines.length === 2, `${hintLines.length} line(s)`)
+  check('the Chinese hint states the one-prefix rule, the 3-character minimum and the case split',
+    hintLines[0] !== undefined && hintLines[0].includes('一个') && hintLines[0].includes('3') &&
+      hintLines[0].includes('大小写') && hintLines[0].includes('保留名'),
+    hintLines[0] === undefined ? 'missing' : hintLines[0].slice(0, 120))
+  check('the English hint states the same three rules',
+    hintLines[1] !== undefined && /only one prefix/iu.test(hintLines[1]) && hintLines[1].includes('3') &&
+      /case-insensitiv/iu.test(hintLines[1]) && /reserved/iu.test(hintLines[1]),
+    hintLines[1] === undefined ? 'missing' : hintLines[1].slice(0, 120))
+  // A stored-but-unusable value has to be visible: degrading it silently is how
+  // "my prefix stopped working" becomes unreportable.
+  check('the panel renders the degraded-value warning above the settings',
+    /status\.passthrough\?\.schemeWarning != null/u.test(source) &&
+      /t\('passthrough\.schemeWarning'\)/u.test(source),
+    'the warning field is never rendered, so a degraded value is invisible')
+  check('...and the warning names the stored value, the effective one and the reason',
+    /\.replace\('\{\{stored\}\}'/u.test(source) === false &&
+      /\.replace\('\{stored\}'/u.test(source) &&
+      /\.replace\('\{effective\}'/u.test(source) &&
+      /\.replace\('\{message\}'/u.test(source),
+    'the warning line drops one of the three facts')
+  check('a successful save clears the stale warning instead of waiting for the next poll',
+    /schemeWarning: null/u.test(source),
+    'the warning survives the save that confirms it')
+  check('the scheme box bounds its width without treating the bound as a rule',
+    /maxLength: 32/u.test(source),
+    'the box has no width bound, or the bound is used as validation')
 }
 
 // ---------------------------------------------------------------------------
