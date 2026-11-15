@@ -280,7 +280,7 @@ localPassthrough:
 | --- | --- |
 | shell 命令远端化 | 会话工作区是 `ssh://` 时，`pwsh` / `bash` 工具在远端以 POSIX shell 语义执行——一次性命令、后台任务、超时与中止都按 DSH 的进程契约工作；本地 `workdir` 的命令不受影响 |
 | glob / grep 远端搜索 | 调用**远端主机上的 ripgrep（`rg`）**返回真实远端结果；远端未安装 ripgrep 时得到带安装提示的明确失败（退出码 127） |
-| 变更追踪远端化 | 「变更」（deliverables）面板用**远端 git** 做回合快照与 diff——远端 shell 改的文件也会出现在变更列表（+N/−N、点开看 diff）；远端未装 git 时自动降级关闭，其余功能不受影响 |
+| 变更追踪远端化 | 「变更」（deliverables）面板用**远端 git** 做回合快照与 diff——远端 shell 改的文件也会出现在变更列表（+N/−N、点开看 diff）；远端未装 git 时自动降级关闭，其余功能不受影响。**逐文件的 before/after 文本对比对远端编辑不可用**：宿主的整文件捕获（`dsh-workspace-changes` 的 `captureFile()`）用 `node:fs` 打开 `ctx.fs.processPath()`，对远端目标那是**远端路径**，两次捕获都读成 `absent`、`sameCapture()` 判等后整条记录被丢弃。捕获不经过 `ctx.fs`，插件无法替换读取，所以改为**不让它静默**：首次远端写入时在 status 的诊断环记一条 `degraded`（`ctx.logger` 在本部署没有出口，见 [development.md](docs/development.md)）。变更**列表**不受影响 |
 
 ### 界面集成
 

@@ -674,6 +674,83 @@ console.log('\n[plain path and the whitelist]')
     thrown instanceof Error && /only git and ripgrep/u.test(thrown.message), String(thrown?.message))
 }
 
+// ── the one thing this bridge cannot give the Changes panel: the text ────────
+//
+// `dsh-workspace-changes` stores before/after text with its own `captureFile()`,
+// which opens `ctx.fs.processPath(target)` through node:fs. For a remote target
+// that path is the REMOTE one (that is what git needs), so the open can only
+// fail, both sides capture as `{kind:'absent'}`, `sameCapture()` calls them
+// equal, and the record is dropped. The plugin cannot substitute a read — the
+// capture never goes through `ctx.fs` — so it makes the drop observable instead
+// of silent: one diagnostics entry per activation.
+console.log('\n[content capture]')
+{
+  let RemoteFileSystem
+  try {
+    ;({ RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href))
+  } catch (error) {
+    console.log(`  SKIP  remote-fs.js is not resolvable here: ${error instanceof Error ? error.message : String(error)}`)
+    RemoteFileSystem = undefined
+  }
+  if (RemoteFileSystem !== undefined) {
+    const engineEntries = []
+    const engine = {
+      diagnostics: {
+        record: (kind, message, detail) => engineEntries.push({ kind, message, detail }),
+      },
+      // Never reached on purpose: the note is recorded before the write touches
+      // the network, and this double refuses so the assertion also proves the
+      // note does not depend on a successful publish.
+      withSftp: async () => { throw new Error('this double has no SFTP') },
+    }
+    const router = new RemoteFileSystem({ engine })
+    router.addRoot('testhost', '/mnt/data/proj')
+    const target = {
+      targetKey: 'ssh://testhost/mnt/data/proj/notes.txt',
+      displayPath: 'ssh://testhost/mnt/data/proj/notes.txt',
+    }
+    const policy = { mode: 'danger-full-access', workspaceRoot: 'ssh://testhost/mnt/data/proj' }
+    let writeOutcome
+    try {
+      await router.writeText(target, 'x', undefined, undefined, policy)
+      writeOutcome = 'resolved'
+    } catch (error) {
+      writeOutcome = error instanceof Error ? error.message : String(error)
+    }
+    const first = engineEntries[0]
+    check('a remote write records the host-local capture limit',
+      engineEntries.length === 1 && first?.kind === 'degraded',
+      JSON.stringify(engineEntries))
+    check('the entry names the real mechanism, not a generic warning',
+      typeof first?.message === 'string' &&
+        first.message.includes('before/after') &&
+        first.message.includes('node:fs') &&
+        first.message.includes('ctx.fs.processPath'),
+      String(first?.message))
+    check('the entry says what still works (git lists the files)',
+      typeof first?.message === 'string' && first.message.includes('still lists the changed files'),
+      String(first?.message))
+    check('the entry carries the alias it belongs to', first?.detail?.alias === 'testhost', JSON.stringify(first?.detail))
+    check('the limit is reported once, not on every edit',
+      await (async () => {
+        try { await router.editText(target, { oldString: 'a', newString: 'b' }, undefined, undefined, policy) } catch { /* expected */ }
+        return engineEntries.length === 1
+      })(),
+      JSON.stringify(engineEntries))
+    check('a local write through the same router records nothing',
+      await (async () => {
+        const localEntries = []
+        const local = new RemoteFileSystem({
+          engine: { diagnostics: { record: (...args) => localEntries.push(args) } },
+          base: { writeText: async () => 'written locally' },
+        })
+        const result = await local.writeText({ targetKey: 'F:/repo/a.txt', displayPath: 'F:/repo/a.txt' }, 'x')
+        return result === 'written locally' && localEntries.length === 0
+      })(),
+      'a local path must not inherit the remote warning')
+  }
+}
+
 // ── live: the exact shapes the Host hands the bridge ────────────────────────
 
 const alias = process.env.DSH_WS_TEST_ALIAS

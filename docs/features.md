@@ -297,6 +297,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | glob / grep 远端化 | 调用**远端主机上的 ripgrep**，返回真实远端路径；`rg` 缺失时以退出码 **127** + 安装提示失败 |
 | 命令白名单 | `cwd` 为 `ssh://` 的子进程只放行 `git` 与 `rg`（全 asar 扫描确认只有搜索工具与变更追踪两个消费方）；其余本机可执行文件**同步抛**错，不上传二进制 |
 | 变更追踪远端化 | 「变更」面板用**远端 git** 做回合快照与 diff，远端 shell 改的文件也会出现在列表（+N/−N、可看 diff）；未装 git 时按「无仓库」降级，每回合一条 warn，不阻断会话 |
+| 逐文件文本对比是远端盲区 | 宿主的整文件捕获（`@deepseek-ai/dsh-workspace-changes` 的 `captureFile()`）用 `node:fs` 打开 `ctx.fs.processPath(target)`；远端目标拿到的是**远端路径**，两次捕获都 `ENOENT` → `{kind:'absent'}`，`sameCapture()` 判等后**整条记录被丢弃**。捕获不经过 `ctx.fs`，插件无法替换读取，只能**不让它静默**：首次远端写入时往诊断环记一条 `degraded`（status 工具与面板状态路由都可读）。变更列表仍由 git 提供，缺的只是逐文件 before/after 文本 |
 | 快照目录镜像 | 本机 `mkdtemp` 的 git 快照目录（`GIT_OBJECT_DIRECTORY` / `GIT_INDEX_FILE`）改写成远端 `/tmp` 下同后缀并 `mkdir -p`——远端 git 看不到本机路径 |
 | 持久终端 | 接管 `ctx.subprocess.spawnTerminal`：`cwd` 为 `ssh://` 时开 SSH PTY 通道而非本地进程，handle 满足宿主的 `output` / `write` / `resize` / `done` / `inspectForeground` / `signalForeground` / `terminate` 契约；默认 **80×24**，按 spec 调整 |
 | 方言不用本机的 | 远端 PTY 启动远端自己的交互式 POSIX shell，**忽略**宿主的 PowerShell argv——把 PowerShell 命令行丢给 POSIX 主机会以「像插件 bug」的方式失败 |
