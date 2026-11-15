@@ -21,6 +21,7 @@
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
 | [optimization-and-future03.md](./optimization-and-future03.md) | **优化项与 Future（第三辑 · 唯一账本）**：仍未做、判定不做、上游阻塞、验证缺口与已完成 ID 索引；前两辑已合并到这里 | 完成 |
+| [verify/pr6-review.md](./verify/pr6-review.md) | **PR #6 评审记录**：远端 subprocess 路由、终端信号生命周期、两步「添加工作区」、最近提交条——四类修复逐条判定、两个 UI 槽位重写、`git-history` 安全面、P0–P3 问题表与本轮 7 个修复的提交 | 完成 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 
