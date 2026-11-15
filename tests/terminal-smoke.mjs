@@ -21,6 +21,7 @@
  * Run: node tests/terminal-smoke.mjs
  */
 
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -237,5 +238,21 @@ console.log('\n=== terminal smoke ===\n')
     typeof service.spawnTerminal === 'function' && (await service.spawnTerminal({ cwd: 'C:\\x', argv: ['pwsh'] })).local === true)
 }
 
+
+// ── the debug trace that used to write on every open/close is gone ──────────
+//
+// This was a temporary probe: it appended a line to a file on EVERY spawn and
+// close, synchronously, and its default path (`/tmp/...`) resolves to a drive-
+// relative `F:\tmp\...` on Windows, which is why it left a file there and why it
+// was invisible on hosts without `/tmp`. The information it carried is already
+// available: a successful open logs at info level and a failure rejects.
+console.log('\n[no trace I/O on the terminal path]')
+{
+  const source = readFileSync(path.join(pluginRoot, 'lib', 'patch-terminal.js'), 'utf8')
+  check('the terminal module does no synchronous file I/O at all',
+    !source.includes('appendFileSync') && !source.includes('node:fs'))
+  check('the removed trace file, its path and its env switches are gone',
+    !source.includes('DSH_SSH_WORKSPACE_TRACE') && !source.includes('ssh-workspace-terminal.log'))
+}
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)
