@@ -183,6 +183,31 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
+  // The browser terminal's retention monitor calls inspectActivity() on the
+  // handle. A missing method made the harness's observation fall through its
+  // catch block (and the allocation-cleanup path binds it unguarded), so the
+  // remote handle must answer the same shape as the local one.
+  const { engine, opens } = fakeEngine()
+  const router = new RemoteTerminalRouter({ engine })
+  const handle = await router.spawnTerminal({ cwd: 'ssh://ion/srv/app', rows: 24, cols: 80, argv: ['bash'] })
+  const active = await handle.inspectActivity()
+  check('a freshly opened terminal reports a non-idle activity state',
+    (active.state === 'busy' || active.state === 'unknown') && Number.isSafeInteger(active.revision),
+    JSON.stringify(active))
+  const before = active.revision
+  handle.channel.emit('data', Buffer.from('more output'))
+  const afterOutput = await handle.inspectActivity()
+  check('output advances the activity revision', afterOutput.revision > before, `${before} -> ${afterOutput.revision}`)
+  await handle.write('x')
+  const afterInput = await handle.inspectActivity()
+  check('input advances the activity revision too', afterInput.revision > afterOutput.revision,
+    `${afterOutput.revision} -> ${afterInput.revision}`)
+  await handle.terminate()
+  const exited = await handle.inspectActivity()
+  check('an exited terminal reports idle', exited.state === 'idle', JSON.stringify(exited))
+}
+
+{
   // The host's `spec.signal` bounds the allocation, not the terminal: the local
   // backend passes it to node-pty's spawn and the process outlives the call.
   // The browser terminal's create() call carries a per-request signal that
