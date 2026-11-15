@@ -127,6 +127,7 @@ const SUITES = [
   'mode-gate',
   'shell',
   'terminal',
+  'browser-terminal',
   'commit-history',
   'local-changes-remote',
   'transport',
