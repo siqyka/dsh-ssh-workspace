@@ -72,7 +72,7 @@ try {
   console.log('\n=== 0 passed, 0 failed, 1 suite skipped ===')
   process.exit(0)
 }
-const { PLAIN_ROUTE_REASONS, StreamTail, installRemoteSubprocess, resolvePlainRemoteRoute } = bridge
+const { PLAIN_ROUTE_REASONS, StreamTail, installRemoteSubprocess, resolvePlainRemoteRoute, unwrapSandboxArgv } = bridge
 
 console.log('\n=== local-changes-remote smoke ===')
 
@@ -349,6 +349,104 @@ console.log('\n[plain-path bridge]')
     h.scripts.length === 1 && h.scripts[0].includes("exec 'git' '--no-optional-locks'"), h.scripts[0] ?? '')
   check('the script contains no literal "undefined" env export (no literal undefined export)',
     !(h.scripts[0] ?? '').includes("'undefined'"), h.scripts[0] ?? '')
+}
+
+// ── the sandbox wrapper: POSIX rungs AND the Windows runner ──────────────────
+//
+// DSH confines an execution by prefixing the command with a runner, so the
+// bridge sees `[runner…, '--', git…]` and the git/ripgrep whitelist would match
+// the RUNNER. Stripping only the POSIX rungs left the Windows shape intact, and
+// on Windows confinement is the only path a git call takes — so the "route git
+// to the remote host" branch never fired there at all. The shapes below are the
+// ones `dsh-sandbox-local` really builds (`confine()` appends the payload after
+// the profile flags; `windowsAclRunnerArgv()` supplies those flags).
+console.log('\n[sandbox wrapper]')
+{
+  const WIN_NODE = 'C:\\Program Files\\nodejs\\node.exe'
+  const WIN_RUNNER = 'C:\\Users\\u\\AppData\\Roaming\\dsh\\node_modules\\@deepseek-ai\\dsh-sandbox-windows-acl\\lib\\runner.js'
+  const winFlags = [
+    '--workspace', 'C:\\ws', '--temp', 'C:\\Users\\u\\AppData\\Local\\Temp\\dsh-ab12',
+    '--mode', 'workspace-write', '--write-sid', 'S-1-5-21-1', '--temp-write-sid', 'S-1-5-21-2',
+  ]
+  const winPrefix = [WIN_NODE, WIN_RUNNER, ...winFlags]
+  // A development build reaches the runner through the source entry, with the
+  // tsx loader in front of it — same namespace marker, different file name.
+  const winDevPrefix = [
+    WIN_NODE, '--import', 'data:text/javascript,import%20%7B%20register%20%7D',
+    'C:\\src\\node_modules\\@deepseek-ai\\dsh-sandbox-windows-acl\\src\\runner.ts',
+    '--workspace', 'C:\\ws', '--mode', 'read-only',
+  ]
+
+  check('the Windows [node, runner.js, …flags] wrapper is stripped',
+    JSON.stringify(unwrapSandboxArgv([...winPrefix, '--', 'git', 'status'])) === JSON.stringify(['git', 'status']),
+    JSON.stringify(unwrapSandboxArgv([...winPrefix, '--', 'git', 'status'])))
+  check('the development runner entry tsx loads is stripped too',
+    JSON.stringify(unwrapSandboxArgv([...winDevPrefix, '--', 'git', 'status'])) === JSON.stringify(['git', 'status']),
+    JSON.stringify(unwrapSandboxArgv([...winDevPrefix, '--', 'git', 'status'])))
+  for (const launcher of ['landlock-run', 'bwrap', 'sandbox-exec']) {
+    const wrapped = [launcher, '--ro-bind', '/usr', '/usr', '--', 'git', 'status']
+    check(`the POSIX ${launcher} wrapper is still stripped`,
+      JSON.stringify(unwrapSandboxArgv(wrapped)) === JSON.stringify(['git', 'status']),
+      JSON.stringify(unwrapSandboxArgv(wrapped)))
+  }
+  // Negative cases: these are NOT wrappers and stripping them would hand a
+  // caller's own argv to the whitelist under the wrong interpretation.
+  for (const [label, argv] of [
+    ['node running an ordinary script with its own --', ['node', 'script.js', '--', 'git', 'status']],
+    ['git with its own -- separator', ['git', '--', 'status']],
+    ['an unrelated prefix program', ['C:\\tools\\wrap.exe', '--', 'git', 'status']],
+    ['a sandbox-named program that is not a runner', ['C:\\tools\\dsh-sandbox-helper.exe', '--', 'git', 'status']],
+    ['a wrapper shape with no separator', [WIN_NODE, WIN_RUNNER, '--workspace', 'C:\\ws']],
+  ]) {
+    const out = unwrapSandboxArgv(argv)
+    check(`not stripped: ${label}`, JSON.stringify(out) === JSON.stringify(argv), JSON.stringify(out))
+  }
+}
+
+{
+  // End to end through the bridge: the wrapper is what makes a confined git
+  // call reach the remote branch, and its absence must still refuse loudly.
+  const h = harness({ roots: [ROOT], run: { output: ' M tracked.txt\n' } })
+  // `confine()` appends the payload AFTER the profile flags, behind `--`.
+  const WIN_PREFIX = [
+    'C:\\Program Files\\nodejs\\node.exe',
+    'C:\\Users\\u\\node_modules\\@deepseek-ai\\dsh-sandbox-windows-acl\\lib\\runner.js',
+    '--workspace', 'C:\\ws', '--mode', 'read-only', '--',
+  ]
+  const wrapped = h.service.spawn(gitSpec('ssh://testhost/mnt/data/proj', ['status', '--porcelain'], {}, WIN_PREFIX))
+  await wrapped.done
+  check('a Windows-confined git call on an ssh:// cwd reaches the remote branch',
+    h.scripts.length === 1 && h.scripts[0].includes("exec 'git'") && h.localCalls.length === 0,
+    `scripts=${h.scripts.length} local=${h.localCalls.length}`)
+
+  const h2 = harness({ roots: [ROOT], run: { output: ' M tracked.txt\n' } })
+  const wrappedPlain = h2.service.spawn(gitSpec(ROOT, ['status', '--porcelain'], {}, WIN_PREFIX))
+  await wrappedPlain.done
+  check('a Windows-confined git call on a plain mounted root reaches the remote branch',
+    h2.scripts.length === 1 && h2.scripts[0].includes("exec 'git'") && h2.localCalls.length === 0,
+    `scripts=${h2.scripts.length} local=${h2.localCalls.length}`)
+
+  let refusal
+  try {
+    const spec = gitSpec('ssh://testhost/mnt/data/proj', ['status'])
+    spec.argv = ['C:\\Program Files\\nodejs\\node.exe', 'C:\\node_modules\\@deepseek-ai\\dsh-sandbox-windows-acl\\lib\\runner.js', '--mode', 'read-only', '--', 'bash', '-lc', 'git status']
+    h2.service.spawn(spec)
+  } catch (error) {
+    refusal = error
+  }
+  check('a wrapper around a NON-whitelisted command still refuses instead of being let through',
+    refusal instanceof Error && /only git and ripgrep/u.test(refusal.message), String(refusal?.message))
+
+  let negative
+  try {
+    const spec = gitSpec('ssh://testhost/mnt/data/proj', ['status'])
+    spec.argv = ['node', 'script.js', '--', 'git', 'status']
+    h2.service.spawn(spec)
+  } catch (error) {
+    negative = error
+  }
+  check('an ordinary node script keeps its argv and is refused for argv[0], not mistaken for a wrapper',
+    negative instanceof Error && /cannot run "node"/u.test(negative.message), String(negative?.message))
 }
 
 {
@@ -670,7 +768,19 @@ async function runLive (hostAlias) {
     const localRepo = await runGit(pluginRoot, ['rev-parse', '--show-toplevel'])
     check('a local repository path still runs locally', localCalls.length === beforeLocalRepo + 1,
       `local=${localCalls.length} before=${beforeLocalRepo}`)
-    check('the local git answer is this checkout', localRepo.stdout.trim() === pluginRoot, JSON.stringify(localRepo.stdout))
+    // Same path, two spellings: git prints `F:/GitHub/...` on Windows while
+    // path.resolve() keeps backslashes. The assertion below is about WHICH
+    // repository git answered for, not about separator style; a wrong repo still
+    // fails because the comparison normalises separators and (on Windows only)
+    // letter case, exactly as the filesystem does.
+    const samePath = (a, b) => {
+      const norm = (value) => {
+        const slashed = String(value).trim().replace(/\\/gu, '/')
+        return process.platform === 'win32' ? slashed.toLowerCase() : slashed
+      }
+      return norm(a) === norm(b)
+    }
+    check('the local git answer is this checkout', samePath(localRepo.stdout, pluginRoot), JSON.stringify(localRepo.stdout))
   } catch (error) {
     failures += 1
     failureList.push(`live: unexpected exception: ${error?.stack ?? error}`)
