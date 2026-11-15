@@ -56,15 +56,26 @@ const EXPECTED_TOOLS = [
 ]
 // Route paths the browser half must expose. Kept in step with ROUTES in
 // lib/routes.js: hosts, host save/delete/forget-key/disconnect/reconnect,
-// test, ls, status, self-check, passthrough settings, support-bundle, mount,
-// unmount, enable, forward, unforward, the six saved-forward routes
-// (save/toggle/delete/remember/probe/settings), transfer, download,
-// download-tree, upload and upload-chunk.
+// test, ls, git-history, status, self-check, passthrough settings,
+// support-bundle, mount, unmount, enable, forward, unforward, the six
+// saved-forward routes (save/toggle/delete/remember/probe/settings), transfer,
+// download, download-tree, upload, upload-chunk, rename, delete, mkdir and
+// mutation-policy.
 //
 // The number is pinned rather than derived on purpose: deriving it from ROUTES
 // would make "a route was added but never registered" pass, which is the thing
-// this assertion exists to notice.
-const EXPECTED_ROUTES = 32
+// this assertion exists to notice. The set comparison added below the count
+// covers the other half — a path that IS in ROUTES but never reached the
+// web server — without giving up the acknowledgement this pin forces: adding a
+// route still turns the count assertion red until someone edits this number.
+const EXPECTED_ROUTES = 33
+
+// The one route that carries a bound on HOW MUCH of a repository it may read,
+// and the only one whose entire input is a Session id. Named here so that
+// dropping it from the table, renaming its path or registering it twice is a
+// failure with a readable label rather than an off-by-one in a count.
+const GIT_HISTORY_PATH = '/api/dsh-ssh-workspace/git-history'
+const ROUTES_MODULE = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes.js')).href)
 
 let failures = 0
 let passes = 0
@@ -164,6 +175,25 @@ console.log('\n[2] web server and tools already up, filesystem arrives last')
   check('no route path was double-registered',
     new Set(routes.map(r => r.path)).size === routes.length,
     JSON.stringify(routes.map(r => r.path)))
+  // The count above notices "a route was added", this notices "the table and
+  // the registrations drifted apart". Two different bugs: a route declared in
+  // ROUTES but skipped by the registration step keeps the count correct only
+  // when something else was double-registered, and a path registered twice
+  // never shows up in the count at all once the pin is stale. Comparing the
+  // two SETS catches both, and the explicit git-history assertion below keeps
+  // the one route this review is about from disappearing into that set.
+  const declared = Object.values(ROUTES_MODULE.ROUTES)
+  check('every declared route reached the web server',
+    declared.length === routes.length && declared.every(p => routes.some(r => r.path === p)),
+    `declared=${declared.length} registered=${routes.length}`)
+  check('the route table declares exactly the pinned number',
+    Object.keys(ROUTES_MODULE.ROUTES).length === EXPECTED_ROUTES,
+    String(Object.keys(ROUTES_MODULE.ROUTES).length))
+  check('git-history is registered as its own exact endpoint on the declared path',
+    routes.filter(r => r.path === GIT_HISTORY_PATH).length === 1 &&
+      routes.find(r => r.path === GIT_HISTORY_PATH).kind === 'exact' &&
+      ROUTES_MODULE.ROUTES.gitHistory === GIT_HISTORY_PATH,
+    `${GIT_HISTORY_PATH} (kind must be exact; the GET-only method check lives in the handler's guard)`)
 }
 
 // --- scenario 3: web server arrives AFTER the filesystem ---------------------
