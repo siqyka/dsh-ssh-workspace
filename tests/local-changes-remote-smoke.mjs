@@ -571,18 +571,20 @@ console.log('\n[path options]')
 }
 
 {
-  const h = harness({ roots: [ROOT] })
-  let refusal
-  try {
-    h.service.spawn(gitSpec('/mnt/data/proj', ['status']).argv && {
-      ...gitSpec('/mnt/data/proj', ['status']),
-      argv: ['python3', '-c', 'print(1)'],
-    })
-  } catch (error) {
-    refusal = error
-  }
-  check('the git/ripgrep whitelist still applies to a plain-path route',
-    refusal !== undefined && /only git and ripgrep/u.test(refusal.message), String(refusal?.message))
+  // A plain path is INFERRED, so a command the bridge cannot answer must not be
+  // taken over (that would replace the Host's local spawn, and therefore its
+  // ordinary ENOENT, with a synchronous throw). It falls back to the local
+  // spawn while the inference stays recorded for the status diagnostics.
+  const h = harness({ roots: [ROOT], localResult: 'local' })
+  const result = h.service.spawn({
+    ...gitSpec('/mnt/data/proj', ['status']),
+    argv: ['python3', '-c', 'print(1)'],
+  })
+  check('a non-whitelisted command on a plain-path route falls back to the local spawn',
+    result === 'local' && h.scripts.length === 0, `result=${String(result)} remote=${h.scripts.length}`)
+  check('the git/ripgrep whitelist is still what admits a plain-path route',
+    [...h.router.plainRoutes.values()].some(decision => decision.kind === 'remote'),
+    JSON.stringify([...h.router.plainRoutes.values()]))
 }
 
 {
@@ -591,6 +593,85 @@ console.log('\n[path options]')
   await handle.done
   check('the ssh:// route is untouched by the plain-path routing',
     h.localCalls.length === 0 && h.scripts[0].includes("cd '/mnt/data/proj'"), h.scripts[0] ?? '')
+}
+
+// ── a plain path is an inference, so the command decides whether it is used ──
+//
+// The plain-path route exists because a Host subsystem can hand git a
+// scheme-less absolute path under a mounted root. Applying that inference to
+// EVERY spec on such a cwd changed `bash -lc …` from "local spawn (ENOENT if the
+// path is not here)" into a synchronous throw from inside the Host's own
+// `spawn()` call — a behavioral regression with no remote upside, since the
+// bridge only implements git and ripgrep. `ssh://` cwds keep refusing loudly:
+// a local process cannot chdir into one.
+console.log('\n[plain path and the whitelist]')
+{
+  // The plain world spelling of ROOT: this is the shape a Host subsystem hands
+  // the bridge after it strips the scheme (see `[plain-path bridge]` above).
+  const PLAIN = '/mnt/data/proj'
+  const spec = {
+    argv: ['bash', '-lc', 'echo hi'],
+    cwd: PLAIN,
+    graceMs: 2000,
+    signal: AbortSignal.timeout(5000),
+    env: {},
+    stdio: { stdin: 'ignore' },
+  }
+  const localHandle = { collected: {}, done: Promise.resolve({ exitCode: 0 }), terminate() {}, waitForExit: async () => {} }
+  const h = harness({ roots: [ROOT], localResult: localHandle })
+  let thrown
+  let returned
+  try {
+    returned = h.service.spawn(spec)
+  } catch (error) {
+    thrown = error
+  }
+  check('a non-whitelisted command on a plain mounted root keeps the local spawn',
+    thrown === undefined && returned === localHandle && h.localCalls.length === 1 && h.scripts.length === 0,
+    `thrown=${String(thrown?.message)} local=${h.localCalls.length} remote=${h.scripts.length}`)
+
+  const git = harness({ roots: [ROOT], run: { output: ' M tracked.txt\n' } })
+  const gitSpecOnPlain = {
+    argv: ['git', 'status', '--porcelain'],
+    cwd: PLAIN,
+    graceMs: 2000,
+    signal: AbortSignal.timeout(5000),
+    env: { GIT_TERMINAL_PROMPT: '0' },
+    stdio: { stdin: 'ignore' },
+  }
+  const handle = git.service.spawn(gitSpecOnPlain)
+  await handle.done
+  check('the SAME plain mounted root still routes a whitelisted command remotely',
+    git.scripts.length === 1 && git.localCalls.length === 0,
+    `local=${git.localCalls.length} remote=${git.scripts.length}`)
+}
+
+{
+  const h = harness({ roots: [ROOT], run: { output: ' M tracked.txt\n' } })
+  const handle = h.service.spawn(gitSpec(ROOT, ['status', '--porcelain']))
+  await handle.done
+  check('git on an ssh:// cwd still routes remotely',
+    h.scripts.length === 1 && h.localCalls.length === 0,
+    `local=${h.localCalls.length} remote=${h.scripts.length}`)
+}
+
+{
+  const h = harness({ roots: [ROOT] })
+  let thrown
+  try {
+    h.service.spawn({
+      argv: ['bash', '-lc', 'echo hi'],
+      cwd: 'ssh://testhost/mnt/data/proj',
+      graceMs: 2000,
+      signal: AbortSignal.timeout(5000),
+      env: {},
+      stdio: { stdin: 'ignore' },
+    })
+  } catch (error) {
+    thrown = error
+  }
+  check('an ssh:// cwd still refuses a non-whitelisted command instead of running it locally',
+    thrown instanceof Error && /only git and ripgrep/u.test(thrown.message), String(thrown?.message))
 }
 
 // ── live: the exact shapes the Host hands the bridge ────────────────────────
