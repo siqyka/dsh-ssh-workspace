@@ -183,6 +183,34 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
+  // The user picks a shell by name in the sidebar. The remote host cannot run
+  // the local argv, but it can usually run the same shell family — and when it
+  // cannot, `sh -l` must still be there.
+  const cases = [
+    { argv: ['/bin/bash'], expect: /bash -l/u, absent: /pwsh/u },
+    { argv: ['/usr/local/bin/zsh', '-l'], expect: /zsh -l/u },
+    { argv: ['C:\\Program Files\\PowerShell\\7\\pwsh.exe'], expect: /exec sh -l/u },
+    { argv: ['/bin/sh'], expect: /exec sh -l/u },
+  ]
+  for (const item of cases) {
+    const { engine, opens } = fakeEngine()
+    const router = new RemoteTerminalRouter({ engine })
+    await router.spawnTerminal({ cwd: 'ssh://kappa/srv/app', rows: 24, cols: 80, argv: item.argv })
+    const command = opens[0].command
+    const ok = item.expect.test(command) && (item.absent === undefined || !item.absent.test(command))
+    check(`shell dialect ${JSON.stringify(item.argv[0])} maps to the remote family`,
+      ok, command)
+  }
+  const { engine, opens } = fakeEngine()
+  const router = new RemoteTerminalRouter({ engine })
+  await router.spawnTerminal({ cwd: 'ssh://kappa/srv/app', rows: 24, cols: 80, argv: ['/bin/bash'] })
+  check('a bash request falls back to sh when the remote lacks bash',
+    opens[0].command.includes('else exec sh -l'), opens[0].command)
+  check('the fallback still cds into the workspace first',
+    opens[0].command.includes("cd '/srv/app' &&"), opens[0].command)
+}
+
+{
   // The browser terminal's retention monitor calls inspectActivity() on the
   // handle. A missing method made the harness's observation fall through its
   // catch block (and the allocation-cleanup path binds it unguarded), so the
