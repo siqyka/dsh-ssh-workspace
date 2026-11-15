@@ -449,6 +449,38 @@ console.log('\n[sandbox wrapper]')
     negative instanceof Error && /cannot run "node"/u.test(negative.message), String(negative?.message))
 }
 
+
+// ── path-position translation: which options name a PATH ────────────────────
+//
+// `--namespace` was in GIT_PATH_OPTIONS and is not a path option: it names a
+// REF namespace (`refs/heads`, `refs/tags`, …). Translating its operand turned a
+// ref prefix into a remote path spelling, so the flag now leaves argv alone.
+console.log('\n[path options]')
+{
+  const h = harness({ roots: [ROOT], run: { output: '' } })
+  const handle = h.service.spawn(gitSpec('/mnt/data/proj', [
+    'rev-parse', '--namespace', 'ssh://testhost/mnt/data/proj/refs',
+    '--git-dir=ssh://testhost/mnt/data/proj/.git',
+  ]))
+  await handle.done
+  const script = h.scripts[0] ?? ''
+  check('a --namespace operand is NOT treated as a filesystem path',
+    script.includes("'--namespace' 'ssh://testhost/mnt/data/proj/refs'"), script)
+  check('a real path option in the SAME argv still translates',
+    script.includes("'--git-dir=/mnt/data/proj/.git'"), script)
+}
+
+{
+  const h = harness({ roots: [ROOT], run: { output: '' } })
+  const handle = h.service.spawn(gitSpec('/mnt/data/proj', [
+    '--namespace=ssh://testhost/mnt/data/proj/refs', 'status',
+  ]))
+  await handle.done
+  const script = h.scripts[0] ?? ''
+  check('the --namespace=<ref> form is left literal too',
+    script.includes("'--namespace=ssh://testhost/mnt/data/proj/refs'"), script)
+}
+
 {
   const h = harness({ roots: [ROOT] })
   const handle = h.service.spawn(gitSpec('/mnt/data/proj', [
