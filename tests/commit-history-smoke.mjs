@@ -564,7 +564,7 @@ console.log('\n[hook shape]')
     let helpers = null
     try {
       // eslint-disable-next-line no-new-func
-      helpers = new Function('React', `${block}; return { splitForgeFace, isUsableForgeSplit, forgeHookFor, absentForgeHook }`)(ReactStub)
+      helpers = new Function('React', `${block}; return { splitForgeFace, isUsableForgeSplit, forgeHookFor, absentForgeHook, hasSlotTabHook }`)(ReactStub)
     } catch (error) {
       check('the helper block evaluates', false, error instanceof Error ? error.message : String(error))
     }
@@ -600,6 +600,28 @@ console.log('\n[hook shape]')
         helpers.isUsableForgeSplit(helpers.splitForgeFace({ hooks: { panel: source } })) === false)
       check('a keyedHooks face is refused instead of guessed',
         helpers.splitForgeFace({ hooks: { panel: source }, keyedHooks: { panel: () => {} } }) === null)
+
+      // The official panel's first line is `const { tab } = useTabInfo()`, and
+      // that hook is NOT part of the official inject face — the sidebar declares
+      // it on the seat, so the renderer synthesizes it as a contextual prop for
+      // every occupant. A Host that stops declaring it would leave the face
+      // looking complete while the panel throws on its first line, so the seat
+      // hook is checked separately.
+      check('a seat that supplies the tab hook passes it',
+        helpers.hasSlotTabHook({ useTabInfo: () => ({ tab: {} }) }) === true)
+      check('a seat without the tab hook is refused',
+        helpers.hasSlotTabHook({ useTabInfo: undefined }) === false)
+      check('...a non-callable tab prop is refused too',
+        helpers.hasSlotTabHook({ useTabInfo: { tab: {} } }) === false)
+      check('...a missing prop object is refused instead of throwing',
+        helpers.hasSlotTabHook(null) === false && helpers.hasSlotTabHook(undefined) === false)
+
+      // The two checks answer different questions and the fail-safe branches on
+      // them separately: a broken FACE withdraws the shadow, a missing SEAT hook
+      // does not (the official entry would crash in the same place).
+      check('the source keeps the two usability checks separate',
+        client.includes('const faceUsable = official !== null && isUsableForgeSplit(split)') &&
+        client.includes('const usable = faceUsable && hasSlotTabHook(props)'))
     }
   }
 }
