@@ -401,6 +401,40 @@ console.log('\n[sandbox wrapper]')
     const out = unwrapSandboxArgv(argv)
     check(`not stripped: ${label}`, JSON.stringify(out) === JSON.stringify(argv), JSON.stringify(out))
   }
+  // The packaged Desktop fronts the windows-acl runner with ITS OWN binary,
+  // so the front token is the app exe, not `node`. Only identity with this
+  // process's executable may recognise it: the same argv from a process that
+  // is not that exe must stay unrecognised.
+  const DESKTOP = 'E:\\software\\DSH\\DeepSeek Harness.exe'
+  {
+    const realExecPath = process.execPath
+    process.execPath = DESKTOP
+    try {
+      const desktopPrefix = [DESKTOP, WIN_RUNNER, ...winFlags]
+      const out = unwrapSandboxArgv([...desktopPrefix, '--', 'git', 'status'])
+      check('the packaged Desktop app-binary front is stripped by identity',
+        JSON.stringify(out) === JSON.stringify(['git', 'status']), JSON.stringify(out))
+      for (const electron of ['electron', 'C:\\Program Files\\electron\\electron.exe']) {
+        const prefix = [electron, WIN_RUNNER, ...winFlags]
+        const electronOut = unwrapSandboxArgv([...prefix, '--', 'git', 'status'])
+        check(`an unpackaged build's ${electron.endsWith('.exe') ? 'electron.exe' : 'electron'} front is stripped`,
+          JSON.stringify(electronOut) === JSON.stringify(['git', 'status']), JSON.stringify(electronOut))
+      }
+    } finally {
+      process.execPath = realExecPath
+    }
+  }
+  {
+    const desktopPrefix = [DESKTOP, WIN_RUNNER, ...winFlags]
+    const argv = [...desktopPrefix, '--', 'git', 'status']
+    const out = unwrapSandboxArgv(argv)
+    check('not stripped: the same app-exe argv when this process is NOT that executable',
+      JSON.stringify(out) === JSON.stringify(argv), JSON.stringify(out))
+    const ptc = [process.execPath, 'C:\\ptc\\worker-bootstrap.js', '--program', 'x']
+    const ptcOut = unwrapSandboxArgv(ptc)
+    check('not stripped: the PTC worker front carries no sandbox namespace',
+      JSON.stringify(ptcOut) === JSON.stringify(ptc), JSON.stringify(ptcOut))
+  }
 }
 
 {
@@ -447,6 +481,33 @@ console.log('\n[sandbox wrapper]')
   }
   check('an ordinary node script keeps its argv and is refused for argv[0], not mistaken for a wrapper',
     negative instanceof Error && /cannot run "node"/u.test(negative.message), String(negative?.message))
+
+  // The Forge panel's real shape: the official change-request plugin confines
+  // git, and the packaged Desktop fronts that confinement with its own exe.
+  const h3 = harness({ roots: [ROOT], run: { output: ' M tracked.txt\n' } })
+  const desktopExecPath = 'E:\\software\\DSH\\DeepSeek Harness.exe'
+  const realExecPath = process.execPath
+  process.execPath = desktopExecPath
+  try {
+    const desktopFronted = [
+      desktopExecPath,
+      'C:\\Users\\u\\node_modules\\@deepseek-ai\\dsh-sandbox-windows-acl\\lib\\runner.js',
+      '--workspace', 'C:\\ws', '--mode', 'read-only', '--',
+    ]
+    let desktopRefusal
+    let desktopHandle
+    try {
+      desktopHandle = h3.service.spawn(gitSpec('ssh://testhost/mnt/data/proj', ['status', '--porcelain'], {}, desktopFronted))
+    } catch (error) {
+      desktopRefusal = error
+    }
+    await desktopHandle?.done
+    check('a Desktop-exe-confined git call on an ssh:// cwd reaches the remote branch',
+      desktopRefusal === undefined && h3.scripts.length === 1 && h3.scripts[0].includes("exec 'git'") && h3.localCalls.length === 0,
+      `scripts=${h3.scripts.length} local=${h3.localCalls.length} refused=${String(desktopRefusal?.message)}`)
+  } finally {
+    process.execPath = realExecPath
+  }
 }
 
 
