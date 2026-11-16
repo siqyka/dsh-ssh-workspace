@@ -21,8 +21,12 @@
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
 | [optimization-and-future03.md](./optimization-and-future03.md) | **优化项与 Future（第三辑 · 唯一账本）**：仍未做、判定不做、上游阻塞、验证缺口与已完成 ID 索引；前两辑已合并到这里 | 完成 |
+| [commit-history.md](./commit-history.md) | 「变更请求」tab 下半的最近提交历史：槽位遮蔽原理、官方面板原样复用、文案座位取自官方命名空间、折叠与持久化、`git-history` 路由的只读约定与安全边界 | 完成 |
+| [remote-git-diagnosis.md](./remote-git-diagnosis.md) | **诊断记录**：Forge 面板误报「当前目录不是 Git 仓库」——`env: {GIT_DIR: undefined}` 被远端桥序列化成字符串 `'undefined'` 的取证、修法与退役判据 | 完成 |
+| [browser-terminal-diagnosis.md](./browser-terminal-diagnosis.md) | **诊断记录**：浏览器终端卡死——`resize()` 等 ssh2 不存在的回调、宿主 `enqueue()` 单链被一条不落地的 promise 钉死的行为链、三个报障归因与修复 | 完成 |
 | [verify/pr6-review.md](./verify/pr6-review.md) | **PR #6 评审记录**：远端 subprocess 路由、终端信号生命周期、两步「添加工作区」、最近提交条——四类修复逐条判定、两个 UI 槽位重写、`git-history` 安全面、P0–P3 问题表与本轮 7 个修复的提交 | 完成 |
-| [verify/remote-shells-prompt.md](./verify/remote-shells-prompt.md) | **一次性任务书**：让「新建终端」的 shell 菜单按远端主机枚举（接管 `terminalController.shells()` + `spawnTerminal` 按已发现集合采用 argv[0]），实现验收后删除本行 | 初稿 |
+| [verify/remote-shells-prompt.md](./verify/remote-shells-prompt.md) | **一次性任务书**：让「新建终端」的 shell 菜单按远端主机枚举（接管 `terminalController.shells()` + `spawnTerminal` 按已发现集合采用 argv[0]），实现验收后删除本行索引 | 初稿 |
+| [verify/ownership-repair-prompt.md](./verify/ownership-repair-prompt.md) | **一次性任务书**：插件缺席期间被主机的 `realpath` 失败判死、永久掉出侧栏的 `ssh://` 会话——启动两阶段补偿认领 + `workspace-ownership` 只读诊断，实现验收后删除本行索引 | 初稿 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 

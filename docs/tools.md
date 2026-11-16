@@ -117,10 +117,16 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 `mounted` 与 `disabled` 是互斥的两个集合：停用会把路径从前者移到后者。
 
 `events` 是最多 10 条、最新的在后的状态转换记录（`kind` 为 `connect` / `disconnect` /
-`reconnect` / `degraded` / `forward` / `upstream`）。它存在的理由是这个部署里 `ctx.logger` 没有出口：
+`reconnect` / `degraded` / `forward` / `upstream` / `seam`）。它存在的理由是这个部署里 `ctx.logger` 没有出口：
 宿主不装 console exporter，`debug` 级别又低于所有 exporter 的默认级别，所以**这是唯一
 能被用户读到的连接历史**。排查「为什么刚才断了」「为什么文件树不刷新」先看这里——
 `degraded` 表示 `inotifywait` 推送失效退回轮询，或大文件读取退回了共享 SFTP 通道。
+
+`seams[]` 与 `upstreamWorkarounds[]` 是同一问题的两半，分开给：前者说「我这次的接缝接管
+装上了没有」（`installed` / `absent` / `failed`），后者说「宿主是不是已经不需要这条补丁了」。
+一个 `failed` 的接缝意味着某项文档承诺的功能静默消失，而其余部分看起来一切正常——这正是
+需要显式状态的原因。`absent` 表示这种组装根本没挂载该服务（例如无沙箱部署没有
+`ctx.sandbox`），不是故障。
 
 `seq` 是环形缓冲区的自增序号。它必须出现在返回值里，因为**环会淘汰旧条目**：没有 `seq`，
 两条相邻的记录看起来就是连续的，而实际的「中间漏掉了几条」正是判读一次断线所依据的信息。

@@ -243,6 +243,32 @@ false。这是已决定保留的取舍（折叠会让大小写敏感的 APFS 卷
 fail closed。**自救**：用显式前缀拼出真实大小写，`local:/Volumes/SSD/x.md`；或者把 `@` 点名的
 拼写改成与文件一致的大小写。见 [features.md](./features.md) 的「本机路径直通」。
 
+## 变更请求面板在远端工作区报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`
+
+**现象**：远端会话里打开官方的「变更请求」（·Forge）标签页，下半部「最近提交历史」空白或只停在旧数据，上半部「本地变更」空白，
+工具结果里出现这句拒绝。这不是你输入的命令问题，也不是远端少了 git。
+
+**根因**：Forge 面板的每一次测量都是 `runGit()` ——它先把命令交给
+`ctx.sandbox.confine()`，再用 `ctx.subprocess.spawn()` 启动。`workspace-write` / `read-only`
+下封闭性的 Windows 实现把 argv 包成
+`[<runner.js> …, '--', git, …]`，而前缀是 `windowsAclRunnerInvocation()` 给出的
+`process.execPath`——打包版里就是 `DeepSeek Harness.exe`，**不是 `node`**。远端桥的
+`unwrapSandboxArgv` 以前只认 `node*` / POSIX launcher，于是这条命令没被剥掉包装、
+直接碍在白名单上（白名单只开放 `git` / `rg`，而 `argv[0]` 是桌面应用）。
+
+**修复**：`lib/patch-subprocess.js` 的前缀识别多了第三种真实形状——与本进程
+`process.execPath` **同名同身份**的打包可执行文件（另加 `electron` / `electron.exe` 用于未打包
+的 Electron 开发版）。识别的边界不变：**必须在 `--` 之前看到沙箱命名空间**才当包装。
+因此用户自己的 `git -- status`、`node script.js -- git …` 不会被误剥，名字取巧的
+其他 `.exe` 也不能参与这个角色。
+
+**仍会被拒**：真正不支持的命令（bash / 非 git、rg 的可执行文件）照旧同步拒绝；PTC
+worker 的 `[<本机可执行文件>, <bootstrap>]` 前面没有沙箱命名空间，照旧不被剥、走下一节的
+`resolve` 修复。
+
+> 服务端改动（`lib/`），**必须重启 DSH**；刷新页面不会加载新的桥代码。重启后回到工作区，
+「变更请求」面板应当恢复。
+
 ## `run_code` / PTC 报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`
 
 `ops-ptc` 这类「程序化工具调用」预设不直接调用工具，而是让模型写一段 TypeScript 交给宿主的

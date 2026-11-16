@@ -292,6 +292,18 @@ receiver 原样转发。
 - **命令白名单**：`argv[0]` 按 basename 翻译（`rg.exe`／`*-rg[.exe]` →
   `rg`，`git` → `git`）；其余可执行文件**同步抛错**——静默在本机跑会给远端
   cwd 一个悄悄错误的答案。本机打包的 rg 路径只作 argv 标记，不上传二进制。
+- **运行器包装先剥掉**：`workspace-write` 下宿主先调 `ctx.sandbox.confine()`，
+  argv 会变成 `[landlock-run …, '--', git, …]`、`[node, <runner.js>, …flags,
+  '--', git, …]`，打包版 Desktop 更是 `[DeepSeek Harness.exe, <runner.js>,
+  …]`（`windowsAclRunnerInvocation()` 用的是 `process.execPath`，不是 `node`）。
+  白名单判的是 `argv[0]`，不剥就等于把官方「变更请求」面板的整条 git 测量拒掉
+  ——用户看到的就是 `cannot run "…DeepSeek Harness.exe" with a remote cwd`。
+  `unwrapSandboxArgv` 只在**已经认出运行器**的分支里找 `--`：POSIX 要求
+  `argv[0]` 是已知 launcher；Windows 要求它是以「`--` 之前出现沙箱命名空间」
+  为前提的解释器——`node*`、`electron`，或与本进程 `process.execPath`
+  **同名同身份**的打包可执行文件。因此用户自己的 `git -- status`、`node
+  script.js -- git …` 不会被误剥；PTC worker 的 `[<本机可执行文件>,
+  <bootstrap>]` 没有沙箱命名空间，照旧被拒（见下一节）。
 - **脚本组装**：`export <spec.env>; export PATH=$HOME/.local/bin:$HOME/bin:$PATH;
   [mkdir -p <镜像目录>;] cd <远端路径> && { command -v <命令> >/dev/null 2>&1 ||
   { echo <安装提示> >&2; exit 127; }; exec <引号化 argv>; }`；`rg` 缺失的提示
@@ -316,8 +328,9 @@ receiver 原样转发。
 `dsh-ptc-runtime-node` 的 `resolve(request)` 把 cwd 默认成 `sandboxPolicy` 工作区根——远端会话
 下是 `ssh://` 拼写。后果有两层，而且都藏在这同一个字符串里：
 
-- `start(cwd)` 把拼写交给 `ctx.subprocess.spawn`；远端桥只实现 git / rg，宿主可执行文件被
-  同步拒绝（`cannot run "…DeepSeek Harness.exe" with a remote cwd`）。
+- `start(cwd)` 把拼写交给 `ctx.subprocess.spawn`；远端桥只实现 git / rg，而这条
+  `[<本机可执行文件>, <bootstrap>]` 前面没有沙箱命名空间，不会被当成运行器包装剥掉，
+  于是同步拒绝（`cannot run "…DeepSeek Harness.exe" with a remote cwd`）。
 - 每次求值宿主把 `spec.cwd` 经控制通道发给子进程并 `process.chdir(cwd)`；Windows 把
   `ssh://alias/…` 当相对路径解析（`<cwd>\ssh:\alias\…`），文件名里 `:` 非法，于是程序会以
   chdir 的 ENOENT 结束——即使 spawn 被放行也一样。
@@ -428,6 +441,24 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 写进 logger 等于写进注释（见 [diagnostics.js](../lib/diagnostics.js) 的模块说明）。
 登记与删除步骤见 [upstream-workarounds.md](./upstream-workarounds.md)，
 模式本身见 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md)。
+
+### 接缝接管的结果表（`seams`）
+
+`upstreamWorkarounds` 回答的是「宿主是否已经前进、我这条补丁能不能删」。它的镜像问题是
+「我这次接管到底有没有装上」，两者给出的启动画面**长得一模一样**：都没有输出。所以每个
+`patch-*.js` 的安装点在 `lib/index.js` 里统一走 `installSeam()`，把结果记进
+`engine.seams`，再由 status 工具、面板 status 路由与诊断报告三处同时提供：
+
+| 状态 | 含义 | 是否算问题 |
+| --- | --- | --- |
+| `installed` | 服务在，包装已装 | 否 |
+| `absent` | 这个组装根本没有挂载该服务（例如无沙箱部署没有 `ctx.sandbox`） | 否 |
+| `failed` | 服务在，但**形状变了**——要包的方法不存在，安装抛错 | 是（`seam:` finding + `seam` 事件） |
+
+`failed` 为什么必须是一个显式状态：`installRemoteSandbox` 等在服务形状不对时是 `throw` 的，
+而它跑在 `ctx.inject` 的回调里——不接住就是**插件激活异常**，一个上游改名会让整个插件下线，
+而不是只丢掉它支撑的那一个功能。`installSeam()` 把抛出改为记录 + 退化成 `undefined`（与
+「服务不存在」同一条降级路径），于是代价被限制在受影响的那项能力上，并且是可读的。
 
 ## 工作区登记
 
