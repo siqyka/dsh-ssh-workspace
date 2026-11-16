@@ -486,8 +486,9 @@ console.log('\n[client structure]')
   check('...at a LOWER priority than the shipped registration (the lowest wins)',
     /const FORGE_TAB_SHADOW_PRIORITY = -100/u.test(client) &&
       /priority: FORGE_TAB_SHADOW_PRIORITY,/u.test(client))
-  check('...and declares the official locale namespace, because it renders the official props',
-    /const FORGE_TAB_LOCALE = FORGE_TAB_KEY/u.test(client) && /locale: FORGE_TAB_LOCALE,/u.test(client))
+  check('...and declares NO locale namespace: the renderer would bind that namespace for this seat, and the official panel must be bound to its own',
+    !/FORGE_TAB_LOCALE/u.test(client) &&
+      client.includes('const officialCopy = official === null ? null : officialTranslateSeat(ctx, official)'))
   check('exactly one right-sidebar pane-tab registration body exists',
     (client.match(/name: 'sidebar\.right\.pane\.tab'/gu) ?? []).length === 1,
     String((client.match(/name: 'sidebar\.right\.pane\.tab'/gu) ?? []).length))
@@ -532,7 +533,7 @@ console.log('\n[client structure]')
     client.includes("className: 'sshwsp-cr-history-refresh'") &&
       /disabled: state\.phase === 'loading'/u.test(client))
   check('every history string exists in both dictionaries',
-    ['history.title', 'history.refresh', 'history.loading', 'history.empty', 'history.notRepository', 'history.failed', 'history.truncated']
+    ['history.title', 'history.refresh', 'history.collapse', 'history.expand', 'history.loading', 'history.empty', 'history.notRepository', 'history.failed', 'history.truncated']
       .every(key => (client.match(new RegExp(`'${key.replace(/\./gu, '\\.')}':`, 'gu')) ?? []).length === 2))
 }
 
@@ -599,6 +600,200 @@ console.log('\n[hook shape]')
         helpers.isUsableForgeSplit(helpers.splitForgeFace({ hooks: { panel: source } })) === false)
       check('a keyedHooks face is refused instead of guessed',
         helpers.splitForgeFace({ hooks: { panel: source }, keyedHooks: { panel: () => {} } }) === null)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// the official copy seat: the panel gets the OFFICIAL entry's namespace
+// ---------------------------------------------------------------------------
+// The renderer synthesizes an entry's `t` from the namespace the ENTRY declares.
+// Our seat declares none and the official registration declares its own
+// dictionary namespace (a different string from the tab id), so forwarding our
+// seat painted the official keys literally. This drives the helper that binds
+// the official namespace, so a for-looped fallback cannot hide.
+console.log('\n[official copy seat]')
+{
+  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  const start = client.indexOf('function officialTranslateSeat (')
+  const end = client.indexOf('const forgeHookCache', start)
+  const block = start < 0 || end < 0 ? '' : client.slice(start, end)
+  check('the copy-seat helper is extractable for a behaviour test', block !== '', 'officialTranslateSeat not found')
+  if (block !== '') {
+    let seatFor = null
+    try {
+      // eslint-disable-next-line no-new-func
+      seatFor = new Function(`${block}; return officialTranslateSeat`)()
+    } catch (error) {
+      check('the copy-seat helper evaluates', false, error instanceof Error ? error.message : String(error))
+    }
+    if (seatFor !== null) {
+      const calls = []
+      const locale = {
+        bind (namespace) {
+          calls.push(namespace)
+          return (key, params) => `${namespace}|${key}|${params === undefined ? '' : JSON.stringify(params)}`
+        },
+      }
+      const official = { locale: 'forgePanel' }
+      const seat = seatFor({ locale }, official)
+      check('the official panel is handed the namespace ITS OWN entry declares',
+        calls.length === 1 && calls[0] === 'forgePanel', JSON.stringify(calls))
+      check('...which is not the tab id this plugin shadows under',
+        calls[0] !== '@deepseek-ai/dsh-experimental-client-ui-forge')
+      check('the bound seat translates through that namespace',
+        typeof seat === 'function' && seat('changes.local.title') === 'forgePanel|changes.local.title|')
+      check('...and forwards placeholders unchanged',
+        seat('history.truncated', { count: 3 }) === 'forgePanel|history.truncated|{"count":3}')
+      check('an entry declaring no namespace yields null, so the caller keeps its own seat',
+        seatFor({ locale }, {}) === null && seatFor({ locale }, { locale: '' }) === null)
+      check('a locale face that cannot bind degrades to null instead of throwing',
+        seatFor({ locale: { bind () { throw new Error('no dictionary') } } }, official) === null)
+      check('a missing locale service is null, not a crash', seatFor({}, official) === null)
+    }
+  }
+  const renderAt = client.indexOf('jsx(official.component')
+  const restAt = client.indexOf('...split.rest,', renderAt)
+  const copySpreadAt = client.indexOf('...(officialCopy === null ? {} : { t: officialCopy }),', renderAt)
+  check('the official copy seat is spread LAST, so neither the seat kit nor the official face can outrank it',
+    restAt >= 0 && copySpreadAt > restAt)
+}
+
+// ---------------------------------------------------------------------------
+// the fold control: the title row is a button, folded shows only the title
+// ---------------------------------------------------------------------------
+console.log('\n[fold control]')
+{
+  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  check('the heading carries a real button, not a click handler on the h3',
+    client.includes("className: 'sshwsp-cr-history-toggle'") &&
+      client.includes("'aria-expanded': collapsed !== true") &&
+      client.includes('onClick: fold'))
+  check('...and the button names the action it performs',
+    client.includes("title: collapsed ? t('history.expand') : t('history.collapse')"))
+  check('the chevron carries the folded state visually',
+    client.includes('function ChevronIcon') &&
+      /\.sshwsp-cr-history-toggle\[aria-expanded="false"\] \.sshwsp-cr-history-chevron \{ transform: rotate\(-90deg\); \}/u.test(client))
+  check('the fold state is read lazily on mount and written back on every toggle',
+    client.includes('const [collapsed, setCollapsed] = React.useState(readHistoryFold)') &&
+      client.includes('writeHistoryFold(next)'))
+  check('...under a key named for this plugin and this one control',
+    client.includes("const HISTORY_FOLD_KEY = 'dsh-ssh-workspace.commit-history.folded'"))
+  check('the note, the refresh control and the body all follow one decision',
+    client.includes('const chrome = historyChrome(collapsed, state.truncated)') &&
+      client.includes('chrome.note') &&
+      client.includes('chrome.refresh') &&
+      client.includes('chrome.body ? body : null'))
+  const start = client.indexOf('function historyChrome (')
+  const end = client.indexOf('function CommitHistorySection', start)
+  const block = start < 0 || end < 0 ? '' : client.slice(start, end)
+  check('the visibility helper is extractable for a behaviour test', block !== '', 'historyChrome not found')
+  if (block !== '') {
+    let helper = null
+    try {
+      // eslint-disable-next-line no-new-func
+      helper = new Function(`${block}; return historyChrome`)()
+    } catch (error) {
+      check('the visibility helper evaluates', false, error instanceof Error ? error.message : String(error))
+    }
+    if (helper !== null) {
+      const open = helper(false, true)
+      check('an open, truncated strip shows the note, the refresh control and the list',
+        open.note === true && open.refresh === true && open.body === true)
+      const short = helper(false, false)
+      check('an open strip with no extra commits hides only the note',
+        short.note === false && short.refresh === true && short.body === true)
+      const folded = helper(true, true)
+      check('a folded strip shows nothing but the title, even when truncated',
+        folded.note === false && folded.refresh === false && folded.body === false)
+      const foldedShort = helper(true, false)
+      check('...and the same for a short list',
+        foldedShort.note === false && foldedShort.refresh === false && foldedShort.body === false)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// the fold state outlives the tab: read on mount, written on toggle
+// ---------------------------------------------------------------------------
+// Storage is driven with stand-ins, because the interesting cases are exactly
+// the ones a real browser will not reproduce on demand: no storage at all (a
+// sandboxed frame), a store that throws on access (private mode), and a value
+// some other build left behind. Read as "folded" only for the one value this
+// code writes; everything else must open the strip.
+console.log('\n[fold persistence]')
+{
+  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  const start = client.indexOf('const HISTORY_FOLD_KEY')
+  const end = client.indexOf('function historyChrome (', start)
+  const block = start < 0 || end < 0 ? '' : client.slice(start, end)
+  check('the fold-storage helpers are extractable for a behaviour test', block !== '', 'storage helpers not found')
+  if (block !== '') {
+    let helpers = null
+    try {
+      // eslint-disable-next-line no-new-func
+      helpers = new Function('localStorage', `${block}; return { readHistoryFold, writeHistoryFold, HISTORY_FOLD_KEY }`)(undefined)
+    } catch (error) {
+      check('the fold-storage helpers evaluate', false, error instanceof Error ? error.message : String(error))
+    }
+    check('the key names this plugin and this one control, so two plugins cannot collide',
+      helpers !== null && helpers.HISTORY_FOLD_KEY === 'dsh-ssh-workspace.commit-history.folded')
+    if (helpers !== null) {
+      const makeStore = (initial) => {
+        const data = new Map(Object.entries(initial ?? {}))
+        return {
+          data,
+          getItem (key) { return data.has(key) ? data.get(key) : null },
+          setItem (key, value) { data.set(key, String(value)) },
+        }
+      }
+      const fresh = makeStore()
+      check('a store with nothing written opens the strip', helpers.readHistoryFold.call(null) === false)
+      const foldedStore = makeStore({ 'dsh-ssh-workspace.commit-history.folded': '1' })
+      const openStore = makeStore({ 'dsh-ssh-workspace.commit-history.folded': '0' })
+      const junkStore = makeStore({ 'dsh-ssh-workspace.commit-history.folded': 'yes' })
+
+      // Drive the real helpers with a stand-in global: the extracted source
+      // closes over its `localStorage` parameter, so rebinding it is enough.
+      const readWith = (store) => new Function('localStorage',
+        `${block}; return readHistoryFold`)(store)()
+      const writeWith = (store, value) => new Function('localStorage',
+        `${block}; return writeHistoryFold`)(store)(value)
+
+      check("a store holding this control's \"folded\" marker reopens folded",
+        readWith(foldedStore) === true)
+      check('a store holding an explicit "open" marker opens',
+        readWith(openStore) === false)
+      check('a hand-edited or foreign value opens rather than hiding the commits',
+        readWith(junkStore) === false)
+      check('writing "folded" stores exactly the marker this reader recognises',
+        (writeWith(fresh, true), fresh.data.get('dsh-ssh-workspace.commit-history.folded') === '1'))
+      check('writing "open" clears it (no stale "1" survives an expand)',
+        (writeWith(fresh, false), fresh.data.get('dsh-ssh-workspace.commit-history.folded') === '0'))
+      const throwing = {
+        getItem () { throw new Error('denied by the browser') },
+        setItem () { throw new Error('quota exceeded') },
+      }
+      // Separated, because one shared try block would report a read failure under
+      // the write assertion's label and hide which side broke.
+      let readThrew = false
+      let readValue
+      try {
+        readValue = readWith(throwing)
+      } catch {
+        readThrew = true
+      }
+      check('a store that throws on read is treated as "no preference"',
+        readThrew === false && readValue === false)
+      let writeThrew = false
+      try {
+        writeWith(throwing, true)
+      } catch {
+        writeThrew = true
+      }
+      check('...and a store that throws on write never breaks the click', writeThrew === false)
+      const noStorage = new Function(`${block}; return readHistoryFold`)()
+      check('no storage at all is "no preference", not a crash', noStorage() === false)
     }
   }
 }

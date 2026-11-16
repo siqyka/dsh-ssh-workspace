@@ -13,6 +13,12 @@
   - 每行：短 hash（等宽）、标题、第二行日期（YYYY-MM-DD）+ 作者；最多 20 行，超出时标题栏右侧
     显示「仅显示最近的 20 条」；
   - 该区块自己滚动（`max-height: 45%`），**不动**官方面板的滚动位置；
+  - **标题行就是折叠开关**：点「最近提交历史」标题，整块向下收到只剩这一行标题（`aria-expanded`
+    同步、chevron 由向下旋转成向右、「仅显示最近的 20 条」与刷新按钮一并收起）；再点一次展开。
+  - **折叠状态会被记住**：存在页面自己的 `localStorage`，键
+    `dsh-ssh-workspace.commit-history.folded`（写 `'1'` / `'0'`）。重开 tab、刷新页面、重启宿主之后
+    仍是上次的选择；只有 `'1'` 算折叠，其余值（缺失、`'0'`、被手改成别的）一律按展开——宁可多显示
+    一次列表，也不要出现"提交历史莫名其妙不见了"。
   - 右上角一个刷新小按钮（加载中禁用）。
 - 状态只有一行灰字，绝不报红、绝不弹 toast：
   - 加载中：`加载中…`
@@ -20,6 +26,21 @@
   - 非 git 目录：`当前目录不是 Git 仓库`
   - 失败（SSH 断、超时、路由不可用等）：`提交历史暂不可用`，鼠标悬停时 tooltip 显示原因。
 - tab 的标题、图标、顺序、tab 类型全部仍是官方的：**没有第二个 tab**，标题槽位没有被接管。
+
+### 1.1 折叠是怎么做的
+
+- 标题里放一个真正的 `button`（不是给 `h3` 挂 `onClick`）：Enter / Space 由平台处理，
+  `aria-expanded` 描述状态，`:focus-visible` 有焦点框；
+- 状态只有两个值 `collapsed` / 展开；**没有存储记录时默认展开**；折叠只影响这个区块，不写设置、
+  不影响官方面板；
+- 记住选择的是页面级 `localStorage`，不是宿主设置：值只是一个开关，没有要和 Host 同步或迁移的
+  字段；读写在 `readHistoryFold()` / `writeHistoryFold()` 里各自吞掉异常（无存储的沙箱页、隐私模式
+  拒绝访问、配额满），失败的方向是"回到展开"，绝不会因为存储出问题让点击失效或让 tab 崩掉；
+- 视觉状态由一条样式规则承担：`[aria-expanded="false"]` 下 chevron `rotate(-90deg)`，
+  两种状态共用同一个图形；`prefers-reduced-motion` 时关掉这段过渡；
+- 显示什么由**一个**纯函数 `historyChrome(collapsed, truncated)` 决定（note / 刷新 / 正文），
+  组件里不再分三处各写一遍 `collapsed ? …`；
+- 折叠不改变数据流：请求照旧发出（展开时列表已在），收起刷新按钮也不会触发刷新。
 
 ## 2. 接入方式：同 key、更低优先级的槽位遮蔽
 
@@ -48,7 +69,7 @@ slots.inject('sidebar.right.pane.tab', () => {
     name: 'sidebar.right.pane.tab',
     key: FORGE_TAB_KEY,                 // 与官方相同的 TAB_ID
     priority: FORGE_TAB_SHADOW_PRIORITY, // -100
-    locale: FORGE_TAB_LOCALE,            // 官方命名空间（见 2.3）
+    // 不声明 locale：官方文案的 t 座位从官方条目自己的命名空间绑定（见 2.3）
     inject: () => ({ ourT: translate, sshWorkspaceCtx: ctx }),
   }, ForgeTabWithHistory)
   ...
@@ -93,15 +114,38 @@ slots.inject('sidebar.right.pane.tab', () => {
 4. 渲染 `<div class="sshwsp-cr-official"><官方组件 {...官方应得的 props} /></div>`：
    props 是我们从槽位拿到的 session kit（`sessionId`、`useSessions`、…）+ 该槽位自己的注入
    （`useTabInfo` 等）+ owner props，加上第 3 步的官方注入。**除我们自己的 `ourT` /
-   `sshWorkspaceCtx` 外全部原样传递**，因此官方面板的变更请求、刷新、重连、滚动行为不变。
+   `sshWorkspaceCtx` 外全部原样传递**，因此官方面板的变更请求、刷新、重连、滚动行为不变；
+   `t` 是唯一的例外——它必须换成官方条目自己命名空间下的座位（见 2.3），透传我们的座位会让
+   上半整块显示 i18n key。
 
-### 2.3 为什么必须声明官方的 locale 命名空间
+### 2.3 t 座位取自官方条目自己的命名空间（本轮修复）
 
-`t` 是渲染器交给条目的标准 prop，按 `entry.locale` 从 locale 服务绑定。官方面板的全部文案都
-属于 `@deepseek-ai/dsh-experimental-client-ui-forge` 命名空间，所以我们这条注册也声明
-`locale: FORGE_TAB_LOCALE`（常量值 = 官方 TAB_ID），把官方 `t` 透传给官方组件；插件自己的文案
-另走 `ourT`（本插件 `dsh-ssh-workspace` 命名空间），两者互不混用。`ctx.locale.bind(ns)` 对未知
-命名空间也只是回退成 key，不会抛异常；而本部署装有官方面板，它的字典在 boot 时已注册。
+**先给结论：官方字典命名空间 ≠ 官方 TAB_ID。** 本部署实测，官方注册是
+`name:'sidebar.right.pane.tab', key:TAB_ID, locale:NS`：`TAB_ID` 是包 id
+（`@deepseek-ai/dsh-experimental-client-ui-forge`），`NS` 是另一份字典名（该包源码里
+`export const NS = 'forgePanel'`）。渲染器按 `kit.t = localeSeat(face, entry.locale)` 合成
+`t`，用的是**条目自己声明的那个命名空间**。
+
+最初的实现按"同一个字符串"的假设，给自己的遮蔽注册也声明了包 id 作 `locale`，再把渲染器交给
+我们的 `t` 透传给官方面板。后果是上半整块**原样显示 i18n key**（`checkout.project`、
+`changes.local.title`、`changes.empty`、`changes.emptyHint`）：`bind('<包 id>')` 找不到字典，
+按约定回退成 key 本身；而面板的功能一切正常——这正是"面板没坏、只是文案没了"的形态，容易被
+当成官方样式。
+
+现在的做法：
+
+- 本插件的遮蔽注册**不声明任何 `locale`**（我们的文案全部走 `ourT`，不需要那个座位）；
+- `officialTranslateSeat(ctx, entry)` 读 `entry.locale`（官方条目自己的字典名），调
+  `ctx.locale.bind(ns)`，再把结果作为 `t` **覆盖**进官方面板的 props——覆盖在 props 里**排在最后**
+  （`...officialProps` 与 `...split.rest` 之后），免得座位 kit 或官方注入面自己带的 `t` 又盖回去；
+- `bind` 按命名空间记忆化、每次调用时解析当前语言，因此切语言不需要额外订阅；
+- 官方条目没声明命名空间、或 locale 面绑不上时返回 `null`，此时**不做覆盖**——不会把
+  `undefined` 塞进 props 把原本的座位弄没。
+
+回归点：`tests/commit-history-smoke.mjs` 的 `[official copy seat]` 一节会把
+`officialTranslateSeat` 切出来、用假 locale 面执行，断言绑的是 `forgePanel` 而不是包 id、占位符
+原样透传、无命名空间时为 `null`、绑定抛错时降级为 `null`；另有一条静态断言要求覆盖排在
+`...split.rest` **之后**（即 props 的最后一项）。
 
 ### 2.4 没有接管标题槽位
 
@@ -213,28 +257,41 @@ POST 一律 405。
      首行应为 `7f9fc618f  Merge branch 'feat/rwkv7-standalone-support' into fix/rwkv7-api-compat`
      以及 `2026-10-22 · diannaojiang`；
   4. 标题栏右侧应有「仅显示最近的 20 条」；点刷新按钮列表重新加载；
-  5. 换到一个非 git 目录的本地会话：下半显示「当前目录不是 Git 仓库」。
+  5. 点标题行：「仅显示最近的 20 条」与刷新按钮消失、列表收起，只剩「最近提交历史」一行；
+     再点一次恢复，chevron 从向右转回向下；
+  6. **收起后刷新页面（F5）**：仍应保持收起（此时不需要重启宿主——折叠状态是页面存储，与 bundle
+     版本无关）；再展开后刷新，应保持展开。DevTools → Application → Local Storage 里能看到
+     `dsh-ssh-workspace.commit-history.folded` 在 `'1'` / `'0'` 之间切换；
+  7. 换到一个非 git 目录的本地会话：下半显示「当前目录不是 Git 仓库」。
 - 只想先验证路由（重启后、刷新前）：`curl 'http://127.0.0.1:52022/api/dsh-ssh-workspace/git-history?session=<id>&limit=20'`
   （该路由族仅接受 loopback / 本机地址与匹配的 Host 头）。
 
 ## 7. 验证记录
 
 - `node --check` / `npm run lint`：全部模块通过。
-- `node tests/commit-history-smoke.mjs`：**122 passed, 0 failed**（纯解析、假 subprocess 的
-  路由分支、客户端结构断言、**selector-hook 形状的运行时行为测试**、本仓库真实 `git log` 解析）。
+- `node tests/commit-history-smoke.mjs`：**153 passed, 0 failed**（纯解析、假 subprocess 的
+  路由分支、客户端结构断言、**selector-hook 形状的运行时行为测试**、**`officialTranslateSeat`
+  的假 locale 面行为测试**、**`historyChrome` 折叠可见性矩阵**、**折叠状态的存储往返（真存取、
+  `'1'`/`'0'`/垃圾值、读抛错、写抛错、完全没有 `localStorage`）**、本仓库真实 `git log` 解析）。
+- **反向验证（实际执行，不是推断）**：五处变异各自只让对应的断言变红，改回后 `lib/client.js` 的
+  sha256 与变异前逐字节一致 ——
+  ① 把座位改回绑定包 id → `[official copy seat]` 里 5 条红（绑错命名空间 / 不是包 id /
+  译文走错面 / 占位符 / 无命名空间时为 null）；
+  ② 让 `note` 不再看 `collapsed` → `a folded strip shows nothing but the title` 红；
+  ③ 去掉 `t: officialCopy` 覆盖 → `spread AFTER officialProps` 红；
+  ④ 只读不写 / 把任何值都当折叠 / 挂载时写死为展开 → 分别是 2 / 2 / 1 条红；
+  ⑤ 让存储异常逃出 `readHistoryFold` 或 `writeHistoryFold` → 各自恰好 1 条红
+  （读抛错与写抛错必须分成两个 try，否则一条会盖在另一条的标签下——这条本身是写测试时踩出来的）。
 - `node tests/client-shape-smoke.mjs`：**299 passed, 0 failed**（含 3.3 节所述断言的精确化）。
 - 真机（`910b-05:/mnt/data/Codes/vllm-ascend`，分支 `fix/rwkv7-api-compat`）用与实际代码完全
   相同的 argv 实跑：21 条记录经 `parseGitLog(_, 20)` 得到 **20 行 + truncated=true**，首行
   `7f9fc618f`、末行 `a9fbe844a`，全部 sha 为 40 位十六进制、日期均为 `YYYY-MM-DD`。
-- `npm test`：在**本次提交的父提交**上是 77 passed / 0 partial / 6 skipped / **1 failed**
-  （84 suites），唯一失败是 `doc-numbers-smoke`——`docs/development.md` 的生成区还没跟上本次
-  新增（HTTP 路由 31→32、`lib/` 模块 49→50），且新套件尚未登记进 `tests/run.mjs`。两处随本提交一并处理：
-  `commit-history` 已登记进 `tests/run.mjs`，并用 `node scripts/doc-numbers.mjs` 重新生成后
-  实测 **79 passed / 1 partial / 6 skipped / 0 failed（86 suites）**，其中 partial 是 live-gated
-  套件的跳过，不是失败。
-- **未验证**：没有浏览器自动化，所以没有真实 DOM 渲染/视觉/滚动位置的截图级验证；新路由在
-  **运行中的宿主**上的端到端调用（需重启后按第 6 节确认）；远端桥接这条具体 argv 的实跑
-  （同一桥已被 `workspace-changes` 的 git 调用验证，argv 均为纯 ASCII 固定形状）。
+- **2026-11-15 本轮全量**：裸检出 **79 passed / 1 partial / 6 skipped / 0 failed（86 suites，
+  4260 项断言）**；装配树（`DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules`）
+  **82 passed / 2 partial / 2 skipped / 0 failed（86 suites，4507 项断言）**。
+- **未验证**：没有浏览器自动化，所以没有真实 DOM 渲染/视觉/滚动位置的截图级验证——折叠后的
+  行高、chevron 旋转的观感、以及官方文案座位修复后的实际中文显示，都必须把 DSH 重启后按第 6 节
+  逐条看一遍（客户端 bundle 只读启动时加载的那份文件，刷新页面不会重新读取）。
 
 ### 7.1 关于 `client-shape-smoke` 断言的精确化（不是绕过测试）
 
