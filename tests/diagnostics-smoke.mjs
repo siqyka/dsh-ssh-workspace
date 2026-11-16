@@ -125,6 +125,13 @@ check(
   'an upstream workaround verdict is its own kind, not squeezed into `degraded`',
   KINDS.upstream === 'upstream', String(KINDS.upstream)
 )
+// The mirror of the assert above, and the same reason: a seam that failed to
+// install is a disabled feature, not an "it degraded" — a reader that greps
+// `degraded` for capability loss must not find connection noise mixed in.
+check(
+  'a host seam verdict is its own kind, not squeezed into `degraded`',
+  KINDS.seam === 'seam', String(KINDS.seam)
+)
 
 // --------------------------------------------- why a debug() call is not enough
 console.log('\n[the Host drops logger.debug, so this log is the reachable one]')
@@ -213,6 +220,7 @@ console.log('\n[an obsolete workaround reaches the status surfaces]')
   check('the status tool surfaces an obsolete patch in its rendered text', /OBSOLETE/u.test(toolsSource))
   check('...and the unprobeable state as well',
     /workaround\.probe === 'unprobeable'/u.test(toolsSource), 'no unprobeable branch in the renderer')
+
   // The join itself: a verdict computed but never handed to the engine is
   // exactly the regression this whole change exists to prevent (it was
   // `logger.info` before). Nothing below the wiring would notice it going away.
@@ -220,6 +228,74 @@ console.log('\n[an obsolete workaround reaches the status surfaces]')
   check('lib/index.js hands the projection verdict to the engine',
     /engine\.noteUpstreamWorkaround\(installed\.id/u.test(indexSource),
     'installProjectionRelaxation() returns probe/detail but nothing records them')
+}
+
+// ------------------------------------- a seam that did not install reaches the user
+//
+// The mirror image of the block above, and the reason it is its own KIND: "our
+// patch is obsolete, delete it" is good news with a cleanup task, while "our
+// wrapper never installed" is a documented feature that is silently gone. The
+// three states also have to stay distinguishable — `absent` is the ordinary
+// startup of a composition that does not mount the service, and calling that a
+// failure would put the status dot red on a correct deployment.
+console.log('\n[a seam that did not install is reported, an absent one is not]')
+
+{
+  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
+  const { diagnose } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'diagnosis.js')).href)
+  const engine = new SshWorkspaceEngine({})
+
+  check('a fresh engine reports no seam verdicts', engine.seams.length === 0)
+
+  engine.noteSeam('PATCH-sandbox', 'installed')
+  check('an installed seam is retained', engine.seams.length === 1 && engine.seams[0].state === 'installed')
+  check('...without an event, because a working takeover is not news',
+    engine.diagnostics.list().length === 0, JSON.stringify(engine.diagnostics.list()))
+
+  engine.noteSeam('PATCH-ptc', 'absent', 'ctx.ptcRuntime is not mounted')
+  check('an absent seam is retained as its own state, not folded into failure',
+    engine.seams.some(entry => entry.id === 'PATCH-ptc' && entry.state === 'absent'))
+  check('...and is NOT warned about: a composition without that service is correct',
+    engine.diagnostics.list().length === 0, JSON.stringify(engine.diagnostics.list()))
+
+  engine.noteSeam('PATCH-terminal', 'failed', 'the mounted ctx.subprocess service has no spawnTerminal() to wrap')
+  check('a failed seam records a `seam` event, so it is visible chronologically',
+    engine.diagnostics.list().some(entry => entry.kind === 'seam' && /PATCH-terminal/u.test(entry.message)),
+    JSON.stringify(engine.diagnostics.list()))
+  check('...and the event carries the reason, not just the id',
+    /no spawnTerminal\(\)/u.test(engine.diagnostics.list().find(entry => entry.kind === 'seam')?.message ?? ''))
+
+  const report = diagnose({ pluginVersion: '1', seams: engine.seams })
+  check('the diagnosis turns a failed seam into a finding',
+    report.findings.some(finding => finding.id === 'seam:PATCH-terminal' && finding.state === 'warn'),
+    JSON.stringify(report.findings))
+  check('...and does not count `absent` or `installed` as problems',
+    report.findings.filter(finding => String(finding.id).startsWith('seam:')).length === 1,
+    JSON.stringify(report.findings))
+  check('the finding says the feature is disabled, not merely that a patch is stale',
+    /disabled/u.test(report.findings.find(finding => String(finding.id).startsWith('seam:'))?.detail ?? ''))
+
+  engine.dispose()
+}
+
+// Again served, not just computed: the tool and the route have to hand the table
+// over, or a reader sees the same quiet startup for a clean deployment and for a
+// wrapper that never installed.
+{
+  const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
+  const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'support-bundle.js'), 'utf8')
+  const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')
+  check('ssh_workspace_status returns the seam table', /seams: \(engine\.seams/u.test(toolsSource))
+  check('the panel status route returns it too', /seams: engine\.seams/u.test(routesSource))
+  check('the diagnostic report has a section for it', /## host seams/u.test(bundleSource))
+  check('the status text spells out a failed seam', /SEAM NOT INSTALLED/u.test(toolsSource))
+  // The install sites must go through the recorder, or the table stays empty on
+  // every real startup — the exact failure this table exists to catch.
+  check('every patch install site records its verdict',
+    ['PATCH-fs', 'PATCH-sandbox', 'PATCH-shell', 'PATCH-subprocess', 'PATCH-ptc', 'PATCH-terminal']
+      .every(id => new RegExp(`'${id}',`, 'u').test(indexSource)),
+    'an install site bypasses installSeam()')
 }
 
 
