@@ -58,8 +58,40 @@
   命中出 `if command -v <name> >/dev/null 2>&1; then exec <name> -l; else exec sh -l; fi`，
   未命中（含 pwsh / powershell / cmd）保持 `exec sh -l`。名字只来自白名单、不插值，注入面没有扩大。
 
+- **Windows 上受沙箱约束的远端 git 一条也跑不起来**：沙箱把命令包成
+  `[node.exe, <runner>, …flags, '--', …argv]`，而 argv 剥离只认 `landlock-run` / `bwrap` /
+  `sandbox-exec` 三个 POSIX basename，`remoteCommandFor` 看到的是 `node.exe` 就直接拒绝。
+  `unwrapSandboxArgv` 现在同时识别「front 是 node 且前缀里带 runner namespace 标记」
+  （`SANDBOX_RUNNER_MARKERS` / `NODE_PROGRAMS`），非包装形态原样返回，用户自己的 `--` 不会被吃。
+- **桥接不了的命令会被变成同步异常**：普通路径路由原先先于白名单判定，于是挂载根下的
+  `bash` / `node` 调用从「本地 spawn 报 ENOENT」变成宿主 spawn 调用内部同步抛
+  `cannot run … only git and ripgrep`。现在先判 `routesToRemoteCommand`，非 git/rg 保持本地 spawn。
+- **`--namespace` 被当成路径选项**：它命名的是 ref namespace 而不是目录，远端翻译会把 ref 前缀
+  改写成远端路径。已从 `GIT_PATH_OPTIONS` 移除，出现在 argv 里时逐字保留。
+- **终端路径上的常驻 trace 已移除**：此前每次 open / close 都会同步写一行到
+  `/tmp/ssh-workspace-terminal.log`，`write` 更是**每一击键一行**。整条移除后模块内不再有任何
+  同步文件 I/O，`terminal-smoke` 钉住这一点（含环境变量与文件名都不得出现）。
+- **宿主侧内容采集的静默失败现在可观测**：`dsh-workspace-changes` 的 `captureFile` 走 node:fs，
+  普通远端路径在本机打不开 → `kind: 'absent'`，被 git 忽略的改动画不出 diff 而且不报错。
+  首次远端写入时记一条 `degraded` 诊断（`#captureLimitNoted`，每次激活一次），README 与
+  `docs/features.md` 同步说明边界。
+
 ### 新增
 
+- **「变更请求」tab 下半的最近提交历史**（PR #6 合入）：官方 Forge 面板同 tab 内加一条只读提交条——
+  本插件按官方 tab key 遮蔽该 slot 条目，官方组件留在上方、自己的提交块渲染在下方，不加新 tab。
+  数据来自只读路由 `GET /api/dsh-ssh-workspace/git-history`：只接受 `session` 与 `limit`
+  （1..100，默认 20），cwd 只从会话自己的 `workingDirectory` 取，argv 固定为
+  `git --no-pager log -z --date=short --pretty=format:…-n <n+1> --`，`GIT_TERMINAL_PROMPT=0`、
+  `GIT_OPTIONAL_LOCKS=0`、`LC_ALL=C`，15s 超时与 1MB / 16KB 输出上限；非仓库与未出生 HEAD 是
+  200 状态而不是错误。`-n limit+1` 是为了判断截断。
+- **「添加工作区」改成两段式**（PR #6 合入）：先选「新建本地工作区 / 新建远端工作区」，再走那一支。
+  本地支直接渲染**已安装的目录浏览面板本身**（同一个组件、同一份 locale 与列目录调用；没有内置
+  浏览器的部署才回落到 `pickDirectory()`），远端支仍是选主机 → 逐级浏览 → 确认挂载。
+- **普通远端路径的 subprocess 路由**（PR #6 合入）：宿主的「本地变更」卡片会通过
+  `ctx.fs.processPath` 把 `ssh://` 剥成裸绝对路径再调 git，于是路由判据从「有 scheme」变成
+  「规范化后落在唯一已挂载远端根 + 该根主机可用 + 本机不存在同名路径」三条同时成立。
+  任何一条不成立都保持本地 spawn，并把原因记进 `PLAIN_ROUTE_REASONS`。
 - **「最近提交历史」可折叠**：点标题行即整体收起，只留「最近提交历史」这一行；`aria-expanded`
   同步、chevron 旋转 90°、文案不带数字。收起时「仅显示最近的 20 条」与刷新按钮一并隐藏；
   标题里是真正的 `button`（不是给 `h3` 挂 `onClick`），键盘 Enter / Space 与读屏标签都由平台来。
