@@ -69,6 +69,8 @@ const SUITES = [
   'doc-numbers',
   'run-state',
   'upstream-contract',
+  'patch-sandbox',
+  'patch-ptc',
   'audit',
   'redact',
   'capabilities-report',
