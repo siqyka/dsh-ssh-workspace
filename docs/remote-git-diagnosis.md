@@ -63,7 +63,12 @@ fix/rwkv7-api-compat
    `buildScript()`（`:299`）把 spec 翻译成远端 shell 脚本。
    此前的 argv 剥离修复已保证 `[landlock-run, …grants, '--', git, …]` 被剥回逻辑 argv，
    所以命令确实在远端跑——这也解释了为什么报错从「桥拒跑 landlock-run」
-   变成了「git 说不是仓库」。
+   变成了「git 说不是仓库」。**Windows 是另一副形状**：平台链是 `windows-acl`，
+   launcher 前缀为 `[process.execPath, <runner>, …flags, '--', …argv]`，即 front 是
+   `node.exe` 而不是 `landlock-run`。只认 POSIX 三个 basename 的剥离在 Windows 上
+   等于没剥，`remoteCommandFor('…node.exe')` 会直接拒绝；`unwrapSandboxArgv`
+   因此同时识别「front 是 node 且前缀里带 namespace 标记」这一形态
+   （`lib/patch-subprocess.js` 的 `SANDBOX_RUNNER_MARKERS` / `NODE_PROGRAMS`）。
 
 ## 3. 根因：`undefined` 环境值被序列化成字符串 `undefined`
 
@@ -364,8 +369,9 @@ $ npm test
    的准入条件完全相同——都是上面三条。规则保守的收益是：只有「唯一根、主机可用、
    本地无同名」时，破坏性命令才可能到远端；否则留在本地（通常是失败），不会误伤。
 5. **argv 只在路径位翻译**：仅对 git、且只对 `--` 之后的 pathspec、`-C` /
-   `--git-dir` / `--work-tree` / `--namespace` 的操作数（分词或 `=` 形式）做
-   `ssh:// → 远端路径`。其余 argv 逐字转发：`rg` 的 pattern 与路径混在一起，
+   `--git-dir` / `--work-tree` 的操作数（分词或 `=` 形式）做
+   `ssh:// → 远端路径`。`--namespace` **不在其列**——它命名的是 ref namespace
+   而不是目录，改写它的操作数会把 ref 前缀变成路径拼写。其余 argv 逐字转发：`rg` 的 pattern 与路径混在一起，
    git 的 commit message / `grep` pattern 都可能是**数据**，改写它们会静默改变
    搜索结果或提交内容——比字面路径失败更糟。
 6. **env 规则不变**：`ssh://` 值剥 scheme、宿主临时目录映射到远端 `/tmp` 镜像并

@@ -20,6 +20,34 @@
 | `FS_ABORTED` | 操作被中止 | 调用方 signal 被 abort（用户取消、超时、会话关闭）；不是故障，重试即可 |
 | `FS_IO_ERROR` | 其它 SFTP 失败 | SFTP 服务端报错、连接中断等 |
 
+### 执行命令报 `windows-acl … workspace and temp directory resolution failed`
+
+在远端工作区里**一执行命令就失败**，且文案是这一句：
+
+```
+sandbox-local: windows-acl workspace and temp directory resolution failed: Error: ENOENT:
+no such file or directory, realpath 'C:\Users\…\ssh:\qiyk\home\qiyk\test\dsh-ssh-workspace'.
+The command did not run; check that the current user can change permissions on the workspace and
+temp directories, or run with danger-full-access.
+```
+
+看那个 `realpath '…\ssh:\…'`——被解析的是一个 `ssh://` 拼写，而它**不是本机路径**。
+Windows 把它当驱动器相对路径拼到进程 cwd 上，自然 ENOENT。这不是 ACL 权限问题
+（那会是 `EPERM` / Access denied），所以去改目录权限或提权都不会有用。
+
+原因在宿主的命令通路上：`ctx.sandboxPolicy.resolve()` 对远端会话原样返回
+`session.header.cwd` 的 `ssh://` 拼写，而 `ctx.sandbox.confine()` 在本插件接管
+`ctx.subprocess` / `ctx.shell` **之前**就跑了，把那个拼写当主机路径 realpath。
+
+**0.3.5 起由 `lib/patch-sandbox.js` 修掉**：交接给沙箱提供方之前，把 policy 里的
+远端根换成一个真实存在的本机替身目录，其余字段（模式、会话 id）原样带过。
+如果你在更新的宿主上仍然看到这句话，说明插件的这个补丁没装上——查
+`ssh_workspace_status` 与启动日志里有没有
+`ssh-workspace: took over ctx.sandbox.confine`。
+
+临时绕过：把会话切到 `danger-full-access`（该模式下 `confine()` 直接返回原 argv，
+不碰 realpath），或改用 `ssh_workspace_exec`（它不经过本机沙箱）。
+
 ### 一整个工作区都在报错？先看它是不是被停用了
 
 `ssh_workspace_unmount`（以及面板里的卸载）默认是 **`detach` 模式**：工作区记录和会话都保留，
@@ -214,6 +242,29 @@ cannot read "ssh://myserver/Users/me/.dsh/attachments/v1/files/…": not found
 false。这是已决定保留的取舍（折叠会让大小写敏感的 APFS 卷上出现误放行），失败方向是
 fail closed。**自救**：用显式前缀拼出真实大小写，`local:/Volumes/SSD/x.md`；或者把 `@` 点名的
 拼写改成与文件一致的大小写。见 [features.md](./features.md) 的「本机路径直通」。
+
+## `run_code` / PTC 报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`
+
+`ops-ptc` 这类「程序化工具调用」预设不直接调用工具，而是让模型写一段 TypeScript 交给宿主的
+Node worker 执行。worker 是**本机进程**（打包版里它就是 `DeepSeek Harness.exe` 自己），而提供方
+把它的 cwd 默认成会话的 `ssh://` 工作区根，于是卡在两处：
+
+1. `ctx.subprocess.spawn` 的远端桥按白名单只放行 `git` / `rg`，宿主可执行文件被拒绝——工具结果
+   里看到的就是这句 `cannot run "…DeepSeek Harness.exe" with a remote cwd`；
+2. **即便放行也跑不成**：每次求值宿主都会把 `spec.cwd` 经控制通道发给子进程并
+   `process.chdir(cwd)`；Windows 把 `ssh://qiyk/…` 当相对路径（`<cwd>\ssh:\qiyk\…`），而文件名
+   里不允许 `:`，程序会以 chdir 的 ENOENT 结束。
+
+修复点是 `ctx.ptcRuntime.resolve()` 返回的 `spec.cwd`：`lib/patch-ptc.js` 把它换成本机替身目录
+（与沙箱那层是同一个替身根），spawn 与每次求值前的 chdir 一起修好。程序里**调用的工具仍
+在远端执行**——工具拿的是会话的远端目录，不是 worker 的 cwd。
+
+**代价（要知道）**：程序**自身**的文件访问解析的是那个本机 scratch 目录——`process.cwd()`、
+相对 `import()`、直接 `node:fs` 读相对路径都碰不到远端工作区。在远端会话里写程序时，把路径显式
+交给工具（例如 `tools.read({ path: '…' })`）。这是改动前它根本不跑的情况下唯一可行的做法：
+worker 的 bootstrap 在宿主包里，远端主机既没有它、也不一定有 Node。
+
+> 这是服务端改动（`lib/`），**必须重启 DSH** 才生效，刷新页面不够。
 
 ## 连接问题
 

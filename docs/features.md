@@ -16,9 +16,9 @@
 | --- | --- |
 | Agent 工具 | 11 个 `ssh_workspace_*` |
 | 浏览器 HTTP 路由 | 33 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
-| 接管的服务 seam | 4 个：`ctx.fs`、`ctx.shell`、`ctx.subprocess`、`ctx.subprocess.spawnTerminal` |
+| 接管的服务 seam | 6 个：`ctx.fs`、`ctx.sandbox.confine`、`ctx.shell`、`ctx.subprocess`（`spawn` 与 `spawnTerminal` 两个方法）、`ctx.ptcRuntime.resolve`、客户端 `ctx.slots`（两个 UI 槽位，含注册表 projection 放宽） |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
-| 冒烟测试套件 | 86 个（裸检出 79 个通过 / 1 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 82 个通过 / 2 个 partial / 2 个 SKIP；合计 4229 / 4476 项断言，采样） |
+| 冒烟测试套件 | 89 个（裸检出 81 个通过 / 2 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 85 个通过 / 2 个 partial / 2 个 SKIP；合计 4394 / 4644 项断言，采样） |
 
 设计前提：**不注册第二个 fs 服务**。远端方法装在部署已挂载的那一个 `ctx.fs` 实例上，
 `ssh://` 路径走 SFTP，其余路径原样转发给原后端——因此本地工作区的一切行为不受影响。
@@ -245,6 +245,12 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 只有 `write` / `edit` 在策略缺席时回落到部署默认，那是无 agent 的调用，本地后端对同样的调用也用部署默认。
 （`FS_SANDBOX_DENIED` 由宿主改写成 `[sandbox: …]`，与本地一致。）
 
+**还有一层在它们之前**：宿主的每条命令通路都先跑 `ctx.sandbox.confine(argv, policy, signal)`，之后才到
+`ctx.shell` / `ctx.subprocess`。它拿到的 `workspaceRoot` 同样是那个 `ssh://` 拼写，而 Windows ACL 提供方
+按**主机路径**解析它——`realpath` 抛 `ENOENT` 后 fail-closed，命令一条都不起来（文案是
+`windows-acl workspace and temp directory resolution failed`）。`lib/patch-sandbox.js` 因此先接管
+`ctx.sandbox.confine`：只把 policy 里的远端根换成本机真实存在的替身目录，`mode` 与 `sessionId` 原样带过，
+**不动 `sandboxPolicy.resolve`**——上表中「会话工作区」那一列的收窄正是拿那个拼写做比较的。
 
 这不是预防性设计：曾有一个 `read-only` 会话执行
 `ssh_workspace_exec { command: "rm /home/qiyk/test/test.py" }` 并拿到 `[exit code: 0]`，而同会话的

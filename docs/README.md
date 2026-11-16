@@ -2,7 +2,7 @@
 
 [根 README](../README.md) 面向「快速了解、安装、能力概览」；本目录存放展开的
 专题文档。内容已从 README 迁移并对照源码展开，**数字与清单均按当前源码核对**
-（路由 33 条、Agent 工具 11 个、冒烟套件 86 个）。如发现与实现不符之处，
+（路由 33 条、Agent 工具 11 个、冒烟套件 89 个）。如发现与实现不符之处，
 以源码为准并欢迎修订。
 
 ## 目录
@@ -22,6 +22,7 @@
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
 | [optimization-and-future03.md](./optimization-and-future03.md) | **优化项与 Future（第三辑 · 唯一账本）**：仍未做、判定不做、上游阻塞、验证缺口与已完成 ID 索引；前两辑已合并到这里 | 完成 |
 | [verify/pr6-review.md](./verify/pr6-review.md) | **PR #6 评审记录**：远端 subprocess 路由、终端信号生命周期、两步「添加工作区」、最近提交条——四类修复逐条判定、两个 UI 槽位重写、`git-history` 安全面、P0–P3 问题表与本轮 7 个修复的提交 | 完成 |
+| [verify/remote-shells-prompt.md](./verify/remote-shells-prompt.md) | **一次性任务书**：让「新建终端」的 shell 菜单按远端主机枚举（接管 `terminalController.shells()` + `spawnTerminal` 按已发现集合采用 argv[0]），实现验收后删除本行 | 初稿 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 

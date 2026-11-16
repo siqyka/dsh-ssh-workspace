@@ -133,10 +133,11 @@ ssh2 的 `'close'` 事件——**该事件只在对端确认 CHANNEL_CLOSE 时�
    否则在「还没有读者」的窗口期（分配失败路径会在 emulator 存在前 terminate）
    PassThrough 的 `'error'` 事件会掀掉整个宿主进程；同时给 `done` 挂一个空 catch，
    避免没人监听时的 unhandled rejection 同样致命。失败信息仍在 `done` 上，语义不变。
-5. **加 trace（写同一个 `/tmp/ssh-workspace-terminal.log`，`DSH_SSH_WORKSPACE_TRACE=0` 可关）**：
-   `write`（长度、mode-gate 放行/拒绝+原因、通道状态）、`resize`（是否发出）、
-   `terminate`（**调用栈**，用来区分「abort / 显式 close / 通道自身关闭」）、
-   `#onClose`/`#fail`、以及 `spec.signal` abort 的调用栈。
+5. **不加常驻 trace**：排查期间曾用 `DSH_SSH_WORKSPACE_TRACE` 写
+   `/tmp/ssh-workspace-terminal.log`（`write` 长度与 mode-gate 判定、`resize` 是否发出、
+   `terminate` 的调用栈），但那条路径**每一击键一次同步写盘**，且默认开启——定位完成后
+   已整条移除，`tests/terminal-smoke.mjs` 钉住"模块内不做任何同步文件 I/O、也不含该
+   环境变量与文件名"。需要再查时按下面第 6 节用宿主 RPC 探针，不要恢复这个 trace。
 
 ## 5. 回归测试
 
@@ -163,8 +164,8 @@ ssh2 的 `'close'` 事件——**该事件只在对端确认 CHANNEL_CLOSE 时�
 3. 关掉终端标签页再开一个 → 新终端可用；
 4. 想确认没有残留：`ssh <alias> 'ps -eo pid,tty,etime,cmd | grep "sh -l"'`，
    关闭终端后不应留下新的 `sh -l`；
-5. 若要再看 trace：`tail -f /tmp/ssh-workspace-terminal.log`，
-   正常的一次 attach 应能看到 `resize … sent=true` 与随后的 `write … accepted=true`。
+5. 若还想看操作链细节，用第 6 节末尾的 RPC 探针（`acks` / `echoed` / `snapshot`），
+   不要再找 trace 文件——它已随修复一起移除。
 
 宿主机上的 RPC 复核（无需浏览器，改完即可跑）：
 

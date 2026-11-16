@@ -13,7 +13,8 @@
   `ctx.inject(['shell'], …)` 同样接管 `ctx.shell`（远程命令执行）；
   `ctx.inject(['subprocess'], …)` 接管 `ctx.subprocess`（远端 glob/grep 的
   ripgrep 与变更追踪的 git），并在同一服务上接管 `spawnTerminal`（远端 PTY
-  终端）；
+  终端）；用 `ctx.inject(['ptcRuntime'], …)` 把程序化工具调用 worker 的 cwd 本机化
+  （远端会话里的 `run_code`）；
   用 `ctx.inject(['fs', 'workspaceRegistry'], …)` 恢复重启前登记的远端工作区；
   用 `ctx.inject(['fs', 'webServer'], …)` 注册浏览器半边的 HTTP 路由。
   这些注入都可以晚于本插件出现，安装顺序无关。
@@ -181,6 +182,63 @@ realpath 读取失败按 `FS_NOT_FOUND` 语义处理。
   预览与 `read` 工具按既有的 `streamMinSize` 选择本方法，大文件不再整块
   进内存。
 
+## 接管 ctx.sandbox.confine（远端根交给本机提供方）
+
+这一层在 `ctx.shell` / `ctx.subprocess` **之前**，也是唯一一个「不属于本插件的
+seam 却必须先解决」的地方。
+
+宿主的每条命令通路（`dsh-terminal-bash` 的 `BashTerminalBackend.spawn`、
+`dsh-api-terminal-controller`、`dsh-ptc-runtime-node`）顺序都是：
+
+```
+ctx.sandboxPolicy.resolve({ session })   →  policy.workspaceRoot = session.header.cwd
+ctx.sandbox.confine(argv, policy, signal) →  包一层 runner argv
+ctx.subprocess.spawn / spawnTerminal      →  这里才是本插件接管的那一层
+```
+
+`resolve()` 把远端会话的 cwd **原样**返回（`ssh://qiyk/home/qiyk/test/dsh-ssh-workspace`），
+而 `confine()` 把它当**主机路径**处理。Windows 的 ACL 提供方在
+`materializeAclGrant` 里先做 `isTempRootInsideWorkspace(root, tmpdir())`，实现是
+`relative(realpathSync.native(root), realpathSync.native(tmpdir()))`——对
+`ssh://` 拼写 realpath 直接 ENOENT（Windows 把它当驱动器相对路径拼到进程 cwd 上），
+于是包成 `SANDBOX_PREPARATION_FAILED`：
+
+```
+sandbox-local: windows-acl workspace and temp directory resolution failed: Error: ENOENT:
+no such file or directory, realpath 'C:\Users\…\ssh:\qiyk\home\qiyk\test\dsh-ssh-workspace'.
+The command did not run; … or run with danger-full-access.
+```
+
+**命令根本没起来**，本插件的 seam 一次都没被问到。bwrap / Landlock / Seatbelt
+虽然不 realpath，但会把同一个假路径写进 profile，匹配不到任何东西。
+
+`lib/patch-sandbox.js` 用与 `patch-fs.js` 相同的手法接管**已在位的**
+`ctx.sandbox.confine`：policy 里的 `workspaceRoot` 是 `ssh://` 时，换成一个真实
+存在的本机目录再调原实现，其余字段（`mode` / `sessionId`）原样带过，
+`additionalWritableRoots` 里只剔掉远端项。三个约束值得记下：
+
+- **替身根是 `tmpdir()` 的子目录，不能是 `tmpdir()` 本身**。相等时
+  `relative(root, tmpdir) === ''`，ACL 提供方会判「temp 在 workspace 内」并抛
+  `SANDBOX_INVALID_TEMP_ROOT`（私有 temp 子目录会继承工作区授权）；子目录的
+  `relative` 是 `..`，正是它要的答案。
+- **替身根必须稳定**。`dsh-sandbox-local` 按 `workspaceRoot` 缓存 ACL 授权，
+  每次调用换一个新目录就会每条命令泄一个常驻 ACE。固定名字让所有远端会话
+  共用同一个（空）目录的同一个授权。
+- **绝不能改 `ctx.sandboxPolicy.resolve`**。`lib/mode-gate.js` 的
+  `writeScopeRootOf` / `workspaceWriteScopeRefusal` 正是拿这个 `ssh://` 拼写做
+  `workspace-write` 的会话级收窄；把 resolve 改成返回本机路径，会让那段比较
+  失去意义、所有已挂载根都变成可写。只改交给提供方的那份参数。
+
+这**不是放行**：今天这条路上本地命令完全跑不起来（同一个 ENOENT），没有
+「原本被限制的东西」被放开；替身根是插件自己的空目录，本地命令在远端会话里
+仍然只有一个窄写范围；而真正执行远端命令的是 `patch-shell.js` /
+`patch-subprocess.js` / `patch-terminal.js`，它们会重建 argv，本机这份授权
+对远端进程没有任何作用。
+
+`dsh-sandbox` 的 `confine` 返回 `{ argv, enforcement, denialSignatures,
+runnerFailureRules }`，调用方据此判定 runner 失败与拒绝信号，所以包装层必须把
+返回值和同步/异步形态都原样透传——把同步实现包成 promise 会改变调用方的控制流。
+
 ## 接管 ctx.shell（远程命令执行）
 
 `ctx.shell` 与 `ctx.fs` 是同一种 seam：部署已挂了本地执行器（Windows 上是
@@ -250,6 +308,31 @@ receiver 原样转发。
   并把 `ssh://` 值（`GIT_ALTERNATE_OBJECT_DIRECTORIES`）翻译为裸远端路径；
   注册表按 scratch 首段记住所属别名（first-learn-wins 防跨主机误删），供
   fs 桥的 `rm` / `copyFile` 联动（见下节）。
+
+## 接管 ctx.ptcRuntime.resolve（PTC worker 的 cwd 本机化）
+
+`run_code` / `ops-ptc` 的执行模型与 shell 不同：程序由**宿主自己的 Node worker**执行（打包版
+里就是 `DeepSeek Harness.exe` 的嵌入式 bootstrap），因此它的 cwd 只能是本机目录。而
+`dsh-ptc-runtime-node` 的 `resolve(request)` 把 cwd 默认成 `sandboxPolicy` 工作区根——远端会话
+下是 `ssh://` 拼写。后果有两层，而且都藏在这同一个字符串里：
+
+- `start(cwd)` 把拼写交给 `ctx.subprocess.spawn`；远端桥只实现 git / rg，宿主可执行文件被
+  同步拒绝（`cannot run "…DeepSeek Harness.exe" with a remote cwd`）。
+- 每次求值宿主把 `spec.cwd` 经控制通道发给子进程并 `process.chdir(cwd)`；Windows 把
+  `ssh://alias/…` 当相对路径解析（`<cwd>\ssh:\alias\…`），文件名里 `:` 非法，于是程序会以
+  chdir 的 ENOENT 结束——即使 spawn 被放行也一样。
+
+`lib/patch-ptc.js` 接管已在位的 `ctx.ptcRuntime.resolve`：先调用提供方原实现，再只把返回 spec
+里**远端**的 `cwd` 换成 `patch-sandbox.js` 使用的同一个替身根。这样 spawn 与每次 chdir 读到的
+是同一份本机目录，而 `sandboxPolicy`（连同 `ssh://` 的 `workspaceRoot`）、`program`、`bindings`、
+`stateOwner`、`timeoutMs` 全部原样带过——mode gate 与沙箱补丁依赖那个远端拼写。本地 cwd 的
+spec **按引用原样返回**，普通会话的 PTC 行为不变；安装 / 卸载沿用其他 patch 的实例标记与
+「原型还是自有」区分。
+
+**边界**：程序**调用的**工具仍走会话的远端目录（工具实现跑在宿主里，不读 worker 的 cwd）；
+程序**自身**的 `process.cwd()` / 相对 `import()` / 直接 `node:fs` 从本地 scratch 解析。这是有意的
+取舍：worker 的 bootstrap 在宿主包里，远端主机既没有它、也不一定有 Node，所以「在远端跑
+worker」不成立；而改动前这条路是**完全跑不起来**，不是「正确地受限」。
 
 ## 内建桥接（node:fs / node:path）
 

@@ -316,6 +316,7 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 | Shell commands follow the workspace | With an `ssh://` session workspace, the `pwsh` / `bash` tools run on the remote host under POSIX shell semantics — one-shot commands, background jobs, timeouts, and cancellation all work through DSH's process contract; local `workdir` commands are unaffected |
 | glob / grep search the remote | They invoke **ripgrep (`rg`) on the remote host** and return real remote results; when ripgrep isn't installed there, the command fails clearly with an install hint (exit code 127) |
 | Change tracking goes remote | The "Changes" (deliverables) panel uses **remote git** for per-turn snapshots and diffs — files changed by remote shell commands show up too (+N/−N, click through to the diff); when git isn't installed remotely this capability quietly turns itself off and nothing else is affected. **Per-file before/after text is unavailable for remote edits**: the Host's whole-file capture (`captureFile()` in `dsh-workspace-changes`) opens `ctx.fs.processPath(target)` with `node:fs`, and for a remote target that is the **remote** path — both captures read as `absent`, `sameCapture()` calls them equal, and the record is dropped. The capture never calls `ctx.fs`, so the plugin cannot substitute a read; instead it refuses to let the drop be silent and records one `degraded` entry in the status diagnostics ring on the first remote write (`ctx.logger` has no exporter in this deployment — see [development.md](docs/development.md)). The change **list** is unaffected |
+| PTC / `run_code` works | Programmatic-tool-calling presets such as `ops-ptc` run the program in a **host-side Node worker**. Its cwd would be the session's `ssh://` spelling: it cannot even start (the remote subprocess bridge only admits git / rg) and could never be `chdir`-ed into. The plugin swaps the PTC `spec.cwd` for the local substitute directory, so **the program runs while every tool call it makes still executes remotely**; the program's own `process.cwd()`, relative `import()` and direct `node:fs` resolve against a local scratch directory — pass paths to tools explicitly. See [troubleshooting.md](docs/troubleshooting.md) |
 
 ### UI integration
 
@@ -328,7 +329,7 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 | Drag or right-click a file onto the task | Files and folders in the tree can be **dragged straight onto the chat input** (dashed highlight while hovering; releasing inserts the reference chip) or picked via **right-click → "Add to task"** — both produce exactly what an `@` completion selection would |
 | Drop system files onto the tree | Dragging files from the OS file manager onto a **remote** Files tree uploads them; the drop point decides the target directory (a directory row is itself, a file / `other` row means its parent, blank space inside an expanded directory belongs to that directory, while tree body and header / path label mean the root). Folders are refused with one notice and never walked; a local tree refuses explicitly, and a drop outside the tree keeps DSH's own attachment behavior. See [ui.md](docs/ui.md#从系统拖入文件上传) |
 | "Add workspace" gets a remote entry | DSH's "Add workspace" button becomes a two-step anchored menu: pick "New local workspace" or "New remote workspace", then follow that branch. The local branch renders the **installed browse panel itself** (same component, same locale and listing calls; deployments without an in-app browser fall back to `pickDirectory()`); the remote branch is choose a host → browse the remote directory level by level → confirm the mount (unwritable directories produce a warning and refuse creation) |
-| Recent commit history under the change-request tab | The official Forge panel gains a read-only recent-commit strip in its lower half (same tab, no extra tab): the plugin shadows that slot entry by the official tab key, keeps the official component on top and renders its own history block below; a read-only host route `GET /api/dsh-ssh-workspace/git-history` serves it, accepting only the session's own working directory and running a fixed-argv `git log`. See [commit-history.md](docs/commit-history.md) |
+| Recent commit history under the change-request tab | The official Forge panel gains a read-only recent-commit strip in its lower half (same tab, no extra tab): the plugin shadows that slot entry by the official tab key, keeps the official component on top and renders its own history block below; a read-only host route `GET /api/dsh-ssh-workspace/git-history` serves it, accepting only the session's own working directory and running a fixed-argv `git log`. **Clicking the title row folds the whole strip** down to just the "Recent commits" heading, and the fold state is remembered in the page's `localStorage` across tab switches, reloads and host restarts; the official panel's copy seat is bound from the official entry's own namespace (binding the package id used to paint the upper half in raw i18n keys). See [commit-history.md](docs/commit-history.md) |
 | Remote workspaces wear a dedicated mark | Workspaces created by this plugin show the plugin's remote mark instead of the plain folder icon in sidebar rows, the workspace picker, and the session page's workspace button |
 | Host management panel | Add / edit / delete hosts (key paths, auth method, notes, …); changes take effect immediately and drop that alias's old connection. `~/.ssh/config` hosts are shown read-only. "Test connection" only probes reachability (it releases the connection it opened, so a probe never doubles as "connect") and reports as a toast at the top that expires after 7 seconds (click / Esc closes early; hovering pauses the clock). An error can expand its diagnostic code and raw message, copy the whole report, and — because a probe is safe to replay — retry in place. Connection state is shown inline after the host name, and dropping a connection also tears down that host's port forwards |
 | Directory browser dialog | A host card's "Browse directory" walks the remote tree level by level and can "Mount this directory" in place; **browse and mount only** — no upload, download, or inline queue (transfers live in the tree row menu and the file panel header) |
@@ -390,7 +391,7 @@ Explicitly **not supported**:
 ## Implementation notes
 
 <details>
-<summary><b>Expand: the four core implementation paths</b> (no second fs service, bridging host built-ins, taking over ctx.subprocess, workspace registration bypassing realpath)</summary>
+<summary><b>Expand: the six core implementation paths</b> (no second fs service, bridging host built-ins, taking over ctx.subprocess, localizing the sandbox root, localizing the PTC worker, workspace registration bypassing realpath)</summary>
 
 <br>
 
@@ -410,6 +411,20 @@ Explicitly **not supported**:
   (every other spawn forwards unchanged); the command whitelist, POSIX script
   assembly, and handle contract (`done` / `collected` / `terminate` ladder) match the
   local runtime.
+- **Localizing the sandbox root**: every host command path runs
+  `ctx.sandbox.confine()` first, and the `workspaceRoot` it receives is the session's
+  `ssh://` spelling — which the Windows ACL provider resolves as a HOST path, fails
+  with `ENOENT`, and closes the door, so no command ever starts. Taking over `confine`
+  swaps only the remote root for a real local directory (`mode` / `sessionId` carried
+  through untouched) and leaves `sandboxPolicy.resolve` alone — that spelling is what
+  the `workspace-write` session-scope fence compares against.
+- **Localizing the PTC worker**: programmatic tool calling (`run_code` / `ops-ptc`) does not call
+  tools directly — the host's own Node worker runs the program. That worker's cwd was the
+  session's `ssh://` spelling: the remote bridge refuses to spawn anything but git / rg, and
+  even if it did, the worker could never `chdir` into it. Taking over
+  `ctx.ptcRuntime.resolve` swaps only the spec's remote cwd for the substitute root, fixing
+  both the spawn and the pre-evaluation `chdir`; the tools the program calls still run
+  remotely.
 - **Workspace registration bypasses `realpath`**: it goes through
   `createCanonical()`, preserving full persistence and ordered writes while bypassing
   the host's `realpath` assertion.

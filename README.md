@@ -281,6 +281,7 @@ localPassthrough:
 | shell 命令远端化 | 会话工作区是 `ssh://` 时，`pwsh` / `bash` 工具在远端以 POSIX shell 语义执行——一次性命令、后台任务、超时与中止都按 DSH 的进程契约工作；本地 `workdir` 的命令不受影响 |
 | glob / grep 远端搜索 | 调用**远端主机上的 ripgrep（`rg`）**返回真实远端结果；远端未安装 ripgrep 时得到带安装提示的明确失败（退出码 127） |
 | 变更追踪远端化 | 「变更」（deliverables）面板用**远端 git** 做回合快照与 diff——远端 shell 改的文件也会出现在变更列表（+N/−N、点开看 diff）；远端未装 git 时自动降级关闭，其余功能不受影响。**逐文件的 before/after 文本对比对远端编辑不可用**：宿主的整文件捕获（`dsh-workspace-changes` 的 `captureFile()`）用 `node:fs` 打开 `ctx.fs.processPath()`，对远端目标那是**远端路径**，两次捕获都读成 `absent`、`sameCapture()` 判等后整条记录被丢弃。捕获不经过 `ctx.fs`，插件无法替换读取，所以改为**不让它静默**：首次远端写入时在 status 的诊断环记一条 `degraded`（`ctx.logger` 在本部署没有出口，见 [development.md](docs/development.md)）。变更**列表**不受影响 |
+| PTC / `run_code` 可用 | `ops-ptc` 这类「程序化工具调用」预设把程序交给**宿主自己的 Node worker** 执行。worker 的 cwd 原本就是会话的 `ssh://` 拼写：既启动不了（远端子进程桥只放行 git / rg），也无法 `chdir` 进去。插件把 PTC `spec.cwd` 换成本机替身目录，**程序能跑，程序调用的工具仍在远端执行**；但程序自身的 `process.cwd()` / 相对 `import()` / 直接 `node:fs` 解析的是本地 scratch，路径应显式交给工具。详见 [troubleshooting.md](docs/troubleshooting.md) |
 
 ### 界面集成
 
@@ -293,7 +294,7 @@ localPassthrough:
 | 拖拽 / 右键把文件加入任务 | 文件树的文件与文件夹可**直接拖到聊天输入框**（悬停显示虚线高亮，松开插入引用 chip），或**右键「添加到任务」**——与 `@` 补全选中效果完全一致 |
 | 系统文件拖入远端文件树 | 从系统文件管理器把文件拖到**远端**「文件」树即可上传；落点决定目标目录（目录行自身、文件行父目录、展开目录内的空白归该目录、树体空白归根），文件夹与本地工作区会被明确拒绝，树外仍走 DSH 原有附件行为。详见 [ui.md](docs/ui.md#从系统拖入文件上传) |
 | 「添加工作区」远程入口 | 「添加工作区」按钮替换为锚定菜单，两步完成：「新建本地工作区」/「新建远程工作区」二选一，再走各自流程。本地直接渲染**已安装的 browse 面板本身**（同一个组件、同一套 locale 与列目录调用；没有应用内浏览器的部署回落到 `pickDirectory()`）；远程是「选主机 → 逐级浏览远端目录 → 确认挂载」（目录不可写时警告并拒绝创建） |
-| 「变更请求」tab 的最近提交历史 | 官方 Forge 面板的下半部分追加一条只读的最近提交条（同一个 tab，不新增页签）：插件按官方 tab 的 key 遮蔽该槽位，上半仍渲染官方组件、下半渲染自建历史区块；宿主新增只读路由 `GET /api/dsh-ssh-workspace/git-history`，只接受会话自己的工作目录，用固定 argv 的 `git log` 取数。详见 [commit-history.md](docs/commit-history.md) |
+| 「变更请求」tab 的最近提交历史 | 官方 Forge 面板的下半部分追加一条只读的最近提交条（同一个 tab，不新增页签）：插件按官方 tab 的 key 遮蔽该槽位，上半仍渲染官方组件、下半渲染自建历史区块；宿主新增只读路由 `GET /api/dsh-ssh-workspace/git-history`，只接受会话自己的工作目录，用固定 argv 的 `git log` 取数。**点标题行即整体折叠**，收起时只剩「最近提交历史」一行，折叠状态记在页面 `localStorage` 里（重开 tab / 刷新 / 重启宿主后保持）；官方面板的文案座位取自官方条目自己的命名空间（此前误绑包 id，上半会显示 i18n key）。详见 [commit-history.md](docs/commit-history.md) |
 | 远程工作区专用标记 | 本插件创建的远程工作区在侧栏行、工作区选择器与会话页工作区按钮处显示远端标记图标，而不是普通文件夹图标 |
 | 主机管理面板 | 添加 / 编辑 / 删除主机（私钥路径、认证方式、备注等），改动立即生效并丢弃该别名旧连接；`~/.ssh/config` 主机只读展示；「测试连接」只探测可达性（连上即释放，不会留下连接），结果以顶部 toast 弹出，7 秒自动消失（点击 / Esc 可提前关闭，悬停暂停）；错误可就地展开诊断码与原始错误、复制整段诊断，测试连接可安全重放所以带「重试」；「已连接」状态内联在主机名后，断开时连带拆除该主机的端口转发 |
 | 浏览目录对话框 | 主机卡片的「浏览目录」逐级浏览远端目录，并可就地「挂载此目录」；**只浏览 / 挂载**，不提供上传、下载或内联队列（传输入口在文件树行菜单与文件面板头部） |
@@ -349,7 +350,7 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 ## 实现要点
 
 <details>
-<summary><b>展开查看：四条核心实现路径</b>（不注册第二个 fs 服务、桥接宿主内建模块、接管 ctx.subprocess、工作区登记绕过 realpath）</summary>
+<summary><b>展开查看：六条核心实现路径</b>（不注册第二个 fs 服务、桥接宿主内建模块、接管 ctx.subprocess、沙箱 root 本机化、PTC worker 本机化、工作区登记绕过 realpath）</summary>
 
 <br>
 
@@ -364,6 +365,16 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 - **接管 `ctx.subprocess`**：`cwd` 为 `ssh://` 的子进程在远端执行——glob / grep
   的 ripgrep 与变更追踪的 git 都走这条路（其余 spawn 原样转发）；命令白名单、
   POSIX 脚本组装、handle 契约（`done` / `collected` / `terminate` 阶梯）与本地一致。
+- **沙箱 root 本机化**：宿主的每条命令通路都先跑 `ctx.sandbox.confine()`，而它拿到的
+  `workspaceRoot` 是会话的 `ssh://` 拼写——Windows ACL 提供方把它当主机路径 realpath，
+  ENOENT 后 fail-closed，命令一条都起不来。接管 `confine`，只把远端根换成本机真实存在的
+  替身目录（`mode` / `sessionId` 原样带过），不动 `sandboxPolicy.resolve`——那正是
+  `workspace-write` 会话级收窄的依据。
+- **PTC worker 本机化**：程序化工具调用（`run_code` / `ops-ptc`）不直接调工具，而是让宿主的
+  Node worker 执行模型写的程序。worker 的 cwd 原本是会话的
+  `ssh://` 拼写：`spawn` 被远端桥拒（只放行 git / rg），放行后也 `chdir` 不进去。接管
+  `ctx.ptcRuntime.resolve`，只把返回 spec 里远端的 cwd 换成上面那个替身根（`spawn` 与每次
+  求值前的 `chdir` 一起修好）；程序**调用的**工具仍走远端目录。
 - **工作区登记绕过 `realpath`**：走 `createCanonical()`，保留完整的持久化与
   顺序写入，绕过宿主机 `realpath` 断言。
 
