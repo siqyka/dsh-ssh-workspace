@@ -300,7 +300,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | 逐文件文本对比是远端盲区 | 宿主的整文件捕获（`@deepseek-ai/dsh-workspace-changes` 的 `captureFile()`）用 `node:fs` 打开 `ctx.fs.processPath(target)`；远端目标拿到的是**远端路径**，两次捕获都 `ENOENT` → `{kind:'absent'}`，`sameCapture()` 判等后**整条记录被丢弃**。捕获不经过 `ctx.fs`，插件无法替换读取，只能**不让它静默**：首次远端写入时往诊断环记一条 `degraded`（status 工具与面板状态路由都可读）。变更列表仍由 git 提供，缺的只是逐文件 before/after 文本 |
 | 快照目录镜像 | 本机 `mkdtemp` 的 git 快照目录（`GIT_OBJECT_DIRECTORY` / `GIT_INDEX_FILE`）改写成远端 `/tmp` 下同后缀并 `mkdir -p`——远端 git 看不到本机路径 |
 | 持久终端 | 接管 `ctx.subprocess.spawnTerminal`：`cwd` 为 `ssh://` 时开 SSH PTY 通道而非本地进程，handle 满足宿主的 `output` / `write` / `resize` / `done` / `inspectForeground` / `signalForeground` / `terminate` 契约；默认 **80×24**，按 spec 调整 |
-| 方言不用本机的 | 远端 PTY 启动远端自己的交互式 POSIX shell，**忽略**宿主的 PowerShell argv——把 PowerShell 命令行丢给 POSIX 主机会以「像插件 bug」的方式失败 |
+| 方言按选择映射 | 远端 PTY 不照搬本机 argv（把 PowerShell 命令行丢给 POSIX 主机会以「像插件 bug」的方式失败），而是按**用户选的 shell 家族**启动远端同名 shell（`bash -l` / `zsh -l`，白名单），远端没有就回落到 `sh -l`；Windows 方言一律回落 `sh -l` |
 | `inspectForeground` 的取舍 | 本地 handle 靠本机进程表回答，单条 SSH 通道无法廉价等价；宁可回答「未知」也不猜（错误答案会让宿主以为还有前台进程、白等整个超时） |
 | UTF-8 跨块正确性 | 输出用 `StringDecoder` 拼接，多字节字符跨 chunk 边界不再变成两个替换符；截断按**字节**记账并回退到完整字符边界 |
 

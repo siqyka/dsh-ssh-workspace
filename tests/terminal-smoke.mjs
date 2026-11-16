@@ -184,6 +184,59 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
+  // The user picks a shell by name in the sidebar. The remote host cannot run
+  // the local argv, but it can usually run the same shell family — and when it
+  // cannot, `sh -l` must still be there.
+  const cases = [
+    { argv: ['/bin/bash'], expect: /bash -l/u, absent: /pwsh/u },
+    { argv: ['/usr/local/bin/zsh', '-l'], expect: /zsh -l/u },
+    { argv: ['C:\\Program Files\\PowerShell\\7\\pwsh.exe'], expect: /exec sh -l/u },
+    { argv: ['/bin/sh'], expect: /exec sh -l/u },
+  ]
+  for (const item of cases) {
+    const { engine, opens } = fakeEngine()
+    const router = new RemoteTerminalRouter({ engine })
+    await router.spawnTerminal({ cwd: 'ssh://kappa/srv/app', rows: 24, cols: 80, argv: item.argv })
+    const command = opens[0].command
+    const ok = item.expect.test(command) && (item.absent === undefined || !item.absent.test(command))
+    check(`shell dialect ${JSON.stringify(item.argv[0])} maps to the remote family`,
+      ok, command)
+  }
+  const { engine, opens } = fakeEngine()
+  const router = new RemoteTerminalRouter({ engine })
+  await router.spawnTerminal({ cwd: 'ssh://kappa/srv/app', rows: 24, cols: 80, argv: ['/bin/bash'] })
+  check('a bash request falls back to sh when the remote lacks bash',
+    opens[0].command.includes('else exec sh -l'), opens[0].command)
+  check('the fallback still cds into the workspace first',
+    opens[0].command.includes("cd '/srv/app' &&"), opens[0].command)
+}
+
+{
+  // The browser terminal's retention monitor calls inspectActivity() on the
+  // handle. A missing method made the harness's observation fall through its
+  // catch block (and the allocation-cleanup path binds it unguarded), so the
+  // remote handle must answer the same shape as the local one.
+  const { engine, opens } = fakeEngine()
+  const router = new RemoteTerminalRouter({ engine })
+  const handle = await router.spawnTerminal({ cwd: 'ssh://ion/srv/app', rows: 24, cols: 80, argv: ['bash'] })
+  const active = await handle.inspectActivity()
+  check('a freshly opened terminal reports a non-idle activity state',
+    (active.state === 'busy' || active.state === 'unknown') && Number.isSafeInteger(active.revision),
+    JSON.stringify(active))
+  const before = active.revision
+  handle.channel.emit('data', Buffer.from('more output'))
+  const afterOutput = await handle.inspectActivity()
+  check('output advances the activity revision', afterOutput.revision > before, `${before} -> ${afterOutput.revision}`)
+  await handle.write('x')
+  const afterInput = await handle.inspectActivity()
+  check('input advances the activity revision too', afterInput.revision > afterOutput.revision,
+    `${afterOutput.revision} -> ${afterInput.revision}`)
+  await handle.terminate()
+  const exited = await handle.inspectActivity()
+  check('an exited terminal reports idle', exited.state === 'idle', JSON.stringify(exited))
+}
+
+{
   // The host's `spec.signal` bounds the allocation, not the terminal: the local
   // backend passes it to node-pty's spawn and the process outlives the call.
   // The browser terminal's create() call carries a per-request signal that

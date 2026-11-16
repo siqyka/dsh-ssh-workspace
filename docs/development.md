@@ -15,8 +15,8 @@
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 51 | directory listing |
-| test suites | 86 | `tests/run.mjs` |
-| passing assertions (sampled) | 4476 | measured 2026-11-15 |
+| test suites | 88 | `tests/run.mjs` |
+| passing assertions (sampled) | 4602 | measured 2026-11-16 |
 
 <!-- doc-numbers:end -->
 
@@ -255,9 +255,10 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `transfer-retry-smoke` | `DSH_CORE_ROOT` | 8 | 真实 SSH socket 的传输重试：假的 SFTP 文件系统在中途写满 40% 后断开连接，第一次上传失败并留下暂存 + sidecar；重连后同一 `transferFile({resume:true, verify:true})` 只补缺失字节、发布内容与源一致、`verified` 为真；`onConflict:'refuse'` 在重试时重新判定，失败期间出现的目标会被拒绝而不是被覆盖 |
 | `mode-gate-smoke` | 无 | 119 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
 | `shell-smoke` | 无 | 45 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
-| `terminal-smoke` | 无 | 28 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原；**`spec.signal` 只约束分配**——打开后 abort 不得关掉已开的 PTY（宿主浏览器终端是按请求信号），已 abort 的信号则必须先拦住打开 |
+| `terminal-smoke` | 无 | 63 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原；**`spec.signal` 只约束分配**——打开后 abort 不得关掉已开的 PTY（宿主浏览器终端是按请求信号），已 abort 的信号则必须先拦住打开；handle 合同补全 `inspectActivity`（远端按字节活动答 `busy`/`unknown`、退出后 `idle`，不猜 idle 去杀跑长命令的终端）；**方言映射**：远端按用户选的 shell 家族启动（bash/zsh/… 白名单，缺失回落 `sh -l`），Windows 方言回落 `sh -l`，且 `cd` 仍在前 |
 | `commit-history-smoke` | 无 | 122 | 「变更请求」tab 下半的最近提交历史：同 key 遮蔽官方 tab 条目、渲染官方组件 + 提交条、`git log` 单位分隔记录的解析（subject 含分隔符也不串行）、非仓库 / 未出生 HEAD 是结构化状态而非错误、路由只读且只接受会话工作目录（不接任意 path）、条数上限与截断标记 |
 | `local-changes-remote-smoke` | 无（逻辑段）；`DSH_WS_TEST_ALIAS`（live 段） | 70 | 普通远端路径的 subprocess 路由（「本地变更」卡片）：只有「规范化后落在唯一已挂载远端根 + 该根主机可用 + 本机不存在同名路径」三条同时成立才走远端；本机同名 → 保持本地、多根歧义 → 不路由并给 reason、detach / 主机不可解析 → 拒绝、`ssh://` 与本地 spawn 行为不变；真机段验证 plain cwd 的 `rev-parse` / `status` / `add -n` 全在远端执行且本地 spawn 次数为 0 |
+| `browser-terminal-smoke` | 无 | 27 | 浏览器终端的操作契约：宿主把该终端的每个操作串在同一条 enqueue 链上，任何一个 pending 就会冻住输出 / 输入 / 后续 attach / close——resize 不等 ssh2 不存在的回调、write 在通道非 open 时明确拒绝而不是吞掉回调、terminate 不等对端确认即结算 output/done（宽限后本地 destroy）、失败只 reject done 不 destroy output（否则无读者时掀翻宿主） |
 | `transport-smoke` | 无 | 43 | 传输路由与流式通道（第二条 SFTP 通道、退化路径）；**逐主机传输开关**：`agentForward` 与 `compress` 是选择加入，未勾选的主机必须产生与它们出现之前逐字节相同的 ssh2 配置；`agentForward` 还有更硬的一层——ssh2 把**连接级** `agentForward` 读成全连接许可，并在连接没有 agent 时于 `connect()` **同步抛错**，所以引擎绝不能把它写在连接配置里，愿望存在池化 record 上、由每个 exec/shell 通道自己表达（`channelExecOptions`），SFTP 不经过它；**agent 必须先应答才上连接**：`resolveAgentPath` 只是名字解析器（Windows 无条件给 `pageant`），ssh2 不在连接时校验端点，挂一个没在跑的 agent 会让认证阶段报「Failed to retrieve identities from agent」，把真正的失败原因（密码错 / 密钥被拒）替换掉，所以连之前先问一次 `getIdentities`，答不上来就当没有；转发请求被服务器拒绝（`AllowAgentForwarding no` 是标准加固项）时重试一次不带该标志并把 `forwardingRefused` 带到结果里，而不是让整条命令失败 |
 | `forward-smoke` | 无 | 34 | 隧道本身：建立 / 拆除、`closeForAlias` 按主机拆除且**只拆该主机**、`holds` 引用计数、关闭转发不得断开主机 |
 | `forward-persist-smoke` | 无 | 102 | 已存映射：意图 / 事实分离、端口预检三态、占用端口不落盘、自动开启幂等、连接断开留痕、**主动断开主机与端口行「断开」逐字段一致**（`live` / `enabled` / `error` 三元组） |
