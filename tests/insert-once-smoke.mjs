@@ -135,7 +135,17 @@ check('the drag bridge removes every listener it added',
   `${dragAdds} add(s), ${dragRemovals} removal(s)`)
 check('the row menu removes its listener',
   source.includes("document.removeEventListener('contextmenu', onContextMenu, true)"))
-check('apply() returns the disposer', /return \(\) => \{\s*\n\s*clearTimeout\(transferActionsProbe\)\s*\n\s*detachBridges\(\)\s*\n\s*\}/.test(source))
+// The teardown is a list, not a shape: every document-level thing `apply` starts
+// has to be stopped here or it outlives the materialization. So assert the set
+// of stops, in the order they were added, instead of one hard-coded body.
+// Anchor on the teardown's own first statement: `return () => {` appears all
+// over the bundle, and the first match is a dialog's focus restore.
+const teardown = source.match(/return \(\) => \{\s*\n\s*clearTimeout\(transferActionsProbe\)([\s\S]*?)\n      \}/)?.[1] ?? ''
+const stops = ('clearTimeout(transferActionsProbe)' + teardown)
+  .split('\n').map(line => line.trim()).filter(line => line !== '')
+check('apply() returns the disposer',
+  stops.join(' | ') === 'clearTimeout(transferActionsProbe) | sessionCatchUp.stop() | detachBridges()',
+  stops.join(' | '))
 check('apply() keeps the installed disposer', source.includes('const detachBridges = installComposerBridges(ctx)'))
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)

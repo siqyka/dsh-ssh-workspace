@@ -156,7 +156,7 @@ check(
 check(
   'every kind in the vocabulary is actually recorded somewhere',
   (() => {
-    const sources = ['engine.js', 'remote-fs.js', 'forward.js']
+    const sources = ['engine.js', 'remote-fs.js', 'forward.js', 'ownership.js']
       .map(file => readFileSync(path.join(pluginRoot, 'lib', file), 'utf8'))
       .join('\n')
     return Object.entries(KINDS).every(([name]) => new RegExp(`KINDS\\.${name}\\b`).test(sources))

@@ -292,6 +292,71 @@ worker 的 bootstrap 在宿主包里，远端主机既没有它、也不一定�
 
 > 这是服务端改动（`lib/`），**必须重启 DSH** 才生效，刷新页面不够。
 
+## 卸载过插件后，侧栏少了远程工作区的会话
+
+**症状**：`ssh://` 工作区那一行还在，点开却只有新会话；旧的会话在别处打不开，`~/.dsh/sessions/`
+下对应的 `session.v4.jsonl.zstd` 文件也都还在。
+
+**判据**：文件没丢，丢的是**归属记账**。宿主的 `@deepseek-ai/dsh-workspace` 用 `realpath(cwd)` 校验
+每个会话的 cwd；插件不在时 `ssh://` 的 `realpath` 必然失败，该 id 只进 `invalidSessionPaths`，
+既不入 `sessionPaths` 也不入 `missingSessionPaths`，因此不匹配任何工作区。更糟的是这个"解析不了"
+的名单会被 `mutate()` **写回磁盘**——只要在那之后改过一次标题、attach 或 detach，归属就被真删。
+
+**处置**：不用手动修，也不用手改 `workspace.json`。插件**每次激活**都会补偿，顺序固定：远端根挂好
+之后**先重建一次宿主的会话索引**（`listStoredHeaders()` → `replaceHeaderIndex()` →
+`indexLiveSessions()`），让 `ssh://` 的 cwd 重新解析得开；再读每个工作区当前的记账（`sessionIds`
+是**筛选后**的视图），重建已经算回来的一律**不** attach（宿主对记录里已有的 id 会短路，发了也只是
+空转），只把**记录里真的没有**的 id 逐个 `attachSession` 并**回读 `sessionIds` 验证**。
+
+为什么不再「先量症状」：实体的 `sessionIds` getter 就是
+`record.sessionIds.filter(id => candidateMatches(id, path))`，原始记录又不在实体的公开面上，于是
+「索引是好的、本来就没事」与「索引是在插件缺席时建的、30 个 id 全被筛掉」读出**同一个零**——闸门会
+判定"无需重建"，会话继续藏着，只能靠重启让宿主重新 `init()`。实测重建代价约 **340 ms**（60 个持久
+会话、3 个 `ssh://` 根），每次激活一次。看结果的两处地方：
+
+- `ssh_workspace_status` 的 `ownership` 字段，以及面板 `/status` 的同名字段（浏览器那一半也读它）：
+  `stage`（走到哪一步：`listing` / `rebuilding` / `claiming` / `done`；`updatedAt` 是它最后一次变化的时间——**卡在某一站**与**字段为 `null`** 是两种
+  完全不同的故障）、`reclaimed`（本次新算进来多少）、`pending`（仍挂不回去的）、`skipped`（被停用的
+  工作区，不参与）、`degraded`（会话清单读不到、重建也没答案，因此没查）、`indexRebuilt`
+  （`reindexed` / `skipped` / `unsupported` / `empty` / `failed: …`）、`failures[]`（哪个工作区、
+  哪个会话、为什么——理由已去掉别名，路径显示为 `<workspace>`）；
+- 诊断（面板的状态点 / `/status` 的 `diagnosis.findings`）：`pending > 0` 时出现
+  `workspace-ownership` 的 warn；`reclaimed > 0` 时事件环里有一条 `ownership` 事件。
+
+还有一个**已经打开的页面**的问题，它有**两层**，缺一层症状就不同：
+
+1. **工作区分组**走订阅流（`workspace.follow`）：订阅时收一次基线，之后只在 `domain/changed` 推增量
+   时刷新；而重建索引改的是**索引**、不是工作区记录，一条事件都不会发。于是页面在插件启用之前就
+   订阅的话，会一直握着那份空 `sessionIds`。重建成功后补偿会按宿主自己的发射形状把每个工作区的
+   **筛选后**视图重新广播一遍（`published` = 广播了几个工作区），这层就补上了。
+2. **分组里的会话行**不来自那条流，而是来自 `session.list`——页面连上时**拉一次**的基线。冷会话
+   （不在宿主活会话表里）没有任何可推送的事件，宿主也就永远补不上这几行。所以只补第 1 层会得到
+   「分组回来了、但每个分组下面空着」。
+
+因此补偿跑完之后，浏览器那一半会**再要一次会话基线**：读到 `/status` 的 `ownership`，只有
+`stage === 'done'` 且这一次确实动过东西（`indexRebuilt === 'reindexed'`，或 `reclaimed > 0`，
+或 `published > 0`）才调一次 `sessions.refresh()`（宿主 `refreshList()` 的公开入口，与重连时走的
+是同一条路，自带 single-flight 与 `mergeOrderedBaseline`，能把缺失的行按顺序插回去）。拉完再看
+`workspaces` × `sessions` 两份快照里 ssh 分组还缺几条，缺就重试，**最多 3 次**；第一次看 `/status`
+在 400 ms 后，之后按 ×1.6 退避到 2 s，整趟 150 s 封顶。一个页面实例只跑一趟。
+
+于是「禁用 → 启用」当场就该看到会话，**不必重启 DSH**。仍然空着时依次看：`publishError` 非空
+（广播没成功，`ctx.emit` 缺席或抛出，刷新一次页面即可，不影响 `reclaimed` / `pending` 的判定）；
+`ownership.stage` 没到 `done`（补偿还在跑或卡住，上面几种情形见下文）；宿主没有 `sessions` 服务或
+它没有 `refresh`（catch-up 报「没问」，静默跳过，刷新页面仍能补上）。
+
+三种情形补偿救不回来，也都是**说得出来**的：工作区被停用（根刻意没挂，只算 `skipped`）、远端目录
+已被删除（`realpath` 仍失败，进 `failures` 且 `reason` 带 `ENOENT`）、会话清单不可读（
+`degraded` 非空、`pending` 记 0 而不是虚报）。前两种可以先 `ssh_workspace_enable` 恢复工作区、
+确认远端目录存在后重启 DSH 再试一次。
+
+> 同样是服务端改动（`lib/ownership.js`）。**重新启用插件不必再重启一次**：补偿每次激活都先无条件
+> 重建一次宿主会话索引（结果写在 `ownership.indexRebuilt`，正常是 `reindexed`），重建后回读记账即算
+> 恢复。只有重建被判为 `unsupported`（宿主换了这几个方法名）或 `failed: …` 时，才需要**重启 DSH**。
+> 刷新页面**不会**重跑补偿（它只重跑浏览器那一半的 catch-up，而 catch-up 读的是补偿已经写下的结果）。
+> 补偿里每个 await 都有预算（会话清单 10 s、重建 45 s、单条认领 10 s、整趟认领 60 s），"卡住"于是会
+> 以 `pending` 的理由出现，而不是让副作用栏一直空着。
+
 ## 连接问题
 
 **先看诊断历史**：环形缓冲的**容量是 40 条**（`lib/diagnostics.js` 的 `CAPACITY`），

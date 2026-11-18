@@ -18,7 +18,7 @@
 | 浏览器 HTTP 路由 | 33 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
 | 接管的服务 seam | 6 个：`ctx.fs`、`ctx.sandbox.confine`、`ctx.shell`、`ctx.subprocess`（`spawn` 与 `spawnTerminal` 两个方法）、`ctx.ptcRuntime.resolve`、客户端 `ctx.slots`（两个 UI 槽位，含注册表 projection 放宽） |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
-| 冒烟测试套件 | 89 个（裸检出 81 个通过 / 2 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 85 个通过 / 2 个 partial / 2 个 SKIP；合计 4421 / 4671 项断言，采样） |
+| 冒烟测试套件 | 91 个（裸检出 83 个通过 / 2 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 87 个通过 / 2 个 partial / 2 个 SKIP；合计 4632 / 4882 项断言，采样） |
 
 设计前提：**不注册第二个 fs 服务**。远端方法装在部署已挂载的那一个 `ctx.fs` 实例上，
 `ssh://` 路径走 SFTP，其余路径原样转发给原后端——因此本地工作区的一切行为不受影响。
@@ -35,6 +35,7 @@
 | 重新启用 | 再挂载并取消归档；启用前用**原始连接**（绕开围栏）`stat` 验证远端目录仍存在，避免得到一个「看着在服务、实际 ENOENT」的工作区 |
 | 停用即全局停机 | 停用后该工作区**除 SSH 连接外的一切操作**都被拒绝：读写、列目录、变更监视、执行命令、开终端、glob / grep / git、文件传输。围栏挂在 `engine.disabledWorkspaces`，在 `ctx.fs`、内建 fs 桥、`ctx.shell`、`ctx.subprocess`、终端接管层与四条传输路由（`transfer` / `download` / `download-tree` / `upload`）里同时生效，且都在**建立连接之前**拒绝 |
 | 刻意保留的例外 | 内建桥的 `stat` / `lstat` / `realpath` 不挡——DSH 的 registry 用它们做会话身份探针，在那里制造失败会让它把会话从工作区记账里剪掉 |
+| 会话归属自动补偿 | 插件**每次激活**、在远端根挂好**之后**，把上一次启动漏挂的 `ssh://` 会话重新认领回工作区。会话文件从未丢失，丢的是宿主按 `realpath` 建的那份归属记账（插件缺席时 `ssh://` 的 `realpath` 必然失败，宿主随即把会话从记录里筛掉并写盘）。只在**规范化后完全相等**的路径上认领（子目录、另一台主机的同一路径都不算——宿主的判据就是字符串相等），逐个 `attachSession` 后**回读 `sessionIds` 验证**，失败只算一条 `pending` 而不中断其余；detach 的工作区计入 `skipped`、不计失败。仍不可恢复的三类情形：工作区被停用（根刻意没挂）、远端目录已删除（`realpath` 仍失败）、会话清单不可读——后两者留在 `ssh_workspace_status` 的 `ownership` 快照里（`failures` 带路径与理由、`degraded` 说明为何没查），`pending > 0` 时诊断给出 `workspace-ownership` 的 warn；每次激活都**无条件重建一次**宿主会话索引（`listStoredHeaders()` → `replaceHeaderIndex()` → `indexLiveSessions()`；在真实部署上约 340 ms / 60 个会话），再据此读记账、只 attach 记录里真的没有的 id——因此「禁用 → 重启 → 启用」之后**不必再重启一次**才见到会话；重建成功后还会按宿主的 `domain/changed`形状把每个工作区的**筛选后**视图重新广播一次，已经在看页面的客户端因此也不用刷新（广播数记在`published`，失败原因记在 `publishError`，广播不可用只降级、不中断补偿）。广播只补上**分组**这一层，分组**里的行**来自页面连上时的那一次 `session.list`，而冷会话没有可推事件——所以浏览器那一半还会在补偿跑完后**再要一次会话基线**（`sessions.refresh()`，即重连时走的那条路，自带 single-flight与按序合并）：只在 `stage === 'done'` 且这次确实动过东西时触发，缺行就重试最多 3 次（首看 400 ms、退避 ×1.6 封顶 2 s、整趟 150 s 封顶），一个页面实例只跑一趟，宿主缺服务或抛错时静默跳过。之所以不再「先量症状」，是因为实体的 `sessionIds` 是**已筛选**视图、原始记录又不在公开面上，「健康」与「索引陈旧」读出同一个零。`replaceHeaderIndex` 不是公开 API，缺失即降级为 `unsupported`（结果写在快照的 `indexRebuilt` 字段），快照同时由状态工具、诊断报告与面板 `/status` 三处提供 |
 
 ## 二、文件读写
 

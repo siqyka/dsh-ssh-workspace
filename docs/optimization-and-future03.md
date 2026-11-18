@@ -105,7 +105,7 @@
 
 ## 3. 上游阻塞
 
-复核对象：`F:/GitHub/.test-deps/node_modules/@deepseek-ai`，相关包 `0.2.1-rc.2`（2026-11-08 逐行核对）。四条都**仍卡**。行号以该副本为准；`app.asar` 内版本可能不同步，复核时先确认版本。
+复核对象：`F:/GitHub/.test-deps/node_modules/@deepseek-ai`，相关包 `0.2.1-rc.2`（2026-11-08 逐行核对）。五条都**仍卡**。行号以该副本为准；`app.asar` 内版本可能不同步，复核时先确认版本。
 
 | 条目 | 宿主现状 | 上游解决后本插件可退什么 |
 | --- | --- | --- |
@@ -113,11 +113,13 @@
 | 宿主文件树没有选择/批量 API | `dsh-client-ui-sidebar-files/lib/client.js`（0.2.1-rc.2，1,025 行）：`selected` / `selection` 0 命中；`ctrlKey` / `shiftKey` / `metaKey` 0 命中（只有命令快捷键的 `modifiers`）。宿主仍输出 `data-files-entry` / `data-files-path`（`:498-499` 目录、`:522-523` 文件、`:542-543` other，`:667` 声明），本插件的装饰式桥接依赖它们 | `.sshwsp-tree-row-selected` + `aria-selected` + roving tabindex + document 捕获监听 + `selectReduce` 的手势拆分。注意：宿主已从 2,251 行缩到 1,025 行，桥接必须按当前 DOM 重新复核一遍 |
 | 工具上下文没有 cwd / world / 进度通道 | `dsh-tool-cordis/lib/types/api-catalog.js:8172` `ToolExecutionInput { callId; rootCallId?; name; schema?; arguments; agent?; parent?; signal }`；`:8244` `ToolRunContext extends ToolExecution { deferContext(context: UserMessage): void; concludeTurn(): void }`。插件只能用 `exec.signal`（`lib/tools.js:1385-1387`） | F-02 的“传输进度进入工具输出”可以接宿主进度通道，而不是现在的查队列；前台工具也能显示进度，而不是只有终态 |
 | execution world / 配额没有 provider seam | `dsh-api-terminal-controller/lib/index.js:969-980` `execution(agent)` 只 `agent.ctx.get` `subprocess` / `sandboxPolicy` / `workingDirectory`，没有可替换的 provider。上限仍只有每会话终端数：`:753` `maxTerminals: z.number().step(1).min(1).default(8)`、`:843` `terminal/limit-reached`；没有连接/传输配额抽象 | F-05 的“多工作区配额”可以交给宿主，插件不必自己维护计数器；远端命令沙箱也才有讨论的前提 |
+| 远端会话的归属记账会因为本机解析不了 cwd 而被真删 | `dsh-workspace/lib/index.js:875-895` 的 `indexHeader()`：`realpathNormalize(header.cwd)` 抛错时只写进 `invalidSessionPaths`（**既不入** `sessionPaths`，**也不入** `missingSessionPaths`），而成员判定是 `:367` 的 `candidateMatches`，于是 `ssh://` 会话不匹配任何工作区；`:173-191` 的 `mutate()` 又把 `candidateMatches` 过滤后的名单 `table.update` 落盘，任何一次改标题 / attach / detach 都会把「解析不了」的旧会话真删。宿主只在注册表**从未初始化**时跑 `bootstrap()`（`:758-810`），之后不会重新认领 | `lib/ownership.js` 的启动补偿，以及 `engine.ownership` 快照 / `workspace-ownership` finding / `KINDS.ownership` 事件这一整条可观测链。上游只要做到任一半即可退役：① `mutate()` 不因 cwd 本机解析不了而删账（保留该 id，或降级为 `missingSessionPaths` 语义）；② `indexHeader()` 对「字符串与某个已登记工作区 path 完全相等」的 cwd 直接认作成员（URI 语义），不必先过 `realpath` |
+
 
 ## 4. 验证证据的缺口与口径
 
-- **默认门禁**：`node tests/run.mjs`，最近一次实测 `81 passed, 2 partial, 6 skipped, 0 failed`（89 套件，4421 项断言）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
-- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 后为 `85 passed, 2 partial, 2 skipped, 0 failed`（89 套件，4671 项断言）；`boot` 与 `local-changes-remote` 的 live 段为 `partial`，`live` / `acceptance` 仍 SKIP。默认不在门禁内的 6 个按环境套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `live` / `acceptance`。
+- **默认门禁**：`node tests/run.mjs`，最近一次实测 `83 passed, 2 partial, 6 skipped, 0 failed`（91 套件，4632 项断言）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
+- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 后为 `87 passed, 2 partial, 2 skipped, 0 failed`（91 套件，4882 项断言）；`boot` 与 `local-changes-remote` 的 live 段为 `partial`，`live` / `acceptance` 仍 SKIP。默认不在门禁内的 6 个按环境套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `live` / `acceptance`。
 - **`run.mjs` 的跳过判定（已修）**：`tests/run.mjs:186-189` 先前只要输出里出现行首 `SKIP` 就把整套记为 skipped，没有看「跑了几项」。默认口径下 `tests/boot-smoke.mjs:32` 因 `DSH_CORE_ROOT` 未设置而打印 SKIP 并以 `0 passed` 退出，因此早先的 `76 passed / 6 skipped` 没有高估；设 `DSH_CORE_ROOT` 后 boot 真的跑 30 项（`tests/boot-smoke.mjs:198` 只是内部 remote-host 段 SKIP），旧 runner 却把整套记为 skipped。第三态 `partial` 已由 `tests/support/run-state.mjs` 与 `tests/run-state-smoke.mjs` 引入。
 - **`scripts/reverse-verify-archive.mjs`**：20 个变异全部 RED（2026-11-08 实测），跑前备份、跑后逐字节还原。它是评审动作，**不进 CI**——它会改写源文件。
 - **`scripts/reverse-verify-tree-drag.mjs`：17 confirmed / 0 not（2026-11-09 实测，exit 0）**：本轮三个行为各配一组变异——本地空白菜单（解析最近目录 / 根内栅栏 / 行按钮不算空白 / 展开目录的子列表算空白 / 远端根不进入 / 项目数 / 只读只禁用新建）、多选拖入（载荷退回单路径 / 只插第一项 / 行菜单退回单行 / 每项各聚焦一次 / 去掉去重 / 中途失败即中止 / 丢掉接收卡）、本地 mkdir 分支（边界改读请求 / 跳过 realpath 父目录检查 / 接受远端工作区）。同样是评审动作、不进 CI。

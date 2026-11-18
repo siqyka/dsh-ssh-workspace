@@ -2,142 +2,49 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
-## [未发布]
-
-### 修复
-
-- **远端工作区里一条命令都起不来**（`windows-acl … workspace and temp directory resolution failed`）：
-  宿主的每条命令通路都先跑 `ctx.sandbox.confine()`，**之后**才到本插件接管的 `ctx.shell` /
-  `ctx.subprocess`；而 `sandboxPolicy.resolve()` 把远端会话的 cwd 原样返回（`ssh://alias/…`），
-  提供方却按**主机路径**解析它——`realpathSync.native('ssh://…')` → `ENOENT` →
-  `SANDBOX_PREPARATION_FAILED`，本插件的 seam 一次都没被问到。新增 `lib/patch-sandbox.js` 接管
-  已在位的 `confine`：只把 policy 里 `ssh://` 的 `workspaceRoot` 换成本机真实存在的替身目录
-  （`tmpdir()` 下**固定名字**的子目录——提供方按 root 缓存 ACL 授权，随机名会每条命令泄一个 ACE），
-  `mode` / `sessionId` 原样带过，`additionalWritableRoots` 只剔远端项。**不改 `sandboxPolicy.resolve`**：
-  `mode-gate.js` 的 `workspaceWriteScopeRefusal` 正靠那个拼写做 `workspace-write` 的会话级收窄。
-  这也不是放行——同一路径改动前完全跑不起来，替身根是插件自己的空目录，真正执行远端命令的是
-  `patch-shell` / `patch-subprocess` / `patch-terminal`。
-- **`run_code`（`ops-ptc` 预设）报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`**：
-  PTC worker 是**本机进程**，但 `resolve(request)` 把 cwd 默认成 `sandboxPolicy` 的 `ssh://` 根；
-  先被 subprocess 白名单拒（只放行 git / rg），即便放行，每次求值也会 `process.chdir('ssh://…')`
-  而失败。新增 `lib/patch-ptc.js` 接管 `ctx.ptcRuntime.resolve`，只把返回 spec 里**远端**的 `cwd`
-  换成 `patch-sandbox.js` 同一个替身根（spawn 与每次 chdir 一起修好）；本地 spec 按引用原样返回，
-  `sandboxPolicy` / `program` / `bindings` / `timeoutMs` 一律不动。程序**调用的**工具仍在远端执行，
-  程序自身的 `process.cwd()` / 相对 `import()` / `node:fs` 从本地 scratch 解析。
-- **官方「变更请求」面板在远端工作区整块空白**（`cannot run "…DeepSeek Harness.exe" with a remote cwd`）：
-  面板每次测量都是 `runGit()`——先 `confine()` 再 `spawn()`。`workspace-write` / `read-only` 下 Windows
-  把 argv 包成 `[<runner.js> …flags, '--', git, …]`，前置是 `windowsAclRunnerInvocation()` 的
-  `process.execPath`——打包版里就是桌面 exe，不是 `node`；`unwrapSandboxArgv` 只认 `node*` 与 POSIX
-  launcher，这层没被剥掉，`argv[0]` 直接撞在 git / rg 白名单上。现在多认第三种真实形状：与本进程
-  `process.execPath` **同名同身份**的打包可执行文件（另有 `electron` / `electron.exe`）。剥离边界不变
-  ——仍必须在 `--` 之前看到沙箱命名空间，因此用户自己的 `git -- status`、`node script.js -- git …`
-  原样保留，PTC worker 的 `[<本机可执行文件>, <bootstrap>]` 没有命名空间、照旧被拒。
-- **Windows 上受沙箱约束的远端 git 一条也跑不起来**：剥离只认 `landlock-run` / `bwrap` /
-  `sandbox-exec` 三个 POSIX basename，`remoteCommandFor` 看到 `node.exe` 就直接拒绝。
-  `unwrapSandboxArgv` 现在同时识别「front 是 node 且前缀里带 runner namespace 标记」
-  （`SANDBOX_RUNNER_MARKERS` / `NODE_PROGRAMS`）。
-- **桥接不了的命令被变成同步异常**：普通路径路由原先先于白名单判定，挂载根下的 `bash` / `node`
-  从「本地 spawn 报 ENOENT」变成宿主内部同步抛 `cannot run … only git and ripgrep`。现在先判
-  `routesToRemoteCommand`，非 git/rg 保持本地 spawn。
-- **`--namespace` 被当成路径选项**：它命名的是 ref namespace 而不是目录，远端翻译会把 ref 前缀
-  改写成远端路径。已从 `GIT_PATH_OPTIONS` 移除，出现在 argv 里时逐字保留。
-- **浏览器终端的操作链会被一个永不落地的操作冻住**（PR #6 合入）：宿主把同一终端的
-  `write` / `resize` / `attach` / `close` 全排进一条串行队列，任何一个 promise 不 settle 就冻住整个
-  终端。三处成因已对照真库核过并修掉——`ssh2@1.17.0` 的 `Channel.setWindow(rows,cols,…)` **没有回调**
-  （`Channel.js:221-236`）、`Channel._write` 在 `outgoing.state !== 'open'` 时直接 `return` 不调回调
-  （`:156-167`）、`terminate()` 等对端 CHANNEL_CLOSE 而对端不确认时 ssh2 永不 emit `close`。现在
-  resize 发完即落地、非 open 的 write 明确拒绝而不是挂起、`terminate()` 先结算 `output`/`done` 再给
-  250ms 宽限（`TERMINATE_RELEASE_MS`）后本地 `channel.destroy()`；失败只 reject `done`，
-  `output.end()` 而不是 `destroy(error)`，避免无读者时 PassThrough 的 `'error'` 掀掉宿主。
-- **`RemoteTerminalHandle` 缺 `inspectActivity`**（PR #6 合入）：宿主在 `create()` 的 catch 里无条件
-  `handle.inspectActivity.bind(handle)`，缺方法就是 TypeError、能带走宿主进程。补上后按字节活动答
-  `busy` / `unknown`，退出后 `idle`——不猜 `idle` 去杀跑长命令的终端。
-- **远端终端不认用户选的 shell 家族**（PR #6 合入）：此前一律 `exec sh -l`，标签写 zsh 实际跑 sh。
-  现在取 `argv[0]` 的 basename、去 `.exe`、小写后查 `{bash,zsh,fish,ksh,tcsh,csh}` 白名单，命中出
-  `if command -v <name> >/dev/null 2>&1; then exec <name> -l; else exec sh -l; fi`，未命中（含
-  pwsh / cmd）保持 `exec sh -l`。名字只来自白名单、不插值，注入面没有扩大。
-- **官方「变更请求」面板上半整块显示 i18n key**（`checkout.project` / `changes.local.title` 等）：
-  遮蔽注册原先声明了官方**包 id** 作 `locale`，而渲染器是按**条目自己声明**的命名空间合成 `t` 的
-  ——包 id 不是字典名，`bind` 找不到字典就按约定回退成 key。现在本插件的座位**不声明** `locale`，
-  官方面板的 `t` 由新增 `officialTranslateSeat()` 从**官方条目自己的** `entry.locale` 绑定后作为
-  `t` 覆盖进它的 props；绑不上时返回 `null` 且不覆盖。
-- **终端路径上的常驻 trace 已移除**：此前每次 open / close 同步写一行到
-  `/tmp/ssh-workspace-terminal.log`，`write` 更是**每一击键一行**。整条移除后模块内不再有任何同步
-  文件 I/O，`terminal-smoke` 钉住这一点（含环境变量与文件名都不得出现）。
-- **宿主侧内容采集的静默失败现在可观测**：`dsh-workspace-changes` 的 `captureFile` 走 node:fs，
-  远端路径在本机打不开 → `kind: 'absent'`，被 git 忽略的改动画不出 diff 且不报错。首次远端写入时记
-  一条 `degraded` 诊断（`#captureLimitNoted`，每次激活一次），README 与 `docs/features.md` 同步说明。
-- **接缝装不上不再升级成插件激活异常**：`installRemoteSandbox` / `installRemotePtc` 等在宿主换掉方法
-  形状时是 `throw` 的，而它们跑在 `ctx.inject` 回调里——一个上游改名会让整个插件下线，而不是只丢掉
-  它支撑的那一个功能（见下方 `seams[]`）。
+## [0.3.5] - 2026-11-19
 
 ### 新增
 
-- **接缝接管的结果可查（`seams[]`）**：每个 `patch-*.js` 的安装点统一走 `lib/index.js` 的
-  `installSeam()`，结果为 `installed` / `absent` / `failed` 三态之一，由 `ssh_workspace_status`、
-  面板 status 路由与诊断报告三处同时提供。`absent`（这种组装根本没挂载该服务）**不算问题**；
-  `failed` 会把状态胶囊变红、在 status 文本里打印 `SEAM NOT INSTALLED`，并记一条新的 `seam` 诊断
-  事件。它和 `upstreamWorkarounds` 是一对镜像问题：后者问「宿主是否已经不需要这条补丁」，前者问
-  「我这次的接管到底装上没有」——两者给出的启动画面本来长得一模一样，都是静默。
-- **「变更请求」tab 下半的最近提交历史**（PR #6 合入）：按官方 tab key 遮蔽该 slot 条目，官方组件
-  留在上方、自己的只读提交条渲染在下方，不加新 tab。数据来自只读路由
-  `GET /api/dsh-ssh-workspace/git-history`：只接受 `session` 与 `limit`（1..100，默认 20），cwd 只从
-  会话自己的 `workingDirectory` 取，argv 固定为 `git --no-pager log -z --date=short --pretty=format:…
-  -n <n+1> --`，带 `GIT_TERMINAL_PROMPT=0` / `GIT_OPTIONAL_LOCKS=0` / `LC_ALL=C`，15s 超时与
-  1MB / 16KB 输出上限；非仓库与未出生 HEAD 是 200 状态而不是错误。`-n limit+1` 是为了判断截断。
-- **「最近提交历史」可折叠，且折叠状态被记住**：点标题行即整体收起，只留一行标题；`aria-expanded`
-  同步、chevron 旋转 90°、文案不带数字，标题里是真正的 `button`（不是给 `h3` 挂 `onClick`）。可见性
-  由**一个**纯函数 `historyChrome(collapsed, truncated)` 决定。折叠值写进页面 `localStorage`
-  （`dsh-ssh-workspace.commit-history.folded`，只认 `'1'`），缺失 / 垃圾值 / 读写抛错 / 无存储一律
-  按展开——宁可多显示一次列表，也不要让提交历史莫名其妙不见。
-- **「添加工作区」改成两段式**（PR #6 合入）：先选「新建本地工作区 / 新建远端工作区」。本地支直接
-  渲染**已安装的目录浏览面板本身**（同一组件、同一份 locale 与列目录调用；没有内置浏览器才回落到
-  `pickDirectory()`），远端支仍是选主机 → 逐级浏览 → 确认挂载。
-- **普通远端路径的 subprocess 路由**（PR #6 合入）：宿主的「本地变更」卡片会经 `ctx.fs.processPath`
-  把 `ssh://` 剥成裸绝对路径再调 git，于是判据从「有 scheme」变成「规范化后落在唯一已挂载远端根 +
-  该根主机可用 + 本机不存在同名路径」三条同时成立；任何一条不成立都保持本地 spawn，并把原因记进
-  `PLAIN_ROUTE_REASONS`。
+- **接缝接管的结果可查（`seams[]`）**：六个 `patch-*.js` 统一走 `installSeam()`，`installed` / `absent` / `failed` 三态由状态工具、面板 `/status` 与诊断报告同时给出；`absent` 不算问题，`failed` 把状态胶囊变红并记一条 `seam` 事件。与 `upstreamWorkarounds` 互补：一个问宿主是否已不需要这条补丁，一个问这次接管到底装上没有。
+- **远端工作区里命令能起来**：宿主每条命令通路都先跑 `ctx.sandbox.confine()`，它按主机路径解析 `ssh://…` → `ENOENT` → `SANDBOX_PREPARATION_FAILED`，接缝一次都没被问到。新增 `lib/patch-sandbox.js`，只把 policy 里远端 `workspaceRoot` 换成本机固定名的替身目录（随机名会每条命令泄一个 ACE），`mode` / `sessionId` 原样带过；**不改 `sandboxPolicy.resolve`**，`mode-gate.js` 的会话级收窄正靠那个拼写。真正执行远端命令的仍是 `patch-shell` / `patch-subprocess` / `patch-terminal`。
+- **`run_code`（`ops-ptc` 预设）不再报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`**：PTC worker 是本机进程，cwd 默认成 `ssh://` 根，先被 subprocess 白名单拒，放行也会 `process.chdir('ssh://…')` 失败。新增 `lib/patch-ptc.js` 接管 `ctx.ptcRuntime.resolve`，只换返回 spec 里远端的 `cwd`，本地 spec 按引用原样返回；程序调用的工具仍在远端执行。
+- **官方「变更请求」面板不再整块空白**：`workspace-write` / `read-only` 下 Windows 把 argv 包成 `[<runner.js> …flags, '--', git, …]`，前置是打包版桌面 exe 而不是 `node`。`unwrapSandboxArgv` 多认「与本进程 `process.execPath` 同名同身份的可执行文件」与「front 是 node 且前缀带 runner namespace 标记」两种真实形状，剥离边界仍在 `--` 之前，用户自己的 `git -- status` 原样保留。
+- **普通远端路径的 subprocess 路由**：宿主「本地变更」卡片经 `ctx.fs.processPath` 把 `ssh://` 剥成裸绝对路径再调 git。判据从「有 scheme」变成三条同时成立（落在唯一已挂载远端根、该根主机可用、本机无同名路径），不成立则保持本地 spawn 并把原因记进 `PLAIN_ROUTE_REASONS`；路由前先判 `routesToRemoteCommand`，挂载根下的 `bash` / `node` 不再从本地 ENOENT 变成宿主内部同步抛错。
+- **「变更请求」tab 下半的最近提交历史**：按官方 tab key 遮蔽该 slot 条目，官方组件留在上方、只读提交条渲染在下方，不加新 tab。数据来自只读路由 `GET /api/dsh-ssh-workspace/git-history`：只接受 `session` 与 `limit`（1..100，默认 20），cwd 只从会话自己的 `workingDirectory` 取，argv 固定，带 `GIT_TERMINAL_PROMPT=0` / `GIT_OPTIONAL_LOCKS=0` / `LC_ALL=C`，15s 超时与 1MB / 16KB 输出上限；非仓库与未出生 HEAD 是 200，`-n limit+1` 用来判断截断。
+- **提交历史可折叠，折叠状态被记住**：点标题行整体收起，`aria-expanded` 同步、chevron 旋转 90°、文案不带数字、标题里是真正的 `button`。可见性由唯一纯函数 `historyChrome(collapsed, truncated)` 决定；折叠值写页面 `localStorage`（`dsh-ssh-workspace.commit-history.folded`，只认 `'1'`），缺失 / 垃圾值 / 读写抛错 / 无存储一律按展开。
+- **「添加工作区」改成两段式**：先选「新建本地工作区 / 新建远端工作区」。本地支直接渲染已安装的目录浏览面板本身（同一组件、同一份 locale 与列目录调用，没有内置浏览器才回落 `pickDirectory()`），远端支仍是选主机 → 逐级浏览 → 确认挂载。
+- **会话归属自动补偿**（`lib/ownership.js`）：宿主用 `realpath(cwd)` 校验会话，插件缺席时 `ssh://` 必然失败，该 id 两个名单都不入，此后任一次 `mutate()` 都会把这份名单写回磁盘——会话文件都在，丢的是归属记账。现在每次激活、远端根挂好**之后**（顺序不能反）无条件重建一次宿主会话索引（`listStoredHeaders()` → `replaceHeaderIndex()` → `indexLiveSessions()`，实测约 340 ms / 60 个持久会话），再只对记录里真没有的 id `attachSession` 并回读 `sessionIds` 验证；只在规范化后完全相等时认领，`subagent` 子会话不算候选，失败只算一条 `pending`。
+- **侧栏分组与分组里的行都能自己回来**：重建索引改的是索引、不发 `domain/changed`，所以重建成功后还要按宿主自己的发射形状把每个工作区的筛选后视图重新广播一次（`makeWorkspaceRepublisher`，失败只降级不中断补偿）。分组**里的行**来自页面连上时那一次 `session.list`，于是补偿跑完后浏览器那一半再要一次会话基线（`sessions.refresh()`）：只在 `stage === 'done'` 且这次真动过东西时触发，缺行重试最多 3 次（400 ms 起、×1.6 封顶 2 s、整趟 150 s 封顶），一个页面实例只跑一趟。「禁用 → 重启 → 启用」之后不必再重启 DSH。
+
+### 修复
+
+- **浏览器终端的操作链会被一个永不落地的操作冻住**：宿主的 `write` / `resize` / `attach` / `close` 全排进一条串行队列，一个 promise 不 settle 就冻住整个终端。三处成因已对照真库核过并修掉——`ssh2@1.17.0` 的 `setWindow` 没有回调、`Channel._write` 在非 open 时直接 return、`terminate()` 等对端 CHANNEL_CLOSE 而 ssh2 永不 emit `close`。现在 resize 发完即落地、非 open 的 write 明确拒绝而不是挂起、`terminate()` 先结算 `output` / `done` 再宽限 250 ms（`TERMINATE_RELEASE_MS`）后本地 `channel.destroy()`。
+- **`RemoteTerminalHandle` 缺 `inspectActivity`**：宿主在 `create()` 的 catch 里无条件绑定，缺方法就是 TypeError、能带走宿主进程。补上后按字节活动答 `busy` / `unknown`，退出后 `idle`——不猜 `idle` 去杀跑长命令的终端。
+- **远端终端不认用户选的 shell 家族**：此前一律 `exec sh -l`，标签写 zsh 实际跑 sh。现在取 `argv[0]` 的 basename、去 `.exe`、小写后查 `{bash,zsh,fish,ksh,tcsh,csh}` 白名单，命中出 `if command -v <name> >/dev/null 2>&1; then exec <name> -l; else exec sh -l; fi`，未命中（含 pwsh / cmd）保持 `exec sh -l`；名字只来自白名单、不插值。
+- **官方「变更请求」面板上半整块显示 i18n key**：遮蔽注册原先声明官方**包 id** 作 `locale`，而渲染器按**条目自己声明**的命名空间合成 `t`——包 id 不是字典名。现在本插件的座位**不声明** `locale`，官方面板的 `t` 由新增 `officialTranslateSeat()` 从官方条目自己的 `entry.locale` 绑定后覆盖进 props，绑不上返回 `null` 且不覆盖。
+- **`--namespace` 被当成路径选项**：它命名的是 ref namespace 而不是目录，远端翻译会把 ref 前缀改写成远端路径。已从 `GIT_PATH_OPTIONS` 移除，出现在 argv 里时逐字保留。
+- **终端路径上的常驻 trace 已移除**：此前每次 open / close 同步写一行到 `/tmp/ssh-workspace-terminal.log`，`write` 更是每一击键一行。整条移除后模块内不再有任何同步文件 I/O，`terminal-smoke` 钉住这一点（含环境变量与文件名都不得出现）。
+- **宿主侧内容采集的静默失败现在可观测**：`dsh-workspace-changes` 的 `captureFile` 走 node:fs，远端路径在本机打不开 → `kind: 'absent'`，被 git 忽略的改动画不出 diff 且不报错。首次远端写入时记一条 `degraded` 诊断（`#captureLimitNoted`，每次激活一次）。
+- **接缝装不上不再升级成插件激活异常**：`installRemoteSandbox` / `installRemotePtc` 等在宿主换掉方法形状时是 `throw` 的，而它们跑在 `ctx.inject` 回调里——一个上游改名会让整个插件下线，而不是只丢掉它支撑的那一个功能。现在统一经 `installSeam()` 捕获并记成 `failed`。
+- **状态面把快照字段弄丢，连带让整个 status 结果被宿主拒收**：`stage` / `updatedAt` 加进了快照与宿主的输出 schema，但结果里的 `ownership` 仍是**手写字段清单**的拷贝，于是 `ssh_workspace_status` 以 `missing required property "value.ownership.updatedAt"` 失败、HTTP `/status` 里那个字段读成 `null`。现在三处出口统一返回 `ownershipSnapshotCopy()` 的结构化拷贝，不再有第二份字段清单可以漂移。
+- **面板的 `/status` 也带 `ownership` 快照**：之前只有状态工具与诊断报告读它，排查「启用后会话没回来」时只能靠猜。字段缺失仍表示「还没测量过」，与测得 0 区分开。
+- **归属补偿把子会话算成丢失**：`subagent` 子会话继承父会话的 `cwd`、每次都成为候选，可它不是侧栏行也 attach 不上，于是 `pending` 永远至少是 1，那条警告永远清不掉。`reclaimCandidates` 现在跳过 `origin === 'subagent'` 的头部（以及带 `subagent` 字段的旧形状）。
+- **补偿不再「先量症状」**：闸门用 `entity.sessionIds` 判断有多少会话没被记账，而它是**已筛选**视图，于是「索引是好的」与「索引是插件缺席时建的」读出完全相同的零，判成无需重建。改为无条件重建一次；每个 await 都有预算（清单 10 s、重建 45 s、单条认领 10 s、整趟 60 s），超时写成 `pending` 的理由而不是无声挂起，空清单返回 `empty` 并放弃——**绝不**拿空表重建。
 
 ### 测试
 
-- `commit-history-smoke` 122 → **158**：新增 `[official copy seat]`（绑的是官方命名空间而不是包 id、
-  占位符原样透传、无命名空间 / 绑定抛错降级为 `null`、覆盖必须排在 `...split.rest` 之后即 props 最后
-  一项）、`[fold control]`（按钮 / `aria-expanded` / chevron 旋转 / 三个开关走同一判定、
-  `historyChrome` 四组矩阵）、`[fold persistence]`（真存取：`'1'` / `'0'` / 垃圾值 / 读抛错 / 写抛错 /
-  无 localStorage，外加「键必须属于本插件」），以及 `useTabInfo` 座位前提的四条与「两个可用性判定
-  必须分开」的源码断言。反向验证五处**实际转红**，改回后 `lib/client.js` 的 sha256 与变异前逐字节一致。
-- 新增 `patch-sandbox-smoke` 51 项（设 `DSH_CORE_ROOT` 时再多 3 项，直接用真实
-  `assertTempRootOutsideWorkspace` 验收替身根）：替身根真实存在 / 绝对 / 是 `tmpdir()` 的子目录 /
-  跨模块求值稳定、纯本地 policy **按引用返回**、`mode` 与 `sessionId` 原样带过、`additionalWritableRoots`
-  只剔远端项、同步实现不被包成 promise、装两次不双包、卸载按「原型 / 自有」分别还原。反向验证十处
-  **实际转红**，改回后 sha256 逐字节一致。
-- 新增 `patch-ptc-smoke` 36 项：远端 cwd 真实存在且已不是远端拼写、本地 spec **按引用返回**、
-  consumer 的 request 原样到达提供方且 `this` 仍绑定服务、其余字段按引用带过、装两次不双包、卸载
-  可还原并可重装。反向验证六处**实际转红**。
-- 新增 `browser-terminal-smoke` 27 项：用**忠实复制 ssh2 契约**的假通道（`setWindow` 无回调、
-  `write` 在非 open 时丢弃回调、`close()` 不 emit `'close'`）复现宿主那条串行队列——旧套件的宽松替身
-  主动调回调，正是这个 bug 一直绿着的原因。
-- `terminal-smoke` 28 → **38**（`inspectActivity` 三态、abort 后 PTY 仍在、方言映射五组夹具、
-  以及「模块内没有任何同步文件 I/O」）；`local-changes-remote-smoke` 64 → **76**（包装剥离矩阵新增
-  打包版 Desktop 前置按 `process.execPath` 身份识别、`electron` 开发版、以及端到端一条）。反向验证
-  三处**实际转红**，改回后逐字节一致。
-- `diagnostics-smoke` 49 → **65**（新增 `seams[]` 一节：三态、只有 `failed` 记事件、`absent` 不判红、
-  status / 路由 / 报告三处出口、以及「每个安装点都必须经过 `installSeam()`」的源码断言）。
-- 裸检出 **81 passed / 2 partial / 6 skipped / 0 failed（89 suites，4421 项断言）**；装配树
-  `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` **85 passed / 2 partial / 2 skipped /
-  0 failed（89 suites，4671 项断言）**。
+- `terminal-smoke` 23 → 38、`diagnostics-smoke` 49 → 65；`insert-once-smoke` 的 teardown 断言改为钉**停止清单**本身（新增一个需在卸载时停掉的东西本就该改这里）。
+- 新增八个套件：`workspace-ownership-smoke` 153、`session-catchup-smoke` 58、`commit-history-smoke` 158、`local-changes-remote-smoke` 70（设 `DSH_CORE_ROOT` 时再多 6）、`patch-sandbox-smoke` 51（再多 3）、`patch-ptc-smoke` 36、`browser-terminal-smoke` 27（用**忠实复制 ssh2 契约**的假通道复现宿主那条串行队列——旧套件的宽松替身主动调回调，正是这个 bug 一直绿着的原因）、`remote-git-env-smoke` 16。
+- 反向验证累计 **50 处以上实际转红**（归属与 catch-up 各 13、patch-sandbox 10、patch-ptc 6、`lib/client.js` 5 等），改回后相关文件的 sha256 与变异前逐字节一致。
+- 裸检出 **83 passed / 2 partial / 6 skipped / 0 failed（91 suites，4632 项断言）**；装配树 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` **87 passed / 2 partial / 2 skipped / 0 failed（91 suites，4882 项断言）**。
 
 ### 文档
 
-- `docs/architecture.md` 新增「接管 ctx.sandbox.confine」与「接缝接管的结果表（`seams`）」两节；
-  subprocess 一节补「运行器包装先剥掉」（三种真实包装形状、为什么打包版 exe 必须按身份识别）。
-- `docs/troubleshooting.md` 新增两条（`workspace and temp directory resolution failed`、
-  `cannot run "…DeepSeek Harness.exe" with a remote cwd`），各含现象 / 根因 / 修复 / 临时绕过。
-- `docs/commit-history.md` 新增「折叠是怎么做的」、重写 2.3（原结论「官方命名空间就是 TAB_ID」是错的）、
-  补「这条边界不包含会话归属校验，也没有限流」；`docs/features.md` 补方言映射只覆盖「启动」那一半、
-  远端 shell 菜单仍由本机发现生成，以及 `seams[]` 一行；`docs/tools.md` 补 `seams[]` 与 `seam` 事件。
-- 断言数字与套件行同步（4421 / 4671、套件行 158 / 65 / 新增 `patch-sandbox-smoke`），
-  `docs/README.md` 目录表补齐四篇此前未进索引的文档。
+- `docs/architecture.md` 新增「接管 ctx.sandbox.confine」「接管 ctx.ptcRuntime.resolve」与「接缝接管的结果表（`seams`）」三节，subprocess 一节补「运行器包装先剥掉」（三种真实包装形状、为什么打包版 exe 必须按身份识别）。
+- `docs/troubleshooting.md` 新增四条（`workspace and temp directory resolution failed`、`cannot run "…DeepSeek Harness.exe" with a remote cwd` 两条、卸载过插件后侧栏少了会话），侧栏那节按**两层**写（工作区分组走订阅流、分组里的行走连接时的那次 `session.list`）。
+- `docs/commit-history.md` 新增「折叠是怎么做的」、重写 2.3（原结论「官方命名空间就是 TAB_ID」是错的）；`docs/features.md` 改写方言一行、补逐文件文本对比的远端盲区 / `seams[]` / 会话归属补偿三行；`docs/tools.md` 补 `seams[]` 与 `seam` 事件。
+- `docs/README.md` 目录表补齐五篇此前未进索引的文档；`docs/optimization-and-future03.md` 上游阻塞表补第五条并写明本补偿的退役条件；套件与断言数统一为 91 / 4632 / 4882。
 
 ## [0.3.4] - 2026-11-14
 

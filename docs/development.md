@@ -14,9 +14,9 @@
 | HTTP routes | 33 | `lib/routes.js` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 53 | directory listing |
-| test suites | 89 | `tests/run.mjs` |
-| passing assertions (sampled) | 4671 | measured 2026-11-16 |
+| modules under `lib/` | 54 | directory listing |
+| test suites | 91 | `tests/run.mjs` |
+| passing assertions (sampled) | 4882 | measured 2026-11-18 |
 
 <!-- doc-numbers:end -->
 
@@ -150,22 +150,23 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **89 个套件里 81 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
+于是 **91 个套件里 83 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
 `boot` / `tool-schemas` 缺真实装配树，`live` / `acceptance` 缺真实主机），另有
-2 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段）；裸检出实测 **4421 项通过断言**。生成表那一行是**装配树采样值**（2026-11-16：4671 项），由
+2 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段）；
+裸检出实测 **4632 项通过断言**。生成表那一行是**装配树采样值**（2026-11-18：4882 项），由
 `node scripts/doc-numbers.mjs --assertions N` 打时间戳。
 带 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 时，`projection-real` / `lifecycle` /
 `tool-schemas` 三个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
-**85 个套件通过、2 个部分运行（`boot` 与 `local-changes-remote` 的 live 段）、2 个 SKIP**
-（`live` / `acceptance`）；实测 **4671 项通过断言**。
+**87 个套件通过、2 个部分运行（`boot` 与 `local-changes-remote` 的 live 段）、2 个 SKIP**
+（`live` / `acceptance`）；实测 **4882 项通过断言**。
 换一台机器、换一个宿主版本，断言总数就会变，所以只保留采样值。
 
 **两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
 
 - `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` 三个再跑起来，
-  通过套件数 81 → 85；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
+  通过套件数 83 → 87；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
   断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，89 个套件全部运行、
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，91 个套件全部运行、
   零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
@@ -174,8 +175,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
 **统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以「逐套件
-`PASS` 行数」与「汇总行数字」两种算法给出同一个值（本轮采样：裸检出 4421 项 / 89 个套件，
-装配树 4671 项 / 89 个套件）。
+`PASS` 行数」与「汇总行数字」两种算法给出同一个值（本轮采样：裸检出 4632 项 / 91 个套件，
+装配树 4882 项 / 91 个套件）。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
 脚本会静默跳过一个套件甚至五个，得出看起来核对过、实际少掉数百项的数字（本文件曾因此写 1756，
@@ -259,6 +260,7 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `terminal-smoke` | 无 | 38 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原；**`spec.signal` 只约束分配**——打开后 abort 不得关掉已开的 PTY（宿主浏览器终端是按请求信号），已 abort 的信号则必须先拦住打开；handle 合同补全 `inspectActivity`（远端按字节活动答 `busy`/`unknown`、退出后 `idle`，不猜 idle 去杀跑长命令的终端）；**方言映射**：远端按用户选的 shell 家族启动（bash/zsh/… 白名单，缺失回落 `sh -l`），Windows 方言回落 `sh -l`，且 `cd` 仍在前 |
 | `browser-terminal-smoke` | 无 | 27 | 浏览器终端的操作契约：宿主把该终端的每个操作串在同一条 enqueue 链上，任何一个 pending 就会冻住输出 / 输入 / 后续 attach / close——resize 不等 ssh2 不存在的回调、write 在通道非 open 时明确拒绝而不是吞掉回调、terminate 不等对端确认即结算 output/done（宽限后本地 destroy）、失败只 reject done 不 destroy output（否则无读者时掀翻宿主） |
 | `commit-history-smoke` | 无 | 158 | 「变更请求」tab 下半的最近提交历史：同 key 遮蔽官方 tab 条目、渲染官方组件 + 提交条、**官方文案座位取自官方条目自己的命名空间**（绑定包 id 会让上半整块显示 i18n key）、标题行是可折叠开关（`aria-expanded` + chevron 旋转、折叠时只剩标题）、**折叠状态写 `localStorage` 并在挂载时读回**（只认 `'1'`；缺失 / 垃圾值 / 读抛错 / 写抛错 / 无存储一律按展开）、`git log` 单位分隔记录的解析（subject 含分隔符也不串行）、非仓库 / 未出生 HEAD 是结构化状态而非错误、路由只读且只接受会话工作目录（不接任意 path）、条数上限与截断标记 |
+| `session-catchup-smoke` | 无 | 58 | 补偿跑完之后浏览器那一半的**一次性**会话重拉（`lib/client.js` 的 catch-up）：只补工作区记录不够——分组走 `workspace.follow` 订阅流，分组**里的行**来自连接时的那一次 `session.list`，而冷会话（不在宿主活会话表里）没有任何可推事件，所以页面会停在「分组回来了、下面空着」。断言分五层：「什么算一次跑完的补偿」（`stage` 未到 `done` 一律不拉：`listing` / `rebuilding` / `claiming` 三个半途快照各一条；`indexRebuilt === 'reindexed'`、`reclaimed > 0`、`published > 0` 三条证据任一成立即拉；健康的 `skipped` 重建、`failed: ENOENT`、什么都没动的 `done` 都不拉；`reclaimed: '3'` 这种数字字符串照算）、「重拉本身」（走 `sessions.refresh()` 而不是自己拼 `session.list`，缺服务 / 缺 `refresh` / 同步抛错一律报「没问」，返回的 promise **显式排空**——不排空就是未处理拒绝，返回 42 也当成功）、「这次拉取回答不了的事」（`phase === 'pending'` 时证明不了任何事、本地工作区不参与、`items` 为 `null` 不当崩溃、`toString` 这类继承属性不算会话——用 `Object.hasOwn` 而不是 `in`）、「看一趟就走」（首看 400 ms、退避 ×1.6 封顶 2 s、缺行就重试但**最多 3 次**、150 s 硬截止、`stop()` 清掉已排的 timer、`start()` 二次进入是空操作、停下的表不能再启动、跑完不留 timer）、以及「接线」（`apply` 里构造并启动、disposer 里停掉且在构造之后、整段只发一种请求且是 `/status`、重拉只经宿主会话服务） |
 | `local-changes-remote-smoke` | 无（逻辑段）；`DSH_WS_TEST_ALIAS`（live 段） | 76 | 普通远端路径的 subprocess 路由（「本地变更」卡片）：只有「规范化后落在唯一已挂载远端根 + 该根主机可用 + 本机不存在同名路径」三条同时成立才走远端；本机同名 → 保持本地、多根歧义 → 不路由并给 reason、detach / 主机不可解析 → 拒绝、`ssh://` 与本地 spawn 行为不变；真机段验证 plain cwd 的 `rev-parse` / `status` / `add -n` 全在远端执行且本地 spawn 次数为 0；运行器包装的剥离矩阵（`landlock-run` / `node` 前置 / 打包版 Desktop 可执行文件）：只剥「`--` 之前出现沙箱命名空间」的包装，Desktop 前置必须在与本进程 `process.execPath` **同名同身份**时才算（换个进程、只改名字都不行），用户自己的 `git -- status` 与 `node script.js -- git …` 原样保留，PTC worker 的 `[<本机可执行文件>, <bootstrap>]` 照旧被拒；端到端再证 Desktop 前置的 git 在 `ssh://` cwd 上仍走远端分支（这是官方「变更请求」面板在远端工作区唯一经由 `sandbox.confine()` 的路径） |
 | `transport-smoke` | 无 | 43 | 传输路由与流式通道（第二条 SFTP 通道、退化路径）；**逐主机传输开关**：`agentForward` 与 `compress` 是选择加入，未勾选的主机必须产生与它们出现之前逐字节相同的 ssh2 配置；`agentForward` 还有更硬的一层——ssh2 把**连接级** `agentForward` 读成全连接许可，并在连接没有 agent 时于 `connect()` **同步抛错**，所以引擎绝不能把它写在连接配置里，愿望存在池化 record 上、由每个 exec/shell 通道自己表达（`channelExecOptions`），SFTP 不经过它；**agent 必须先应答才上连接**：`resolveAgentPath` 只是名字解析器（Windows 无条件给 `pageant`），ssh2 不在连接时校验端点，挂一个没在跑的 agent 会让认证阶段报「Failed to retrieve identities from agent」，把真正的失败原因（密码错 / 密钥被拒）替换掉，所以连之前先问一次 `getIdentities`，答不上来就当没有；转发请求被服务器拒绝（`AllowAgentForwarding no` 是标准加固项）时重试一次不带该标志并把 `forwardingRefused` 带到结果里，而不是让整条命令失败 |
 | `forward-smoke` | 无 | 34 | 隧道本身：建立 / 拆除、`closeForAlias` 按主机拆除且**只拆该主机**、`holds` 引用计数、关闭转发不得断开主机 |
@@ -276,6 +278,7 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `redact-smoke` | 无 | 29 | 脱敏规则只有一个实现（`lib/redact.js`），三份对外产物共用：`diagnostics` 的 `exportText()`、支持包、审计行。存在理由是它们曾各写一套并**互相矛盾**——`engine.js` 每条成功连接都记 `connected to alice@prod-db-01.internal.corp:22`，支持包会打码而诊断文本不会，于是「支持包已经打码」正好成了用户放心粘贴诊断文本的理由。断言用真实字符串与真实函数：登录用户名、内网主机名、凭据样式的文件名必须消失，而 `host:port`、路径形状与普通源码文件名必须保留（过度打码的报告同样没用）；家目录 / 私钥 / `password=` 三组旧规则不得回归；脱敏必须幂等；别名掩码与三处产物口径一致 |
 | `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
 | `diagnosis-smoke` | 无 | 77 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**，以及聚合规则（确定的坏压过不确定）。**自检是提示不是判定**：缺工具与环境告警只进 `notes`，不改变 `state` / `warn` / `unknown`，也不与 `findings` 重叠；报告里它们出现在 `advisory (not counted in the verdict):` 一节，而同一份报告中的真问题仍然变红（两条断言互为反向，防止只是「把话改小声」）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
+| `workspace-ownership-smoke` | 无 | 153 | 会话归属补偿（`lib/ownership.js`）：宿主把 `ssh://` 会话从工作区记账里筛掉时**文件还在、丢的是记账**，所以断言全在账上——只在**规范化后完全相等**时认领（子目录、另一台主机同路径、本地 cwd 都不算，宿主也只认字符串相等）、**子会话（`origin: 'subagent'`）不算候选**（它继承父会话的 cwd 但永远不是侧栏一行，把它算进去会产出永远清不掉的 `pending`，测试同时断言「从不尝试 attach」）、先挂根后认领的顺序（源码里 `reclaimOwnership(` 必须出现在 `addRoot(` 之后，顺序被打乱会静默失效）、认领后**回读 `sessionIds` 验证**（宿主对「记录里已有该 id」会短路且不重建路径索引，把这种 no-op 记成成功正是本模块要结束的静默）、单个 `attachSession` 抛错只算一条 `pending` 且理由含 `ENOENT` 但不含别名（路径换成 `<workspace>`）、detach 的工作区进 `skipped` 不进 `failures`、`sessionQuery` → `sessionPersistence` 的降级顺序与「两个来源都没有」时 `pending` 必须是 0（未知不是零）、无远端工作区时**不读会话清单**也不记事件、连跑两次第二次不再 attach、`diagnose({ ownership })` 在 `pending > 0` 时产出 `workspace-ownership` 的 warn 且 `pending === 0` 不产出，三处接线（状态工具 schema、bundle 输入、面板 `diagnosisInput`）读的是同一份内存快照，以及**每次激活无条件执行一次**的宿主索引重建（`listStoredHeaders()` → `replaceHeaderIndex()` → `indexLiveSessions()`；重建**先于**认领、重建后回读记账即算恢复、不重复 attach）、健康启动同样 `reindexed` 且只重建一次、空清单不重建、非契约方法缺失或抛错降级为 `unsupported` / `failed: …` 并保留原因、卡住的认领按预算变成 `pending`（理由含 `did not answer within`）、整趟认领有组预算（超出记 `claim budget`）、重建成功后把**筛选后**的成员视图按宿主的 `domain/changed` 形状重新广播（只广播给已连接的客户端，`unsupported` 时不广播、抛错时记 `publishError` 但不中断补偿，广播数落在快照的 `published`） |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
 | `routes-smoke` | 无 | 258 | 33 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |
