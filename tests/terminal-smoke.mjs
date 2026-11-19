@@ -29,6 +29,8 @@ const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const {
   RemoteTerminalRouter,
   installRemoteTerminal,
+  installRemoteShellList,
+  uninstallRemoteShellList,
   uninstallRemoteTerminal,
 } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-terminal.js')).href)
 
@@ -307,5 +309,46 @@ console.log('\n[no trace I/O on the terminal path]')
   check('the removed trace file, its path and its env switches are gone',
     !source.includes('DSH_SSH_WORKSPACE_TRACE') && !source.includes('ssh-workspace-terminal.log'))
 }
+// ── the shell picker asks the REMOTE host, not this machine ────────────────
+console.log('\n[the terminal picker lists the remote host shells]')
+{
+  const engine = {
+    calls: [],
+    async exec (alias) {
+      this.calls.push(alias)
+      return { stdout: 'login=/bin/bash\nbash=/usr/bin/bash\nzsh=/usr/bin/zsh\nsh=/usr/bin/sh\n' }
+    },
+  }
+  const localList = [{ path: '/usr/local/bin/bash', name: 'bash', args: ['-i'] }]
+  const controller = { shells: async () => localList }
+  const ctx = { get: (name) => (name === 'terminalController' ? controller : undefined) }
+  const install = installRemoteShellList(ctx, { engine })
+  check('the controller is patched', install !== undefined && controller.shells !== undefined)
+
+  const remoteAgent = { ctx: { get: () => ({ ensure: async () => 'ssh://beta/srv/app' }) } }
+  const list = await controller.shells(remoteAgent, undefined)
+  check('an ssh:// session is answered from the host, login shell first',
+    list.map((item) => item.name).join(',') === 'bash,zsh,sh', JSON.stringify(list))
+  check('the paths are the remote ones', list[0].path === '/bin/bash' && list[1].path === '/usr/bin/zsh')
+  check('one row per executable name (/bin/bash and /usr/bin/bash collapse)',
+    list.filter((item) => item.name === 'bash').length === 1)
+
+  const localAgent = { ctx: { get: () => ({ ensure: async () => '/root/proj' }) } }
+  const localAgain = await controller.shells(localAgent, undefined)
+  check('a local session keeps the Host own list', localAgain === localList)
+
+  await controller.shells(remoteAgent, undefined)
+  check('a second pick inside the TTL does not probe again', engine.calls.length === 1, String(engine.calls.length))
+
+  uninstallRemoteShellList(controller)
+  check('uninstall restores the original method', (await controller.shells(localAgent, undefined)) === localList)
+
+  const failing = { async exec () { throw new Error('ssh down') } }
+  installRemoteShellList({ get: () => controller }, { engine: failing })
+  const fallback = await controller.shells(remoteAgent, undefined)
+  check('a failed probe falls back to the local list instead of an empty picker', fallback === localList)
+  uninstallRemoteShellList(controller)
+}
+
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)
