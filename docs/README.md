@@ -25,7 +25,6 @@
 | [remote-git-diagnosis.md](./remote-git-diagnosis.md) | **诊断记录**：Forge 面板误报「当前目录不是 Git 仓库」——`env: {GIT_DIR: undefined}` 被远端桥序列化成字符串 `'undefined'` 的取证、修法与退役判据 | 完成 |
 | [browser-terminal-diagnosis.md](./browser-terminal-diagnosis.md) | **诊断记录**：浏览器终端卡死——`resize()` 等 ssh2 不存在的回调、宿主 `enqueue()` 单链被一条不落地的 promise 钉死的行为链、三个报障归因与修复 | 完成 |
 | [verify/pr6-review.md](./verify/pr6-review.md) | **PR #6 评审记录**：远端 subprocess 路由、终端信号生命周期、两步「添加工作区」、最近提交条——四类修复逐条判定、两个 UI 槽位重写、`git-history` 安全面、P0–P3 问题表与本轮 7 个修复的提交 | 完成 |
-| [verify/remote-shells-prompt.md](./verify/remote-shells-prompt.md) | **一次性任务书**：让「新建终端」的 shell 菜单按远端主机枚举（接管 `terminalController.shells()` + `spawnTerminal` 按已发现集合采用 argv[0]），实现验收后删除本行索引 | 初稿 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 

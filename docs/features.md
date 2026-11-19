@@ -16,9 +16,9 @@
 | --- | --- |
 | Agent 工具 | 11 个 `ssh_workspace_*` |
 | 浏览器 HTTP 路由 | 33 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
-| 接管的服务 seam | 6 个：`ctx.fs`、`ctx.sandbox.confine`、`ctx.shell`、`ctx.subprocess`（`spawn` 与 `spawnTerminal` 两个方法）、`ctx.ptcRuntime.resolve`、客户端 `ctx.slots`（两个 UI 槽位，含注册表 projection 放宽） |
+| 接管的服务 seam | 7 个：`ctx.fs`、`ctx.sandbox.confine`、`ctx.shell`、`ctx.subprocess`（`spawn` 与 `spawnTerminal` 两个方法）、`ctx.ptcRuntime.resolve`、`ctx.terminalController.shells`（远端 shell 发现）、客户端 `ctx.slots`（两个 UI 槽位，含注册表 projection 放宽） |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
-| 冒烟测试套件 | 91 个（裸检出 83 个通过 / 2 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 87 个通过 / 2 个 partial / 2 个 SKIP；合计 4632 / 4882 项断言，采样） |
+| 冒烟测试套件 | 92 个（裸检出 84 个通过 / 2 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 88 个通过 / 2 个 partial / 2 个 SKIP；合计 4703 / 4953 项断言，采样） |
 
 设计前提：**不注册第二个 fs 服务**。远端方法装在部署已挂载的那一个 `ctx.fs` 实例上，
 `ssh://` 路径走 SFTP，其余路径原样转发给原后端——因此本地工作区的一切行为不受影响。
@@ -306,8 +306,8 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | 变更追踪远端化 | 「变更」面板用**远端 git** 做回合快照与 diff，远端 shell 改的文件也会出现在列表（+N/−N、可看 diff）；未装 git 时按「无仓库」降级，每回合一条 warn，不阻断会话 |
 | 逐文件文本对比是远端盲区 | 宿主的整文件捕获（`@deepseek-ai/dsh-workspace-changes` 的 `captureFile()`）用 `node:fs` 打开 `ctx.fs.processPath(target)`；远端目标拿到的是**远端路径**，两次捕获都 `ENOENT` → `{kind:'absent'}`，`sameCapture()` 判等后**整条记录被丢弃**。捕获不经过 `ctx.fs`，插件无法替换读取，只能**不让它静默**：首次远端写入时往诊断环记一条 `degraded`（status 工具与面板状态路由都可读）。变更列表仍由 git 提供，缺的只是逐文件 before/after 文本 |
 | 快照目录镜像 | 本机 `mkdtemp` 的 git 快照目录（`GIT_OBJECT_DIRECTORY` / `GIT_INDEX_FILE`）改写成远端 `/tmp` 下同后缀并 `mkdir -p`——远端 git 看不到本机路径 |
-| 持久终端 | 接管 `ctx.subprocess.spawnTerminal`：`cwd` 为 `ssh://` 时开 SSH PTY 通道而非本地进程，handle 满足宿主的 `output` / `write` / `resize` / `done` / `inspectForeground` / `signalForeground` / `terminate` 契约；默认 **80×24**，按 spec 调整 |
-| 方言按选择映射 | 远端 PTY 不照搬本机 argv（把 PowerShell 命令行丢给 POSIX 主机会以「像插件 bug」的方式失败），而是按**用户选的 shell 家族**启动远端同名 shell（`bash -l` / `zsh -l`，白名单），远端没有就回落到 `sh -l`；Windows 方言一律回落 `sh -l`。**注意这里只覆盖「启动」那一半**：菜单项仍由宿主 `terminalController.shells()` 生成，而它走 `subprocess.resolveExecutable` / `terminalEnvironment` 的**本机**实现，所以菜单列的是本机装了什么——远端独有的 shell（例如远端有 zsh、本机没有）**选不到**；菜单里选中而在远端不存在的那支，按上面的回落规则降级到 `sh -l` |
+| 持久终端 | 接管 `ctx.subprocess.spawnTerminal`：`cwd` 为 `ssh://` 时开 SSH PTY 通道而非本地进程，handle 满足宿主的 `output` / `write` / `resize` / `done` / `inspectForeground` / `signalForeground` / `terminate` 契约；默认 **80×24**，按 spec 调整。**启动哪支 shell 由远端探测决定**（见下一行） |
+| shell 菜单与启动一致 | 菜单项由**远端主机**回答：接管 `ctx.terminalController.shells()`，对 `ssh://` 会话一次往返跑 `command -v` 探出这台主机真有哪几支（`$SHELL` 那支排第一，按家族去重），本机会话原样交给原方法。启动侧只采用**探测到过**的路径（`argv[0]` 命中该主机已发现集合 → 按发现到的绝对路径 + `-l` 启动），其余仍沿用按家族 `command -v` 兜底、最后回落 `sh -l`；**宿主 argv 里的 `-i` / `-NoProfile` 一律丢弃**（那是本机方言的产物）。探测不到就**报错**、菜单显示 failed 并可重试，绝不改名成一份本机 shell 列表；缓存按「主机 + 连接代次」，**只在重连时重探**（无 TTL、无手动刷新）。查表按**家族**匹配（`basename` 去 `.exe` 小写），所以本机默认 shell 是 bash 时「不选直接开」也会落到远端那支 bash；只有该主机没有这个家族时才回落 `sh -l`（安全降级）。副作用是它不会认「远端的默认登录 shell」本身——那要替换 `resolveShell` 的语义，属宿主内部函数，留作独立议题 |
 | `inspectForeground` 的取舍 | 本地 handle 靠本机进程表回答，单条 SSH 通道无法廉价等价；宁可回答「未知」也不猜（错误答案会让宿主以为还有前台进程、白等整个超时） |
 | UTF-8 跨块正确性 | 输出用 `StringDecoder` 拼接，多字节字符跨 chunk 边界不再变成两个替换符；截断按**字节**记账并回退到完整字符边界 |
 

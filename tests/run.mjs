@@ -130,6 +130,7 @@ const SUITES = [
   'mode-gate',
   'shell',
   'terminal',
+  'remote-shells',
   'browser-terminal',
   'commit-history',
   'session-catchup',
