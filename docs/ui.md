@@ -38,7 +38,15 @@
 
 首帧路径为 `null`，首次 `GET /ls`（不带 `path`）返回 SSH 登录目录后回填，所以「挂载此目录」永远指向一个真实绝对路径。加载中 / 空目录 / 无法加载是三种独立状态。
 
-列表本身**不滚动**（`max-height: none` / `overflow: visible`）：整个对话框只有 `.sshwsp-dialog-body` 一个滚动容器。两层滚动条会互相抢滚轮，而且内层滚到底之后外层剩下的内容永远到不了——「新建远程工作区」（`RemoteWorkspaceDialog`）此前正是这样：列表自带 `max-height: min(40vh, 320px)`，被 `dialog-body` 裁掉下半截，滚轮落在已经停住的列表上，小窗口里一行都滑不动。现在两个对话框共用同一条规则：表单固定在顶部，目录列表跟着对话框一起滚。
+两个对话框共用同一套骨架：**头部与表单固定，目录列表是唯一的滚动容器**。`.sshwsp-dialog-body` 是不滚动的 flex 列（`overflow: hidden`），`.sshwsp-form` 与 `.sshwsp-browser-header` 都是 `flex: 0 0 auto`，剩下的高度全归列表（`flex: 1 1 auto` + `overflow-y: auto`）。
+
+反过来（整个 body 一起滚）也不对：表单会跟着列表滑出视野，用户挑目录时看不见自己填的工作区名。两层滚动条（列表自带 `max-height`）更糟——内层滚到底之后，外层剩下的内容永远到不了。「新建远程工作区」把这两种错都犯过。
+
+布局要靠**高度**而不是只靠上限：`.sshwsp-dialog` 只有 `max-height` 时，内容不够高就撑不到上限，`flex: 1` 分不出空间；`.sshwsp-dialog-fill` 因此给出 `height: min(88vh, 760px)`，并把 `max-height` 一起抬到 `88vh`（否则被基类的 `80vh` 悄悄裁掉）。
+
+窗口很矮时（`max-height: 620px` / `500px`）压缩的是**外壳**而不是列表：间距收紧，`88vh` 变成 `calc(100vh - 12px)`，「双击目录进入」的提示行直接隐藏——380px 高的窗口里，标题栏加表单加提示加底栏会把列表挤到只剩 23px。
+
+弹窗通过 `modalLayer()` **portal 到 `document.body`**，这不是洁癖：侧栏在自己的 `.scrollArea` 上绑了 `passive: false` 的 wheel 监听，会把滚轮改成手动写给侧栏视口，对话框作为它的 DOM 后代永远收不到；`.composerSeat` 的 `will-change: transform` 又会把 `position: fixed` 的包含块从视口改写成自己。宿主对 composer 内的浮层有同样的约定（`ConversationRoot.module.css`）。
 
 这个对话框只负责**浏览与挂载**：上传与下载只从文件树行右键菜单进入，进度留在文件面板头部的队列入口或完成提示里；对话框内不展开队列条，同一份 store 不再有第二个展示面。
 

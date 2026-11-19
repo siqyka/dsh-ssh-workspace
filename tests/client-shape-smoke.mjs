@@ -987,7 +987,7 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 
   check('the browser dialog claims the dialog role',
     liveIn('DirectoryBrowser', /useDialogA11y\(\{/u) &&
-      liveIn('DirectoryBrowser', /className: 'sshwsp-dialog', \.\.\.dialog\.props/u),
+      liveIn('DirectoryBrowser', /className: 'sshwsp-dialog sshwsp-dialog-fill', \.\.\.dialog\.props/u),
     'the fourth dialog renders without role="dialog" / aria-modal / focus trap')
   check('...and its title is the label the dialog announces',
     liveIn('DirectoryBrowser', /id: dialog\.titleId, children: t\('browser\.title'/u),
@@ -1025,18 +1025,46 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       liveIn('RemoteWorkspaceDialog', /onClick: \(event\) => \{ if \(event\.detail === 0\) handleEntry\(entry\) \}/u),
     'the two directory pickers disagree about how a row is entered')
 
-  // ONE scrollport per dialog. Both listings used to carry a max-height of
-  // their own inside a body that ALSO scrolled; the body then clipped the list
-  // at a point the list had already scrolled past, and the rows below that
-  // point could never be reached — the wheel moved a list that had stopped.
-  check('neither directory list scrolls inside the dialog body',
-    !/\.sshwsp-browser-list \{[^}]*max-height/u.test(source) &&
-      !/\.sshwsp-dirlist \{[^}]*max-height/u.test(source) &&
-      !/\.sshwsp-dirlist \{[^}]*overflow-y/u.test(source),
-    'a list caps its own height again, so the body clips whatever is below the cap')
+  // ONE scrollport per dialog, and it is the LIST — not the body. Both listings
+  // used to carry a max-height of their own inside a body that ALSO scrolled;
+  // the body then clipped the list at a point the list had already scrolled
+  // past, and the rows below that point could never be reached. Handing the
+  // whole body the scroll instead is the opposite failure: the form and the
+  // path bar slide away while the user is picking a directory. So the body is a
+  // flex column that never scrolls, and the list takes the leftover height.
+  check('the directory list is the dialog\'s one scrollport',
+    /\.sshwsp-browser-list \{[^}]*overflow-y: auto/u.test(source) &&
+      /\.sshwsp-dirlist \{[^}]*overflow-y: auto/u.test(source) &&
+      !/\.sshwsp-browser-list \{[^}]*max-height/u.test(source) &&
+      !/\.sshwsp-dirlist \{[^}]*max-height/u.test(source),
+    'a list caps its own height or stopped scrolling, so the dialog has two scrollers or none')
+  check('...and the dialog body is a flex column, never a second scroller',
+    /\.sshwsp-dialog-body \{[^}]*overflow: hidden/u.test(source) &&
+      /\.sshwsp-dialog-body \{[^}]*display: flex/u.test(source) &&
+      !/\.sshwsp-dialog-body \{[^}]*overflow-y: auto/u.test(source),
+    'the body scrolls too, so the form slides out of view while the list is being read')
+  check('...and the fixed head of each list dialog does not shrink away',
+    /\.sshwsp-form \{[^}]*flex: 0 0 auto/u.test(source) &&
+      /\.sshwsp-browser-header \{[^}]*flex: 0 0 auto/u.test(source) &&
+      !/\.sshwsp-browser-header \{[^}]*position: sticky/u.test(source),
+    'the form or the path bar is still a flex-shrinking or sticky element of a list that no longer scrolls under it')
+  check('...which needs a height, not just a cap, for flex to divide',
+    /\.sshwsp-dialog-fill \{[^}]*height: min\(88vh, 760px\)/u.test(source) &&
+      /\.sshwsp-dialog-fill \{[^}]*max-height: 88vh/u.test(source) &&
+      (source.match(/className: 'sshwsp-dialog sshwsp-dialog-fill'/gu) ?? []).length === 2,
+    'a max-height-only dialog shrinks to its content, so the list never scrolls; a height under the base 80vh cap is silently clipped back')
+  check('...and the form above the list never becomes a scroller of its own',
+    /\.sshwsp-form \{[^}]*box-sizing: border-box/u.test(source) &&
+      !/\.sshwsp-form \{[^}]*overflow-y: auto/u.test(source),
+    'a scrolling form hides the field the user is typing into, right next to a scrolling list')
+  check('...and a short window tightens the chrome instead of squeezing the list',
+    /@media \(max-height: 620px\) \{\s*\.sshwsp-form \{ padding: 10px 20px/u.test(source) &&
+      /@media \(max-height: 500px\) \{[^}]*\.sshwsp-dialog-fill \{ height: calc\(100vh - 12px\)/u.test(source) &&
+      /@media \(max-height: 500px\) \{[\s\S]{0,400}?\.sshwsp-dirlist-hint \{ display: none/u.test(source),
+    'the dialog keeps its 88vh height and full padding at 380px, so the title bar and form leave the listing 23 pixels')
   check('...and the browser frame is not a scroll container either',
     /\.sshwsp-browser \{[^}]*overflow: clip/u.test(source),
-    "overflow: hidden makes the sticky path bar stick to a frame that never scrolls")
+    "overflow: hidden makes the frame a scroll container whose sticky child never sticks")
 
   // The menu: focus moves in, arrows move between items, Escape and Tab close,
   // and it can be opened without a mouse.
