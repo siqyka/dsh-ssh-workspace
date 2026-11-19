@@ -2177,6 +2177,41 @@ async function postChunk (route, body, chunks = []) {
     check('a limit above the ceiling is clamped, not accepted', body.limit === 2000, String(body.limit))
   }
 
+  // `dirs=1` is what the two directory pickers send. The filter has to run on
+  // the SERVER and BEFORE the cap: a picker that can only enter a directory
+  // cannot use a file row, and filtering in the browser would leave `total`
+  // counting files — "2000 of 4213" about the three directories on screen.
+  {
+    const { state, body } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&dirs=1')
+    check('dirs=1 answers 200', state.status === 200, String(state.status))
+    check('dirs=1 returns directories and nothing else',
+      body.entries.length === 1 && body.entries[0].name === 'zdir',
+      JSON.stringify(body.entries.map(entry => entry.name)))
+    check('...and its total counts directories, not the files it dropped',
+      body.total === 1, String(body.total))
+    check('...so a directory list under the cap is never "truncated"',
+      body.truncated === false, String(body.truncated))
+  }
+
+  {
+    // The cap still applies, and it now applies to the filtered set: 700 files
+    // must not consume the budget of a listing that only shows directories.
+    const { body } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&dirs=1&limit=1')
+    check('dirs=1 caps the directories, not the files behind them',
+      body.entries.length === 1 && body.entries[0].name === 'zdir',
+      JSON.stringify(body.entries.map(entry => entry.name)))
+  }
+
+  {
+    const { state } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&dirs=0')
+    check('dirs=0 is refused rather than read as false', state.status === 400, String(state.status))
+  }
+
+  {
+    const { state } = await lsRequest('&path=%2Fhome%2Fdev%2Fbig&dirs=abc')
+    check('a non-numeric dirs is refused', state.status === 400, String(state.status))
+  }
+
   {
     // A small directory must NOT be reported as truncated: a panel that warned
     // on every listing would train the user to ignore the warning.

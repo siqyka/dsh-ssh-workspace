@@ -993,17 +993,23 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
     liveIn('DirectoryBrowser', /id: dialog\.titleId, children: t\('browser\.title'/u),
     'aria-labelledby points at nothing')
 
-  // Only directories are controls now. A browse-only dialog must not keep a
-  // selection model whose only remaining caller was the removed batch verb.
-  check('every directory row is a real button control',
-    liveIn('DirectoryBrowser', /entries\?\.map\(\(entry\) =>[\s\S]{0,1200}?if \(entry\.type === 'directory'\)[\s\S]{0,300}?return jsx\('button'/u) &&
+  // Every row is a directory row. The dialog used to branch — a file was a
+  // static `div`, a directory a `button` — and the file branch was a row the
+  // picker could neither enter nor do anything else with, so it is gone along
+  // with the `rowClassName` / `rowChildren` pair that only existed to feed it.
+  check('every listing row is a real button control',
+    liveIn('DirectoryBrowser', /entries\?\.map\(\(entry\) =>[\s\S]{0,2000}?return jsx\('button'/u) &&
       !/rowcheck|type: 'checkbox'/u.test(bodyOf('DirectoryBrowser')),
-    'a directory row is no longer a button, or a checkbox column came back')
-  check('...while a file row is a static div with no selection contract',
-    liveIn('DirectoryBrowser', /return jsx\('div', \{ key: entry\.name, className: rowClassName, children: rowChildren \}\)/u) &&
+    'a listing row is no longer a button, or a checkbox column came back')
+  check('...with no file-row branch and no selection contract left behind',
+    !/entry\.type === 'directory'/u.test(bodyOf('DirectoryBrowser')) &&
+      !/rowClassName|rowChildren/u.test(bodyOf('DirectoryBrowser')) &&
       !/'aria-selected'|setSelection|selectReduce/u.test(bodyOf('DirectoryBrowser')) &&
       !/\.sshwsp-entry-selected \{/u.test(source),
-    'a file row pretends to be a control, or the selection paint survived')
+    'a file row survived as a second kind of row, or the selection paint came back')
+  check('...and both pickers ask the server for directories only',
+    (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []).length === 2,
+    'a picker filters in the browser again, so its total counts files it does not show')
 
   // A directory row is entered by DOUBLE click. A single click used to enter
   // too, which made the listing impossible to read: every attempt to inspect a

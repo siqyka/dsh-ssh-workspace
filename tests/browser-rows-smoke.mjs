@@ -1,5 +1,5 @@
 /**
- * The browse-only directory dialog must render rows, not `undefined`.
+ * The directory dialog renders rows, not `undefined`.
  *
  * ## The bug this suite still guards
  *
@@ -15,7 +15,15 @@
  * A grep for `jsx('button'` is green on the broken build; the missing token is
  * a six-letter `return` in a long body. So this suite lifts the SHIPPED
  * callback out of `lib/client.js` by brace matching, binds its free
- * identifiers to recording stubs, and calls it for a file and a directory.
+ * identifiers to recording stubs, and calls it for two different entries.
+ *
+ * ## One kind of row
+ *
+ * The dialog used to render a file as a static row and a directory as a button.
+ * It now asks the server for directories only (`dirs=1`) and renders every row
+ * the same way, so the assertions below do not branch on `entry.type`: a file
+ * row coming back would be a second kind of row in a dialog whose only question
+ * is "which directory am I mounting?".
  *
  * Run: node tests/browser-rows-smoke.mjs
  */
@@ -57,11 +65,14 @@ const callbackSource = source.slice(arrowAt, bodyEnd)
 // assertions below would describe a different function.
 if (source[bodyEnd] !== ')') throw new Error('the lifted listing callback does not end where the map call does')
 
-const FileIcon = function FileIcon () {}
 const FolderIcon = function FolderIcon () {}
 
 /**
  * Render one row through the shipped callback with recording stubs.
+ *
+ * `FileIcon` and `formatSize` are deliberately NOT injected: the dialog no
+ * longer renders files or sizes, and a callback that still reached for either
+ * would throw here instead of passing a grep.
  *
  * @param {object} entry - listing entry from `/ls`.
  * @returns {{row: object|undefined, navigated: string[]}} the element, and the
@@ -72,15 +83,14 @@ function renderRow (entry) {
   const jsx = (type, props) => ({ type, props })
   const jsxs = jsx
   const React = { createElement: (type, props) => ({ type, props }) }
-  const formatSize = (bytes) => `${bytes} B`
   const handleEntry = (clicked) => { navigated.push(clicked.name) }
 
   // eslint-disable-next-line no-new-func
   const factory = new Function(
-    'jsxs', 'jsx', 'React', 'FolderIcon', 'FileIcon', 'formatSize', 'handleEntry',
+    'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
     `return (${callbackSource})`,
   )
-  const callback = factory(jsxs, jsx, React, FolderIcon, FileIcon, formatSize, handleEntry)
+  const callback = factory(jsxs, jsx, React, FolderIcon, handleEntry)
   return { row: callback(entry), navigated }
 }
 
@@ -91,32 +101,38 @@ function partsOf (row) {
     : []
 }
 
-const alpha = { name: 'alpha.txt', type: 'file', size: 1234 }
 const logs = { name: 'logs', type: 'directory', size: 0 }
+// A file cannot reach this callback any more — the server drops it — but a
+// listing from an older server, or a filter someone removes, must still render
+// a row rather than `undefined`.
+const stray = { name: 'alpha.txt', type: 'file', size: 1234 }
 
 // ---- a row is an element, not undefined -------------------------------------
 
-const fileRow = renderRow(alpha)
-check('a file entry renders an element at all', fileRow.row !== undefined,
-  'the listing map returned undefined — the dialog renders an empty list')
-check('a file row is static: it is not a control',
-  fileRow.row?.type === 'div' && fileRow.row.props.onClick === undefined)
-check('the row is keyed by the entry name', fileRow.row?.props.key === 'alpha.txt')
-check('a file row has no selection or focus semantics',
-  fileRow.row?.props.role === undefined &&
-    fileRow.row?.props['aria-selected'] === undefined &&
-    fileRow.row?.props.tabIndex === undefined)
-
-// ---- a directory is the only actionable row --------------------------------
-
 const dirRow = renderRow(logs)
-check('a directory row is a button', dirRow.row?.type === 'button' && dirRow.row.props.type === 'button')
-check('...and is distinguishable from a file row',
-  dirRow.row?.props.className.includes('sshwsp-entry-dir') &&
-  !fileRow.row.props.className.includes('sshwsp-entry-dir'))
+const fileRow = renderRow(stray)
+check('a directory entry renders an element at all', dirRow.row !== undefined,
+  'the listing map returned undefined — the dialog renders an empty list')
+check('...and so does a file entry, should one ever arrive', fileRow.row !== undefined,
+  'a non-directory entry maps to undefined, which renders as a blank list')
+check('every row is a button control',
+  dirRow.row?.type === 'button' && dirRow.row.props.type === 'button' &&
+    fileRow.row?.type === 'button' && fileRow.row.props.type === 'button',
+  'a row is no longer an actionable control')
+check('the row is keyed by the entry name', dirRow.row?.props.key === 'logs')
+check('...and carries the directory-row class',
+  dirRow.row?.props.className.includes('sshwsp-entry-dir'),
+  'the row lost the class that gives it a pointer cursor')
+check('a row keeps no selection or focus semantics',
+  dirRow.row?.props.role === undefined &&
+    dirRow.row?.props['aria-selected'] === undefined &&
+    dirRow.row?.props.tabIndex === undefined)
+
+// ---- entering a directory is a double click ---------------------------------
+
 const dirProps = dirRow.row.props
 dirProps.onDoubleClick()
-check('...whose double click asks to enter that directory', dirRow.navigated.join() === 'logs')
+check('a double click asks to enter that directory', dirRow.navigated.join() === 'logs')
 
 // The gesture is a DOUBLE click on purpose: a listing the user cannot read
 // without leaving it is a listing they navigate blind. React reports a
@@ -131,23 +147,26 @@ check('...while a keyboard activation still enters it', dirRow.navigated.length 
 
 // ---- row anatomy -------------------------------------------------------------
 
-const fileParts = partsOf(fileRow.row)
-check('a file row is icon, name and size — and nothing else',
-  fileParts.length === 3, `${fileParts.length} parts`)
-check('the icon span names the file glyph',
-  fileParts[0].props.className === 'sshwsp-entry-icon' &&
-  fileParts[0].props.children.type === FileIcon)
-check('the name span prints the entry name',
-  fileParts[1].props.className === 'sshwsp-entry-name' &&
-  fileParts[1].props.children === 'alpha.txt')
-check('the size span carries the formatted size',
-  fileParts[2].props.className === 'sshwsp-entry-meta' &&
-  fileParts[2].props.children === '1234 B')
-
 const dirParts = partsOf(dirRow.row)
-check('a directory row is icon and name, with no size line',
+check('a row is an icon and a name, with no size line',
   dirParts.length === 2, `${dirParts.length} parts`)
-check('a directory row names the folder glyph', dirParts[0].props.children.type === FolderIcon)
+check('the icon span names the folder glyph',
+  dirParts[0].props.className === 'sshwsp-entry-icon' &&
+    dirParts[0].props.children.type === FolderIcon)
+check('the name span prints the entry name',
+  dirParts[1].props.className === 'sshwsp-entry-name' &&
+    dirParts[1].props.children === 'logs')
+check('a file entry gets the same two-part row, not a size column',
+  partsOf(fileRow.row).length === 2, `${partsOf(fileRow.row).length} parts`)
+
+// ---- both dialogs ask the server for directories only -----------------------
+
+// The client-side filter is the wrong place for this: the cap runs on the
+// server, so a listing filtered in the browser announces "2000 of 4213" about
+// the three directories it actually shows.
+const dirsQueries = source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []
+check('both directory pickers request directories only', dirsQueries.length === 2,
+  `${dirsQueries.length} of 2 listings ask for dirs=1`)
 
 // ---- the dialog is browse-only ---------------------------------------------
 
@@ -164,12 +183,12 @@ check('the listing exposes no selection contract',
 const withoutReturn = callbackSource.replace(/\breturn\s+jsx\(/gu, 'jsx(')
 check('the stripped slice is a different program', withoutReturn !== callbackSource)
 const stripped = new Function(
-  'jsxs', 'jsx', 'React', 'FolderIcon', 'FileIcon', 'formatSize', 'handleEntry',
+  'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
   `return (${withoutReturn})`,
 )((type, props) => ({ type, props }), (type, props) => ({ type, props }),
-  { createElement: () => ({}) }, FolderIcon, FileIcon, String, () => {})
+  { createElement: () => ({}) }, FolderIcon, () => {})
 check('without the return the same callback yields undefined',
-  stripped(alpha) === undefined && stripped(logs) === undefined,
+  stripped(logs) === undefined && stripped(stray) === undefined,
   'the regression assertion above would not have caught the shipped bug')
 
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)
