@@ -114,8 +114,20 @@ check('a directory row is a button', dirRow.row?.type === 'button' && dirRow.row
 check('...and is distinguishable from a file row',
   dirRow.row?.props.className.includes('sshwsp-entry-dir') &&
   !fileRow.row.props.className.includes('sshwsp-entry-dir'))
-dirRow.row.props.onClick()
-check('...whose click asks to enter that directory', dirRow.navigated.join() === 'logs')
+const dirProps = dirRow.row.props
+dirProps.onDoubleClick()
+check('...whose double click asks to enter that directory', dirRow.navigated.join() === 'logs')
+
+// The gesture is a DOUBLE click on purpose: a listing the user cannot read
+// without leaving it is a listing they navigate blind. React reports a
+// keyboard activation as a click with `detail === 0`, so the row still works
+// from the keyboard — that is the only click that navigates.
+dirProps.onClick({ detail: 1 })
+check('a single mouse click does not enter the directory', dirRow.navigated.length === 1,
+  'a plain click navigated, so the listing cannot be read without leaving it')
+dirProps.onClick({ detail: 0 })
+check('...while a keyboard activation still enters it', dirRow.navigated.length === 2,
+  'the row is unreachable from the keyboard')
 
 // ---- row anatomy -------------------------------------------------------------
 

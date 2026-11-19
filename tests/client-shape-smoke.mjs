@@ -1005,6 +1005,33 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       !/\.sshwsp-entry-selected \{/u.test(source),
     'a file row pretends to be a control, or the selection paint survived')
 
+  // A directory row is entered by DOUBLE click. A single click used to enter
+  // too, which made the listing impossible to read: every attempt to inspect a
+  // row left the directory. Keyboard activation is the exception, because
+  // React reports it as a click carrying `detail === 0` — dropping the click
+  // handler outright would have made both pickers mouse-only.
+  check('a directory row is entered by double click, not a single one',
+    liveIn('DirectoryBrowser', /onDoubleClick: \(\) => handleEntry\(entry\)/u) &&
+      liveIn('DirectoryBrowser', /onClick: \(event\) => \{ if \(event\.detail === 0\) handleEntry\(entry\) \}/u),
+    'a single click navigates again, so the listing cannot be read without leaving it')
+  check('...and the remote workspace picker uses the same gesture',
+    liveIn('RemoteWorkspaceDialog', /onDoubleClick: \(\) => handleEntry\(entry\)/u) &&
+      liveIn('RemoteWorkspaceDialog', /onClick: \(event\) => \{ if \(event\.detail === 0\) handleEntry\(entry\) \}/u),
+    'the two directory pickers disagree about how a row is entered')
+
+  // ONE scrollport per dialog. Both listings used to carry a max-height of
+  // their own inside a body that ALSO scrolled; the body then clipped the list
+  // at a point the list had already scrolled past, and the rows below that
+  // point could never be reached — the wheel moved a list that had stopped.
+  check('neither directory list scrolls inside the dialog body',
+    !/\.sshwsp-browser-list \{[^}]*max-height/u.test(source) &&
+      !/\.sshwsp-dirlist \{[^}]*max-height/u.test(source) &&
+      !/\.sshwsp-dirlist \{[^}]*overflow-y/u.test(source),
+    'a list caps its own height again, so the body clips whatever is below the cap')
+  check('...and the browser frame is not a scroll container either',
+    /\.sshwsp-browser \{[^}]*overflow: clip/u.test(source),
+    "overflow: hidden makes the sticky path bar stick to a frame that never scrolls")
+
   // The menu: focus moves in, arrows move between items, Escape and Tab close,
   // and it can be opened without a mouse.
   check('the menu lifecycle takes focus when a menu opens',
