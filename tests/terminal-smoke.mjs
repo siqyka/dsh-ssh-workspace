@@ -192,6 +192,15 @@ console.log('\n=== terminal smoke ===\n')
     { argv: ['/usr/local/bin/zsh', '-l'], expect: /zsh -l/u },
     { argv: ['C:\\Program Files\\PowerShell\\7\\pwsh.exe'], expect: /exec sh -l/u },
     { argv: ['/bin/sh'], expect: /exec sh -l/u },
+    // `dsh-terminal-bash` sandbox-confines the argv, so a `workspace-write`
+    // session hands spawnTerminal `[landlock-run, ...grants, '--', shell, ...]`.
+    // Reading argv[0] without unwrapping made every such session fall back to
+    // `sh` while the picker said bash.
+    {
+      argv: ['/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/landlock-run', '--ro-bind', '/usr', '/usr', '--', '/bin/bash', '-i'],
+      expect: /bash -l/u,
+    },
+    { argv: ['bwrap', '--ro-bind', '/usr', '/usr', '--', '/usr/bin/zsh', '-i'], expect: /zsh -l/u },
   ]
   for (const item of cases) {
     const { engine, opens } = fakeEngine()
