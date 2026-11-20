@@ -2,7 +2,7 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
-## [0.3.6] - 2026-11-19
+## [未发布]
 
 ### 新增
 
@@ -16,25 +16,9 @@
 - **远端技能发现（`lib/remote-skills.js`，默认关闭）**：远端工作区里的 `.dsh/skills` 与 `.agents/skills` 现在能被 `skill` 工具发现和加载，rank 250（夹在项目级与用户级之间）。三条不能复用宿主代码的理由都落在实现里：宿主的 `discoverRoot` 用 `node:path.join` 拼 `SKILL.md`，在 Windows 上把 `ssh://box/data/proj` 拼成 `.\ssh:\box\...`——既不是远端路径也不报错，目录型候选会被静默丢弃，所以发现循环自建、路径全程 `normalizeRemotePath` / `formatRemotePath`（测试钉住 locator 里不出现反斜杠）；宿主的 frontmatter 解析是私有函数，本插件只依赖 `ssh2`，故自写子集解析（标量 / 布尔 / 一层嵌套 / 块标量），认不出的行跳过、旧拼写 `modelInvocable` 等直接判定不是技能；宿主的 `validateCandidate` 在 `provider.list()` 的 `try` 之外且是 `throw`，一个非法候选会让整个会话的技能目录读取失败、本地技能一起消失，所以非法名字 / 空描述 / 非法 `invocation` 在返回前就滤掉。**读也过围栏**：`remote-fs.js` 的 `assertWithinRemoteRoots` 只被 `#assertWritable` 调用，读取不判围栏，因此 `get()` 每次加载正文前自己调一次 `assertFencedRealpath`，远端种下的符号链接不会把读取带出工作区。**默认关闭 + 主机白名单**：技能描述一被读到就进模型上下文，与「模型主动打开一个文件」是不同风险等级；`*` / `bo?x` 这类通配别名被拒绝并记警告。有界（每根 200 条 / 每主机 32 个 / 单文件 64 KiB / 5 秒）且**不完整不等于空**——某个根读失败时 `complete: false` 并保留已读到的候选，宿主据此不缓存，一次断线不会被写成「这台主机没有技能」。状态工具与面板 `/status` 增加 `remoteSkills` 块，诊断只记数量与别名。
 - **目录列表跟随输入（两个 picker）**：路径栏以前只有回车才生效——键入 `/home/me/pro` 时列表还停在登录目录，找目录只能盲打整条路径再按回车试。现在两个对话框共用 `usePathDraftPreview`：同一目录内的前缀**只本地收窄**（大小写不敏感、保留主机真实拼写、零往返零定时器）；带尾斜杠的路径（`/home/me/` 明确表示这是目录）在输入停顿 `PATH_PREVIEW_DEBOUNCE_MS`（200 ms）之后**只发一次**列目录请求；整条拼全的真实目录名只收窄成一行、**不自动进入**——进目录永远是补尾斜杠、回车或双击。**尾斜杠就是「在目录里」**：导航后草稿写成 `/raid/`，删掉斜杠即回父目录并按 `raid` 收窄，两个状态不再共用同一个字符串。预览请求不写输入框、不先清空列表（失败时旧行还在），并且**只在主机答完后**才把 `path` 指向该目录，所以「挂载此目录」不会指向还在拼写的路径。输入框**删掉了 `onBlur` 复位**：双击的第一下会先 blur，复位会让行在两次点击之间移位。
 - **列目录从「逐条 stat」改成一轮往返**：`sftp.readdir` 每个条目都带 attrs，服务器要为每一条做一次 `lstat`——共享 `/tmp` 这种几万条的目录在 300 ms 链路上 30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字、而且只要目录**，于是 `GET /ls` 新增 `dirs=1` 快路径：一次 `engine.exec`（`ls -1ap` 过一层 `awk`，只认带尾斜杠的目录，文件与符号链接都被排掉），**上限在远端就生效**（25 000 条的目录最多只传 `limit` 个名字），同一轮里 `pwd -P` 解析登录目录、`test -w` 报可写性。stdout 只走名字、stderr 只走一行标记（目录名可以和状态行一模一样，所以不能共用流）；任何形状不符——非 POSIX 登录 shell、缺 `awk`、目录不可读、退出码非 0、计数不自洽、脚本自认 `fallback`——一律**回退到 SFTP**，这是优化而不是第二套实现。这条 exec 带 `audit: false`：它是一次界面读取，和 `readdir` 同性质，记进审计环只会让面板每敲一个键多出一条多行脚本。
-### 修复
-
-
-本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
 ## [0.3.6] - 2026-11-19
 
-### 新增
-
-- **测试骨架与基线治理（`tests/support/`，零依赖）**：裸检出上「远端读写」长期没有可跑的覆盖——`writeText` / `editText` / `listDir` / 原子发布 / 版本冲突这些**成功路径**只在 `live` 套件里跑，而它需要一台真主机。本轮补的是替身与收敛，不是「优化测试」：
-  - **内存 SFTP（`fake-sftp.mjs`）**：按**服务器**的行为作答而不是当 mock——`rename` 撞已有目标必须失败（SFTP 规范如此，否则 `publishRename` 的回退分支永远测不到）、默认通告 `posix-rename`（关掉才走非原子回退）、父目录缺失给 ENOENT、`stat` 的 mtime 每次改动推进（`freezeMtime` 复现「同大小同秒改写」）。配套的 `remote-fs-smoke`（67 项）把原子发布、写一半断线后目标不动、`FS_STALE_VERSION` / `FS_NOT_OBSERVED`、三种围栏拒绝、软链逃逸、`editText` 的换行与二进制判定全部搬到裸检出上跑。
-  - **共享宿主替身（`plugin-host.mjs`）**：19 处手搓 `ctx` 字面量收敛到一处。替身**可以比 Cordis 小，绝不能比它松**——重复 `provide`、已销毁 fiber 的读写、同名工具注册在这里同样被拒，否则套件测的是替身。
-  - **引擎替身收敛**：`fakeEngine` 定义处 8 → 3，且三处都只是指向 `tests/support/` 里一份实现的别名；`forward-smoke` 与 `forward-persist-smoke` 两份字节级重复的引擎合成 `fake-forward-engine.mjs`，路由层的上传引擎抽成 `fake-upload-sftp.mjs`（它能表示「写入忽略 offset」「`r+` 当只读」「`w` / `wx` 不区分」这三个真出过的 bug）。
-  - **组件渲染骨架（`render.mjs`）**：从 bundle 里按大括号切出真组件、用 React 形状的钩子桩渲染一次，`render-smoke` 用**真组件**（`SelfCheckList`）驱动并带负向对照（改坏过滤条件后树必须变）。effect 默认不执行——执行等于替 React 断言它何时跑。
-  - **三条长期红清除**：①`transfer-retry` / `transport` 在裸检出上从「失败」变成显式 SKIP 或真跑（缺的是 `ssh2` 本身，不是 `DSH_CORE_ROOT`）；②`workspace-ownership-smoke` 的硬编码 LF marker 改为读入后 `replace(/\r\n/g,'\n')`，CRLF 检出不再红；③新增 `.gitattributes`（`* text=auto eol=lf`）让行尾不再随检出漂移。
-  - **partial 变成待办清单**：`run.mjs` 收尾逐个打印 partial 套件的 SKIP 行，`docs/development.md` 的套件表新增「跳过段」一列，写清跳的是哪一段、缺什么条件。
-- **远端技能发现（`lib/remote-skills.js`，默认关闭）**：远端工作区里的 `.dsh/skills` 与 `.agents/skills` 现在能被 `skill` 工具发现和加载，rank 250（夹在项目级与用户级之间）。三条不能复用宿主代码的理由都落在实现里：宿主的 `discoverRoot` 用 `node:path.join` 拼 `SKILL.md`，在 Windows 上把 `ssh://box/data/proj` 拼成 `.\ssh:\box\...`——既不是远端路径也不报错，目录型候选会被静默丢弃，所以发现循环自建、路径全程 `normalizeRemotePath` / `formatRemotePath`（测试钉住 locator 里不出现反斜杠）；宿主的 frontmatter 解析是私有函数，本插件只依赖 `ssh2`，故自写子集解析（标量 / 布尔 / 一层嵌套 / 块标量），认不出的行跳过、旧拼写 `modelInvocable` 等直接判定不是技能；宿主的 `validateCandidate` 在 `provider.list()` 的 `try` 之外且是 `throw`，一个非法候选会让整个会话的技能目录读取失败、本地技能一起消失，所以非法名字 / 空描述 / 非法 `invocation` 在返回前就滤掉。**读也过围栏**：`remote-fs.js` 的 `assertWithinRemoteRoots` 只被 `#assertWritable` 调用，读取不判围栏，因此 `get()` 每次加载正文前自己调一次 `assertFencedRealpath`，远端种下的符号链接不会把读取带出工作区。**默认关闭 + 主机白名单**：技能描述一被读到就进模型上下文，与「模型主动打开一个文件」是不同风险等级；`*` / `bo?x` 这类通配别名被拒绝并记警告。有界（每根 200 条 / 每主机 32 个 / 单文件 64 KiB / 5 秒）且**不完整不等于空**——某个根读失败时 `complete: false` 并保留已读到的候选，宿主据此不缓存，一次断线不会被写成「这台主机没有技能」。状态工具与面板 `/status` 增加 `remoteSkills` 块，诊断只记数量与别名。
-- **目录列表跟随输入（两个 picker）**：路径栏以前只有回车才生效——键入 `/home/me/pro` 时列表还停在登录目录，找目录只能盲打整条路径再按回车试。现在两个对话框共用 `usePathDraftPreview`：同一目录内的前缀**只本地收窄**（大小写不敏感、保留主机真实拼写、零往返零定时器）；带尾斜杠的路径（`/home/me/` 明确表示这是目录）在输入停顿 `PATH_PREVIEW_DEBOUNCE_MS`（200 ms）之后**只发一次**列目录请求；整条拼全的真实目录名只收窄成一行、**不自动进入**——进目录永远是补尾斜杠、回车或双击。**尾斜杠就是「在目录里」**：导航后草稿写成 `/raid/`，删掉斜杠即回父目录并按 `raid` 收窄，两个状态不再共用同一个字符串。预览请求不写输入框、不先清空列表（失败时旧行还在），并且**只在主机答完后**才把 `path` 指向该目录，所以「挂载此目录」不会指向还在拼写的路径。输入框**删掉了 `onBlur` 复位**：双击的第一下会先 blur，复位会让行在两次点击之间移位。
-- **列目录从「逐条 stat」改成一轮往返**：`sftp.readdir` 每个条目都带 attrs，服务器要为每一条做一次 `lstat`——共享 `/tmp` 这种几万条的目录在 300 ms 链路上 30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字、而且只要目录**，于是 `GET /ls` 新增 `dirs=1` 快路径：一次 `engine.exec`（`ls -1ap` 过一层 `awk`，只认带尾斜杠的目录，文件与符号链接都被排掉），**上限在远端就生效**（25 000 条的目录最多只传 `limit` 个名字），同一轮里 `pwd -P` 解析登录目录、`test -w` 报可写性。stdout 只走名字、stderr 只走一行标记（目录名可以和状态行一模一样，所以不能共用流）；任何形状不符——非 POSIX 登录 shell、缺 `awk`、目录不可读、退出码非 0、计数不自洽、脚本自认 `fallback`——一律**回退到 SFTP**，这是优化而不是第二套实现。这条 exec 带 `audit: false`：它是一次界面读取，和 `readdir` 同性质，记进审计环只会让面板每敲一个键多出一条多行脚本。
 ### 修复
 
 - **「新建终端」菜单列的是本机 shell、远端跑的是 `sh -l`**：宿主的 `terminalController.shells()` 走 `subprocess.resolveExecutable` / `terminalEnvironment`，而插件只包了 `spawn` 与 `spawnTerminal`，于是菜单项永远来自本机。新增 `lib/remote-shells.js` 接管 `shells()`：`ssh://` 会话用一次往返跑 `command -v` 探出这台主机真有哪几支（`$SHELL` 那支排第一、按家族去重），本机会话原样交给原方法；探测不到就抛错、菜单显示 failed 并可重试，绝不编一份本机列表；答案按「主机 + 连接代次」缓存，只在重连时重探。
@@ -55,7 +39,6 @@
 - `features.md`：seam 数 6 → 7、终端两行重写为「菜单与启动一致」。
 - `architecture.md`：新增「接管 `ctx.terminalController.shells()`」一节（own property 而非新端点、为什么撞不上 `ambiguous-endpoint`、诚实三态、缓存只由代次驱动）。
 - `ui.md` 新增「新建终端的 shell 菜单」；`troubleshooting.md` 已知限制补 shell 清单的刷新条件与全局偏好；`development.md` / `optimization-and-future03.md` 同步套件数与断言数。
-
 
 ## [0.3.5] - 2026-11-19
 

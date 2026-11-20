@@ -14,9 +14,9 @@
 | HTTP routes | 33 | `lib/routes.js` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 55 | directory listing |
-| test suites | 97 | `tests/run.mjs` |
-| passing assertions (sampled) | 4978 | measured 2026-11-20 |
+| modules under `lib/` | 56 | directory listing |
+| test suites | 98 | `tests/run.mjs` |
+| passing assertions (sampled) | 5032 | measured 2026-11-20 |
 
 <!-- doc-numbers:end -->
 
@@ -151,25 +151,25 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **97 个套件里 88 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
+于是 **98 个套件里 89 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
 `boot` / `tool-schemas` 缺真实装配树，`live` / `acceptance` 缺真实主机），另有
 3 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段、
 `dirs-listing` 在 Windows 上造不出「不可读 / 不可写」两种状态）；
-裸检出实测 **4978 项通过断言**（runner 汇总 97 条收尾行相加）。生成表那一行就是这次
-**裸检出采样值**（2026-11-20：4978 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
+裸检出实测 **5032 项通过断言**（runner 汇总 98 条收尾行相加）。生成表那一行就是这次
+**裸检出采样值**（2026-11-20：5032 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
 装配树上的数字更大，但换机器就会变，所以不写进表。
 带 `DSH_CORE_ROOT=<含 @deepseek-ai/dsh-fs 的 node_modules>` 时，`projection-real` / `lifecycle` /
 `tool-schemas` 三个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
-**92 个套件通过、3 个部分运行（`boot`、`local-changes-remote` 的 live 段与 `dirs-listing` 的权限段）、2 个 SKIP**
-（`live` / `acceptance`）。这一形态下的断言总数本轮**没有重测**（本机没有装配树），所以不给数字。
-换一台机器、换一个宿主版本，断言总数就会变，所以只保留采样值。
+**93 个套件通过、3 个部分运行（`boot`、`local-changes-remote` 的 live 段与 `dirs-listing` 的权限段）、2 个 SKIP**
+（`live` / `acceptance`）。这一形态下实测 **5282 项通过断言**（本轮 2026-11-20 采样），但这不写进表：
+装配树因机器与宿主版本而异，表里只保留裸检出那一行采样值。
 
 **两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
 
 - `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` 三个再跑起来，
-  通过套件数 88 → 92；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
+  通过套件数 89 → 93；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
   断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，97 个套件全部运行、
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，98 个套件全部运行、
   零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
@@ -177,8 +177,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `cannot resolve the DSH peer package "@deepseek-ai/dsh-fs"` 退出——看起来像代码坏了，实际是根指错了。
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
-**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 97 条
-收尾行就是断言总数（本轮采样：裸检出 4978 项 / 97 个套件）。逐行数 `PASS` 会少算 87 项——
+**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 98 条
+收尾行就是断言总数（本轮采样：裸检出 5032 项 / 98 个套件）。逐行数 `PASS` 会少算 87 项——
 `toast-smoke` 用的是 `ok` 而不是 `PASS`，两种记法都算通过，所以**按收尾行加总，不要按 token 数行**。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
@@ -261,7 +261,8 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `transfer-retry-smoke` | `DSH_CORE_ROOT` | 8 | 无 | 真实 SSH socket 的传输重试：假的 SFTP 文件系统在中途写满 40% 后断开连接，第一次上传失败并留下暂存 + sidecar；重连后同一 `transferFile({resume:true, verify:true})` 只补缺失字节、发布内容与源一致、`verified` 为真；`onConflict:'refuse'` 在重试时重新判定，失败期间出现的目标会被拒绝而不是被覆盖 |
 | `mode-gate-smoke` | 无 | 119 | 无 | 远端写入的沙箱模式门禁：`sessionPolicyOf` 的三个解析结果与「解析失败 ≠ 用户选了 read-only」的文案可分性、六条命令 / 终端路径的放行与拒绝、**拒绝时未触达主机**（直接数 `exec` / `acquire` / `openChannel`）、持久 shell 的 `close` 例外、终端开 PTY 与逐次写入两道门禁、控制字节例外、`workspace-write` 收窄到会话工作区（会话内 / 兄弟根 / 跨主机根 / `..` 拼写 / 本地 root 不参与比较）、**主机 `/tmp` 在范围内的同一主机上放行、换主机不跟**、**读不懂的模式在写入与命令两面都拒**、路由层真的读这份判定、公告与实际一致 |
 | `shell-smoke` | 无 | 45 | 无 | 远端持久会话：`cd` / 变量 / 后台任务跨调用保留、关闭与超时 |
-| `terminal-smoke` | 无 | 38 | 无 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原；**`spec.signal` 只约束分配**——打开后 abort 不得关掉已开的 PTY（宿主浏览器终端是按请求信号），已 abort 的信号则必须先拦住打开；handle 合同补全 `inspectActivity`（远端按字节活动答 `busy`/`unknown`、退出后 `idle`，不猜 idle 去杀跑长命令的终端）；**方言映射**：远端按用户选的 shell 家族启动（bash/zsh/… 白名单，缺失回落 `sh -l`），Windows 方言回落 `sh -l`，且 `cd` 仍在前 |
+| `terminal-smoke` | 无 | 43 | 终端接管：`ssh://` cwd 的 PTY 开在远端、围栏拒绝、还原；**`spec.signal` 只约束分配**——打开后 abort 不得关掉已开的 PTY（宿主浏览器终端是按请求信号），已 abort 的信号则必须先拦住打开；handle 合同补全 `inspectActivity`（远端按字节活动答 `busy`/`unknown`、退出后 `idle`，不猜 idle 去杀跑长命令的终端）；**方言映射**：远端按用户选的 shell 家族启动（bash/zsh/… 白名单，缺失回落 `sh -l`），Windows 方言回落 `sh -l`，且 `cd` 仍在前；**沙箱 launcher 先剥再判家族**——`landlock-run`（真实 `--ro` / `--rw` grant 拼写）、`bwrap`、Windows ACL runner 三种形状都要认出，而 `node script.js -- bash` 这种调用方自己的 argv 必须原样保留 |
+| `remote-shells-smoke` | 无 | 49 | 远端 shell 发现：`terminalController.shells()` 对 `ssh://` 会话一次往返探出主机真有哪几支 shell（`command -v` + `dsh-shells-done` 完成标记），本机会话零往返、原样走本机方法；顺序 `$SHELL` 那支第一、按 kind 去重、候选名先过白名单再单引号；**三态诚实**——缺完成标记 / 非零退出 / 传输抛错一律 reject 且**不缓存**，重试会再探一次（探测失败在菜单上是 failed，绝不回落成一份本机列表）；缓存键 = `alias` + 连接代次，并发两个菜单共用一次往返，断线重连后自然重探；停用工作区在开探前就给 detach 文案、零往返；payload 形状不对时 `installShellDiscovery` 抛错而不是记成 absent；卸载还原原方法。**启动侧查表**：`spawnTerminal` 只在 argv[0] 命中该主机已发现集合时按发现到的路径启动（含 `-l` / `-NoLogo`，丢弃宿主方言的 `-i`），否则仍回落 `sh -l`（`command -v` 同名家族兜底），菜单没开过时行为与今天完全一致 |
 | `browser-terminal-smoke` | 无 | 27 | 无 | 浏览器终端的操作契约：宿主把该终端的每个操作串在同一条 enqueue 链上，任何一个 pending 就会冻住输出 / 输入 / 后续 attach / close——resize 不等 ssh2 不存在的回调、write 在通道非 open 时明确拒绝而不是吞掉回调、terminate 不等对端确认即结算 output/done（宽限后本地 destroy）、失败只 reject done 不 destroy output（否则无读者时掀翻宿主） |
 | `commit-history-smoke` | 无 | 158 | 无 | 「变更请求」tab 下半的最近提交历史：同 key 遮蔽官方 tab 条目、渲染官方组件 + 提交条、**官方文案座位取自官方条目自己的命名空间**（绑定包 id 会让上半整块显示 i18n key）、标题行是可折叠开关（`aria-expanded` + chevron 旋转、折叠时只剩标题）、**折叠状态写 `localStorage` 并在挂载时读回**（只认 `'1'`；缺失 / 垃圾值 / 读抛错 / 写抛错 / 无存储一律按展开）、`git log` 单位分隔记录的解析（subject 含分隔符也不串行）、非仓库 / 未出生 HEAD 是结构化状态而非错误、路由只读且只接受会话工作目录（不接任意 path）、条数上限与截断标记 |
 | `session-catchup-smoke` | 无 | 58 | 无 | 补偿跑完之后浏览器那一半的**一次性**会话重拉（`lib/client.js` 的 catch-up）：只补工作区记录不够——分组走 `workspace.follow` 订阅流，分组**里的行**来自连接时的那一次 `session.list`，而冷会话（不在宿主活会话表里）没有任何可推事件，所以页面会停在「分组回来了、下面空着」。断言分五层：「什么算一次跑完的补偿」（`stage` 未到 `done` 一律不拉：`listing` / `rebuilding` / `claiming` 三个半途快照各一条；`indexRebuilt === 'reindexed'`、`reclaimed > 0`、`published > 0` 三条证据任一成立即拉；健康的 `skipped` 重建、`failed: ENOENT`、什么都没动的 `done` 都不拉；`reclaimed: '3'` 这种数字字符串照算）、「重拉本身」（走 `sessions.refresh()` 而不是自己拼 `session.list`，缺服务 / 缺 `refresh` / 同步抛错一律报「没问」，返回的 promise **显式排空**——不排空就是未处理拒绝，返回 42 也当成功）、「这次拉取回答不了的事」（`phase === 'pending'` 时证明不了任何事、本地工作区不参与、`items` 为 `null` 不当崩溃、`toString` 这类继承属性不算会话——用 `Object.hasOwn` 而不是 `in`）、「看一趟就走」（首看 400 ms、退避 ×1.6 封顶 2 s、缺行就重试但**最多 3 次**、150 s 硬截止、`stop()` 清掉已排的 timer、`start()` 二次进入是空操作、停下的表不能再启动、跑完不留 timer）、以及「接线」（`apply` 里构造并启动、disposer 里停掉且在构造之后、整段只发一种请求且是 `/status`、重拉只经宿主会话服务） |

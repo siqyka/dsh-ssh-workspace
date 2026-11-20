@@ -18,7 +18,7 @@
 | 浏览器 HTTP 路由 | 33 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
 | 接管的服务 seam | 7 个：`ctx.fs`、`ctx.sandbox.confine`、`ctx.shell`、`ctx.subprocess`（`spawn` 与 `spawnTerminal` 两个方法）、`ctx.ptcRuntime.resolve`、`ctx.terminalController.shells`（远端 shell 发现）、客户端 `ctx.slots`（两个 UI 槽位，含注册表 projection 放宽） |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
-| 冒烟测试套件 | 92 个（裸检出 84 个通过 / 2 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 88 个通过 / 2 个 partial / 2 个 SKIP；合计 4703 / 4953 项断言，采样） |
+| 冒烟测试套件 | 98 个（裸检出 89 个通过 / 3 个 partial / 6 个需真实主机或完整 DSH 树则 SKIP；装配树下 93 个通过 / 3 个 partial / 2 个 SKIP；合计 5032 / 5282 项断言，采样） |
 
 设计前提：**不注册第二个 fs 服务**。远端方法装在部署已挂载的那一个 `ctx.fs` 实例上，
 `ssh://` 路径走 SFTP，其余路径原样转发给原后端——因此本地工作区的一切行为不受影响。
