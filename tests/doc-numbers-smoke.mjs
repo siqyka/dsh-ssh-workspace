@@ -57,8 +57,15 @@ console.log('\n[1] the counters read the source')
   const sources = numbers.routeSources()
   check('the route sources are found', sources.length > 0, String(sources.length))
   check('they include the composition point', sources.some(source => source.includes('export function makeRoutes')))
+  // The figure the document reports is the SUM over every source, so a route
+  // that moved into lib/routes/ is still counted exactly once. Asserted as
+  // "the document's number equals the sum" rather than against the single-file
+  // count: that count shrinks as handlers move out, and comparing to it would
+  // turn the refactor itself into a failure.
   const across = sources.reduce((total, source) => total + numbers.countRoutes(source), 0)
-  check('the count is the sum over every source', across === baseline, `${across} vs ${baseline}`)
+  const documented = /^\| HTTP routes \| (\d+) \|/mu.exec(numbers.renderNumbers())?.[1]
+  check('the documented figure is the sum over every source',
+    documented === String(across), `doc says ${documented}, sources sum to ${across}`)
 }
 
 console.log('\n[2] the suite list comes from the runner, not the directory')
@@ -120,7 +127,7 @@ console.log('\n[4] a stale document is detected, not silently accepted')
   const regenerated = numbers.spliceRegion(stale, region)
   check('a changed figure is detected as drift', regenerated !== stale, 'drift not detected')
   check('the regenerated text restores the real number',
-    regenerated.includes(`| HTTP routes | ${numbers.countRoutes(routesSource)} |`),
+    regenerated.includes(`| HTTP routes | ${numbers.routeSources().reduce((total, source) => total + numbers.countRoutes(source), 0)} |`),
     regenerated.split('\n').find(line => line.includes('HTTP routes')) ?? '(no row)')
 }
 
