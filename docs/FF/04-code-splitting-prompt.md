@@ -23,30 +23,32 @@
 | 测试 | 101 个套件文件，98 个在 `tests/run.mjs` 的 `SUITES`；**28 个套件**、**29 处**读 `lib/client.js` |
 | 文档计数器 | `scripts/doc-numbers.mjs`：`countRoutes` 只读 `lib/routes.js`（`:129`），`countTools` 只读 `lib/tools.js`（`:130`），`countModules` 只数 `lib/*.js`（`:119`） |
 
-**本机环境限制（重要）**：本会话沙箱里 `node tests/run.mjs` 与 `node scripts/lint.mjs`
-都会 `EPERM`（前者 `tests/run.mjs:202` 用 `spawnSync`，后者 `execFileSync`，都要求捕获
-子进程输出）。所以：
+**环境**：必须设 `DSH_CORE_ROOT`，否则 `lib/peers.js:146` 解析不到 peer 包：
 
-- 逐套件直跑，不要用 runner：
-  ```bash
-  DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/routes-smoke.mjs
-  ```
-- `client-shape-smoke` 会有 2 条假红（`lib/index.js parses — exit null`、
-  `./lib/client.js parses — exit null`，见 `tests/client-shape-smoke.mjs:451` 的
-  `spawnSync`）。判据是**相对下面的基线不新增红**，不是「全绿」。
-- 能在正常终端里跑子进程时，用 `node tests/run.mjs` 复核一次。
+```bash
+DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
+```
 
-**基线（本轮实测）**：
+三个 SKIP（`dirs-listing` / `live` / `acceptance`）与两个 PARTIAL 是缺
+`DSH_WS_TEST_ALIAS`（真机主机），不是失败。**本机现在能跑全量，判据是 0 failed。**
+
+**基线（2026-11-20 实测，沙箱已解除后的真实数字）**：
 
 | 检查 | 结果 |
 | --- | --- |
+| `node tests/run.mjs` | **93 passed / 2 partial / 3 skipped / 0 failed**（98 套件） |
+| `node scripts/lint.mjs` | 179 个模块解析通过（**但它看不到 `lib/routes/`**，见 §2 第 6 条） |
 | `node scripts/check-doc-links.mjs` | 25 个 markdown 文件通过 |
 | `node scripts/doc-numbers.mjs --check` | `docs/development.md` 最新 |
 | `routes-smoke` | 276 passed / 0 failed |
 | `remote-fs-smoke` | 67 passed / 0 failed |
 | `transfer-smoke` | 114 passed / 0 failed |
 | `tool-results-smoke` | 33 passed / 0 failed |
-| `client-shape-smoke` | 335 passed / **2 failed**（均为上述假红） |
+| `client-shape-smoke` | **337 passed / 0 failed** |
+
+判据因此从「相对基线不新增红」收紧为**「0 failed」**：本机现在能跑全量。
+`DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 仍需设置，否则 `lib/peers.js:146`
+解析不到 peer。3 个 SKIP 与 2 个 PARTIAL 是缺 `DSH_WS_TEST_ALIAS`（真机），不是失败。
 
 ## 2. 硬要求
 
@@ -66,6 +68,8 @@
 6. **路由模块放 `lib/routes/` 子目录。** 三处 `readdirSync(lib)` 的非递归扫描
    （`upstream-contract-smoke.mjs:43`、`capabilities-report-smoke.mjs:117`、
    `local-passthrough-smoke.mjs:509`）与 `doc-numbers.countModules` 因此不用动。
+   **但 `scripts/lint.mjs:41` 也是非递归的**，所以 C1 必须先把它改成递归，
+   否则 `lib/routes/*.js` 永远不被 `node --check` 检查（现在 190 个模块只查 179 个）。
 7. **`ROUTES` 与 `makeRoutes` 继续从 `lib/routes.js` 导出。** 三个套件从这里取它们
    （`routes-smoke.mjs:117`、`mutations-smoke.mjs:122`、`lifecycle-smoke.mjs:78`）。
 8. **chunk 之间不得互相 `require` 兄弟文件。** 宿主只查 seed / loadCache / factories
@@ -112,13 +116,14 @@
 
 | # | 提交 | 内容 |
 | --- | --- | --- |
-| C1 | `chore(doc-numbers): count routes across a route directory` | `countRoutes` 读 `lib/routes.js` + `lib/routes/*.js`；`doc-numbers-smoke` 补「写在子目录里的路由也被数到」；数字仍是 **33** |
-| C2 | `refactor(routes): one kit for the shared HTTP plumbing` | 新建 `lib/routes/kit.js`：`writeJson`、`readJsonBody`、`statusForActionError`、`statusForDownloadError`、`isJsonContentType`、`isRawContentType`、`mediaTypeOf`、`queryParam`、`trimmedParam`、`parseLimit`、`codedError`、`accessRefusal`，以及 `guard` / `guardRaw` 工厂。围栏语义一行不改 |
-| C3 | `refactor(routes): move the host routes into their own module` | `lib/routes/hosts.js`：`hosts`、`hostSave`、`hostDelete`、`hostForgetKey`、`hostDisconnect`、`hostReconnect`、`test` |
-| C4 | `refactor(routes): move the transfer routes` | `lib/routes/transfers.js`：`transfer`、`download`、`downloadTree`、`upload`、`uploadChunk` |
-| C5 | `refactor(routes): move the workspace routes` | `lib/routes/workspaces.js`：`mount`、`unmount`、`enable`、`status`、`selfCheck`、`supportBundle` |
-| C6 | `refactor(routes): move the forward routes` | `lib/routes/forwards.js`：`forward`、`unforward`、`forwardSave`、`forwardToggle`、`forwardDelete`、`forwardRemember`、`forwardProbe`、`forwardSettings`、`passthroughSettings` |
-| C7 | `refactor(routes): move the entry routes` | `lib/routes/entries.js`：`ls`、`gitHistory`、`rename`、`deleteEntry`、`mkdir`、`mutationPolicy`；`makeRoutes` 降到约 60 行 |
+| C1 | `chore(lint): walk every module, not just the top level` | `scripts/lint.mjs` 的 `moduleFiles()` 改递归；覆盖 179 → 190 个模块。**必须在 C2 之前** |
+| C2 | `chore(doc-numbers): count routes across a route directory` | `countRoutes` 读 `lib/routes.js` + `lib/routes/*.js`；`doc-numbers-smoke` 补「写在子目录里的路由也被数到」；数字仍是 **33** |
+| C3 | `refactor(routes): one kit for the shared HTTP plumbing` | 新建 `lib/routes/kit.js`：`writeJson`、`readJsonBody`、`statusForActionError`、`statusForDownloadError`、`isJsonContentType`、`isRawContentType`、`mediaTypeOf`、`queryParam`、`trimmedParam`、`parseLimit`、`codedError`、`accessRefusal`，以及 `guard` / `guardRaw` 工厂。围栏语义一行不改 |
+| C4 | `refactor(routes): move the host routes into their own module` | `lib/routes/hosts.js`：`hosts`、`hostSave`、`hostDelete`、`hostForgetKey`、`hostDisconnect`、`hostReconnect`、`test` |
+| C5 | `refactor(routes): move the transfer routes` | `lib/routes/transfers.js`：`transfer`、`download`、`downloadTree`、`upload`、`uploadChunk` |
+| C6 | `refactor(routes): move the workspace routes` | `lib/routes/workspaces.js`：`mount`、`unmount`、`enable`、`status`、`selfCheck`、`supportBundle` |
+| C7 | `refactor(routes): move the forward routes` | `lib/routes/forwards.js`：`forward`、`unforward`、`forwardSave`、`forwardToggle`、`forwardDelete`、`forwardRemember`、`forwardProbe`、`forwardSettings`、`passthroughSettings` |
+| C8 | `refactor(routes): move the entry routes` | `lib/routes/entries.js`：`ls`、`gitHistory`、`rename`、`deleteEntry`、`mkdir`、`mutationPolicy`；`makeRoutes` 降到约 60 行 |
 
 路由形状（每条都一样，照抄）：
 
@@ -210,22 +215,25 @@ window.__ModuleLoader__.load({
 （`:5471`）、`createSessionCatchUp`（`:12359`）、`trackTriggerRects`（`:4551`）、
 `injectStyles`（`:975`）。它们没有「渲染前」这个时机可用。
 
-**收益要说清**：三个 chunk 都依赖内核，所以省下的是**解析与求值**，不是 bundle 体积。
+**收益要说清（实测，别猜）**：编译整份 `client.js` 是 **3.60 ms**，砍掉三个 chunk 候选段
+（−1,353 行 / −68,598 B，占 10.7%）后是 **3.24 ms**——**净收益 0.36 ms / 次页面加载**。
+所以这条轨道**不省启动时间**，它省的是**人读文件的上下文**。不要把它写成性能优化，
+也不要为了「更快」而多拆几块：每多一个 chunk 就多一次 HTTP 往返。
+测量方法：`new Function(...)` 编译整份源码，每次测量各起一个新进程（预热进程会命中
+V8 编译缓存给出 0 ms）。
 
 ## 4. 验收命令
 
 ```bash
+export DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules
+node tests/run.mjs                     # 判据：0 failed
+node scripts/lint.mjs                  # C1 之后应为 190 个模块
 node scripts/check-doc-links.mjs
 node scripts/doc-numbers.mjs --check
-node --check lib/client.js            # 以及每个新增的 chunk
-DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/routes-smoke.mjs
-DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/remote-fs-smoke.mjs
-DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/client-shape-smoke.mjs
+npm pack --dry-run
 ```
 
-允许跑子进程时补：`node scripts/lint.mjs`、`node tests/run.mjs`、`npm pack --dry-run`。
-
-**判据**：不新增红（基线见 §1），且 `docs/development.md` 的生成表里
+**判据**：`0 failed`，且 `docs/development.md` 的生成表里
 `HTTP routes` 仍是 **33**、`model-facing tools` 仍是 **11**。
 
 ## 5. 真机验收（E 轨道）
@@ -233,7 +241,16 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/client-shape-smok
 1. 面板正常渲染，首屏 `DOMContentLoaded` 不因拆 chunk 变慢。
 2. 打开「新建远程工作区」、目录浏览器、诊断报告、传输队列、「变更请求」tab，
    各自首次点击后 Network 出现 `client.<name>.js?rev=…` 的 **200**。
-3. 把某个 chunk 改名后刷新：主界面照常渲染，只有该功能不可用（失败是隔离的）。
+3. **逐个 chunk** 改名后刷新：主界面照常渲染，只有该功能不可用。
+   `React.lazy` 的 promise reject 会抛到最近的 error boundary，而本 bundle **没有
+   error boundary 也没有 `Suspense`**（`lib/client.js` 全文 0 命中）。所以每个懒组件
+   必须自己兜底，两件事一起做：
+   - `Suspense` 的 `fallback: null`（照抄 `dsh-client-ui-sidebar-terminal:174`）；
+   - `React.lazy(() => require.async(…).then(m => ({default: m.X}), () => ({default: Fallback})))`
+     —— 把 reject 变成「渲染一个说明不可用的组件」，照抄
+     `dsh-client-ui-sidebar-documentpreview:1574` 的 `FrontmatterFallback` 写法。
+   C-02 实测的是主 bundle 里一次 `require.async` 失败（值变成失败字符串），
+   **不能**据此推断 `lazy` 也隔离。
 
 ## 6. 不要做
 
