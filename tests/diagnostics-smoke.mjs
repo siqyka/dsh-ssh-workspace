@@ -214,12 +214,13 @@ console.log('\n[an obsolete workaround reaches the status surfaces]')
 // above already proved the engine side of the join.
 {
   const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
+  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status-render.js'), 'utf8')
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
   check('ssh_workspace_status returns the verdicts', /upstreamWorkarounds: \(engine\.upstreamWorkarounds/u.test(toolsSource))
   check('the panel status route returns them too', /upstreamWorkarounds: engine\.upstreamWorkarounds/u.test(routesSource))
-  check('the status tool surfaces an obsolete patch in its rendered text', /OBSOLETE/u.test(toolsSource))
+  check('the status tool surfaces an obsolete patch in its rendered text', /OBSOLETE/u.test(renderSource))
   check('...and the unprobeable state as well',
-    /workaround\.probe === 'unprobeable'/u.test(toolsSource), 'no unprobeable branch in the renderer')
+    /workaround\.probe === 'unprobeable'/u.test(renderSource), 'no unprobeable branch in the renderer')
 
   // The join itself: a verdict computed but never handed to the engine is
   // exactly the regression this whole change exists to prevent (it was
@@ -283,13 +284,14 @@ console.log('\n[a seam that did not install is reported, an absent one is not]')
 // wrapper that never installed.
 {
   const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
+  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status-render.js'), 'utf8')
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
   const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'support-bundle.js'), 'utf8')
   const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')
   check('ssh_workspace_status returns the seam table', /seams: \(engine\.seams/u.test(toolsSource))
   check('the panel status route returns it too', /seams: engine\.seams/u.test(routesSource))
   check('the diagnostic report has a section for it', /## host seams/u.test(bundleSource))
-  check('the status text spells out a failed seam', /SEAM NOT INSTALLED/u.test(toolsSource))
+  check('the status text spells out a failed seam', /SEAM NOT INSTALLED/u.test(renderSource))
   // The install sites must go through the recorder, or the table stays empty on
   // every real startup — the exact failure this table exists to catch.
   check('every patch install site records its verdict',
