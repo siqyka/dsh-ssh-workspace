@@ -13,25 +13,26 @@
 
 ## 1. 现状（全部为本轮实测）
 
-`lib/` 下 **57 个 `.js`**（`ls lib/*.js | wc -l`；HEAD 上是 56，工作树里新加的
-`lib/shell-quote.js` 未提交）。其中规模差得极远：`lib/client.js` 12,603 行，
-而 `lib/watch-recovery.js` 只有 97 行。
+`lib/` 下 **60 个 `.js`**（`ls lib/*.js | wc -l`，写这行时的值——见 §8 为什么这个数字会变，
+别把它当常量引用）。其中四个是轨道 A 新拆出来的：`lib/shell-quote.js` 23 行、
+`lib/options.js` 31 行、`lib/forward-common.js` 52 行、`lib/text.js` 25 行。
+规模差得极远：`lib/client.js` 12,603 行，而 `lib/shell-quote.js` 只有 23 行。
 
 ### 1.1 已经算过、但没做的去重（轨道 A）
 
 `docs/FF/04-code-splitting.md` §2.1 已经扫出 10 组跨模块同名函数，其中 5 组逐字相同。
 **本轮核对的现状**：
 
-| 函数 | 位置（合并前） | 状态（HEAD `f2f8554`） |
+| 函数 | 位置（合并前） | 状态（HEAD `77ffb00`） |
 | --- | --- | --- |
 | `quote` / `shellQuote` | `lib/engine.js:1846`、`lib/shell.js:523`、`lib/patch-terminal.js:642` | **已提交** `b6f2e2d`：新建 `lib/shell-quote.js`（23 行），`engine.js` 改 re-export，另两处改 import |
 | `requirePort` + `normalizedHost` | `lib/forward.js:28`/`:37`、`lib/reverse-forward.js:45`/`:54` | **已提交** `f2f8554`：新建 `lib/forward-common.js`（52 行），两个文件各 −25 行 |
-| `positive` | `lib/reconnect.js:50`、`lib/watch-recovery.js:46` | **工作树里未提交**：新建 `lib/options.js`；`engine.js` 的 `tuningOf` 改成 `const tuningOf = positive`，`reconnect.js` 改 `export { positive }`，`watch-recovery.js` 改 re-export |
+| `positive` | `lib/reconnect.js:50`、`lib/watch-recovery.js:46` | **已提交** `77ffb00`：新建 `lib/options.js`（31 行）；`engine.js` 的 `tuningOf` 改成 `const tuningOf = positive`，`reconnect.js` 改 `export { positive }`，`watch-recovery.js` 改 re-export |
 | `escapeRegExp` | `lib/include-chain.js:146`、`lib/shell.js:311`、`lib/ssh-config.js:174` | 未做，三份函数体逐字相同（`value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')`，只有形参名不同） |
 
 ### 1.2 import 图里只有一条环
 
-对 57 个模块的出边做 DFS，**唯一一个环**是：
+对 60 个模块的出边做 DFS，**唯一一个环**是：
 
 ```
 lib/ssh-config.js:46  →  ./match-eval.js
@@ -221,7 +222,7 @@ A1–A4 各自可独立回滚；M1、M2 也互不依赖，但**都要过 M3 的�
 
 | 数字 | 现在 | 说明 |
 | --- | --- | --- |
-| `modules under lib/` | **57**（HEAD 56 + 未提交的 `shell-quote.js`） | 每合一组减 1；这是唯一会因合并而变的数字 |
+| `modules under lib/` | 写这行时 **60** | 每合一组减 1（`tar`+`zip` 减 1、`match-eval` 减 1）；这是唯一会因合并而变的数字，重跑 `doc-numbers.mjs` 就会重算 |
 | `upstream patch modules` | 7 | **合并不得改变**（不许动 `patch-*.js`） |
 | `HTTP routes` | 33 | 不得改变 |
 | `model-facing tools` | 11 | 不得改变 |
@@ -255,25 +256,27 @@ A1–A4 各自可独立回滚；M1、M2 也互不依赖，但**都要过 M3 的�
 
 ## 8. 起点状态（开工前自己核对，不要重新推导）
 
-- 分支 `refactor/code-splitting`，HEAD `f2f8554 refactor: one port and host validator for both forward directions`。
-- **A1、A4 已提交**（`b6f2e2d`、`f2f8554`），M3 的模块数已同步成 57。剩下要做的是
-  A2（`escapeRegExp`）、A3 收尾、M1、M2。
-- 工作树有**未提交**的 A3 半成品：未跟踪的 `lib/options.js`，加上
-  `lib/engine.js`（`tuningOf = positive`）、`lib/reconnect.js`（`export { positive }`）、
-  `lib/watch-recovery.js`（`export { positive } from './options.js'`）三处改动。
-  `git diff` 会提示 `lib/reconnect.js` 的 CRLF 将被转成 LF——**这是既有行尾，改动必须保持 CRLF**，
-  否则这条提交会顺带重写整个文件。
-  **先决定这条是提交还是丢弃**，否则 A2 之后 `git diff` 会混着两件事。
+**轨道 A 正在被逐条实施，所以「现在几个模块」「哪条提交了」都会在你读到之前变。
+本节按提交锚点写，不按模块数字写**——开工前跑一次 `git log --oneline` 对一下。
+
+| 步骤 | 状态 |
+| --- | --- |
+| A1 `quote` → `lib/shell-quote.js` | **已提交** `b6f2e2d refactor: one POSIX quoter for every remote command` |
+| A3 `positive` → `lib/options.js` | **已提交** `77ffb00 refactor: one option-number coercion helper`（提交号在不同克隆里可能不同，认标题） |
+| A4 `requirePort` + `normalizedHost` → `lib/forward-common.js` | **已提交** `f2f8554 refactor: one port and host validator for both forward directions` |
+| A2 `escapeRegExp` → `lib/text.js` | 视工作树而定：若 `git status --short` 里有 `lib/text.js` 或 `lib/include-chain.js` 的改动，说明已开工未提交 |
+| M1 `tar`+`zip` → `lib/archive.js` | 未开工 |
+| M2 `match-eval` 并回 `ssh-config` | 未开工 |
+
+- 分支 `refactor/code-splitting`。
+- 每次合并/去重后 `scripts/doc-numbers.mjs` 的 `modules under lib/` 会变，
+  **必须重跑 `node scripts/doc-numbers.mjs --assertions <实测值>`**，
+  否则 `doc-numbers-smoke` 直接红（本辑写到一半时就红过一次）。
+- 行尾：`lib/reconnect.js` 是 CRLF，`git diff` 会提示「CRLF will be replaced by LF」。
+  **改动必须保持 CRLF**，否则这条提交会顺带重写整个文件的每一行。
 - 本轮实测的门禁状态：`lint` = all 181 modules parse；`doc-numbers --check` = up to date；
   `run.mjs` = 87 passed / 2 partial / 6 skipped / **3 failed**，三条都不属于本辑范围：
-  - `doc-numbers-smoke`：当时 `docs/development.md` 还没跟着 57 更新（现已修好）
-  - `audit-smoke`：单跑 58/0 全绿，runner 内 exit 1，属沙箱下 `spawn` 的限制
-  - `dirs-listing-smoke`：「empty path resolves the login directory」在 Windows 上取到
-    `cwd` 而不是登录目录，是既有的环境依赖失败
-  改之前先复跑确认这三条**本来就红**，别把已有的红算到合并头上。
-- 本轮实测的门禁状态：`lint` = all 181 modules parse；`doc-numbers --check` = up to date；
-  `run.mjs` = 87 passed / 2 partial / 6 skipped / **3 failed**，三条都不属于本辑范围：
-  - `doc-numbers-smoke`：当时 `docs/development.md` 还没跟着 57 更新（现已修好）
+  - `doc-numbers-smoke`：`docs/development.md` 没跟着模块数更新（属本辑范围内的机械修复）
   - `audit-smoke`：单跑 58/0 全绿，runner 内 exit 1，属沙箱下 `spawn` 的限制
   - `dirs-listing-smoke`：「empty path resolves the login directory」在 Windows 上取到
     `cwd` 而不是登录目录，是既有的环境依赖失败
