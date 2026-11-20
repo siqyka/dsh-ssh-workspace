@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes.js` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 58 | directory listing |
+| modules under `lib/` | 59 | directory listing |
 | test suites | 98 | `tests/run.mjs` |
 | passing assertions (sampled) | 5032 | measured 2026-11-20 |
 

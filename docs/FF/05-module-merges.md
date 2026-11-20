@@ -22,13 +22,12 @@
 `docs/FF/04-code-splitting.md` §2.1 已经扫出 10 组跨模块同名函数，其中 5 组逐字相同。
 **本轮核对的现状**：
 
-| 函数 | 位置 | 状态 |
+| 函数 | 位置（合并前） | 状态（HEAD `f2f8554`） |
 | --- | --- | --- |
-| `quote` / `shellQuote` | `lib/engine.js:1846`、`lib/shell.js:523`、`lib/patch-terminal.js:642` | **已做（未提交）**：新建 `lib/shell-quote.js`（23 行），`engine.js` 改 re-export，另两处改 import |
+| `quote` / `shellQuote` | `lib/engine.js:1846`、`lib/shell.js:523`、`lib/patch-terminal.js:642` | **已提交** `b6f2e2d`：新建 `lib/shell-quote.js`（23 行），`engine.js` 改 re-export，另两处改 import |
+| `requirePort` + `normalizedHost` | `lib/forward.js:28`/`:37`、`lib/reverse-forward.js:45`/`:54` | **已提交** `f2f8554`：新建 `lib/forward-common.js`（52 行），两个文件各 −25 行 |
+| `positive` | `lib/reconnect.js:50`、`lib/watch-recovery.js:46` | **工作树里未提交**：新建 `lib/options.js`；`engine.js` 的 `tuningOf` 改成 `const tuningOf = positive`，`reconnect.js` 改 `export { positive }`，`watch-recovery.js` 改 re-export |
 | `escapeRegExp` | `lib/include-chain.js:146`、`lib/shell.js:311`、`lib/ssh-config.js:174` | 未做，三份函数体逐字相同（`value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')`，只有形参名不同） |
-| `positive` | `lib/reconnect.js:50`、`lib/watch-recovery.js:46` | 未做，逐字相同 |
-| `requirePort` | `lib/forward.js:28`、`lib/reverse-forward.js:45` | 未做，逐字相同（含 `allowZero` 分支与错误文案） |
-| `normalizedHost` | `lib/forward.js:37`、`lib/reverse-forward.js:54` | 未做 |
 
 ### 1.2 import 图里只有一条环
 
@@ -54,9 +53,9 @@ lib/match-eval.js:40  →  ./ssh-config.js
 | `lib/verify.js` | 161 | `routes`、`transfer` |
 | `lib/resume.js` | 171 | `routes`、`transfer` |
 | `lib/conflict-policy.js` | 125 | `routes`、`transfer` |
-| `lib/reverse-forward.js` | 301 | `index`（仅此一处） |
+| `lib/reverse-forward.js` | 278（A4 之前 301） | `index`（仅此一处） |
 | `lib/forward-persist.js` | 469 | `index`（仅此一处） |
-| `lib/forward.js` | 406 | `forward-persist`、`index`、`routes` |
+| `lib/forward.js` | 383（A4 之前 406） | `forward-persist`、`index`、`routes` |
 | `lib/include-chain.js` | 289 | `hosts`（仅此一处） |
 | `lib/jump-chain.js` | 190 | `engine`、`hosts` |
 | `lib/config-audit.js` | 284 | `hosts`、`support-bundle` |
@@ -149,7 +148,9 @@ tar 退为兜底（`lib/transfer.js:857`：`format === 'tar' ? tarStream(...) : 
 
 ### 2.4 组四：端口转发三件套（不做）
 
-`forward.js`(406) + `reverse-forward.js`(301) + `forward-persist.js`(469) = **1,176 行**。
+`forward.js`(383) + `reverse-forward.js`(278) + `forward-persist.js`(469) = **1,130 行**
+（A4 之前是 406 + 301 + 469 = 1,176；抽走 `requirePort` / `normalizedHost` 共省下 46 行，
+多出的 52 行落在 `lib/forward-common.js`）。
 表面上「都是把端口接起来」，但三者的生命周期不同：正向是本地 listener → `forwardOut`，
 反向是远端 listener → 本地服务，持久化是「意图（`enabled`）与事实（`live`）分离」的存储层。
 而且 `requirePort` / `normalizedHost` 的重复用 §2.5 的办法就能消掉，不需要合并文件。
@@ -166,7 +167,7 @@ tar 退为兜底（`lib/transfer.js:857`：`format === 'tar' ? tarStream(...) : 
 | --- | --- | --- |
 | `escapeRegExp` | 新建 `lib/text.js` | `include-chain.js`、`shell.js`、`ssh-config.js` 三处删本地函数、加 import |
 | `positive` | 新建 `lib/options.js` | `reconnect.js`、`watch-recovery.js` |
-| `requirePort` + `normalizedHost` | 新建 `lib/forward-common.js` | `forward.js`、`reverse-forward.js` |
+| `requirePort` + `normalizedHost` | **已完成**：`lib/forward-common.js` | `forward.js`、`reverse-forward.js` |
 | `quote` / `shellQuote` | **已完成**：`lib/shell-quote.js` | `engine.js`（re-export）、`shell.js`、`patch-terminal.js` |
 
 `quote` 这一组的做法值得沿用：**实现搬到新模块，被广泛引用的旧位置改 re-export**。
@@ -179,10 +180,10 @@ re-export 让这 6 行一行都不用动；同时 `shell.js`（原本只依赖 `
 
 | # | 提交 | 内容 | 结束时应绿的门 |
 | --- | --- | --- | --- |
-| A1 | `refactor(shell-quote): one home for the POSIX quoting rule` | 已在工作树里（§1.1 第一行） | `lint`、`run.mjs` |
+| A1 | `refactor(shell-quote): one home for the POSIX quoting rule` | **已提交** `b6f2e2d` | `lint`、`run.mjs` |
 | A2 | `refactor(text): one escapeRegExp` | 新建 `lib/text.js`，三处改 import | `lint`、`include-chain-smoke`、`ssh-config-smoke` |
-| A3 | `refactor(options): one positive()` | 新建 `lib/options.js` | `lint`、`reconnect-smoke`、`watch-recovery-smoke` |
-| A4 | `refactor(forward): one requirePort / normalizedHost` | 新建 `lib/forward-common.js` | `lint`、`forward-smoke`、`reverse-forward-smoke` |
+| A3 | `refactor(options): one positive()` | 新建 `lib/options.js`；**工作树里已写好，待提交** | `lint`、`reconnect-smoke`、`watch-recovery-smoke` |
+| A4 | `refactor(forward): one requirePort / normalizedHost` | **已提交** `f2f8554` | `lint`、`forward-smoke`、`reverse-forward-smoke` |
 | M1 | `refactor(archive): merge the tar and zip writers` | 组一（含 3 处脚本/测试同步） | `archive-smoke`、`zip-smoke`、`capabilities-report-smoke`、`reverse-verify-archive` |
 | M2 | `refactor(ssh-config): fold match-eval into the config parser` | 组二（消环） | `ssh-config-smoke`、`match-eval-smoke`、`include-chain-smoke`、`hosts-smoke` |
 | M3 | `docs: the module count moved` | `doc-numbers` 重生成 + 源码结构表 | `doc-numbers-smoke`、`check-doc-links` |
@@ -207,7 +208,9 @@ A1–A4 各自可独立回滚；M1、M2 也互不依赖，但**都要过 M3 的�
 但有两处必须当场验证，否则等于没做完：
 
 1. **变异仍然咬得住**。M1 之后必须跑一次
-   `node scripts/reverse-verify-archive.mjs`，确认 15 条变异全部「红→恢复→绿」；
+   `node scripts/reverse-verify-archive.mjs`，确认 19 条变异全部「红→恢复→绿」
+   （分布：`lib/tar.js` 4 条、`lib/tree-filter.js` 3 条、`lib/transfer.js` 4 条、
+   `lib/client.js` 9 条）；
    M2 之后至少手工验证 `match-eval-smoke` 里的三态断言（`host` / `originalhost` / `all`）
    仍能区分——把 `parseMatchConditions` 改成永远返回空数组，该套件必须变红。
 2. **能力表那条排除名真的生效**。M1 之后跑
@@ -243,7 +246,7 @@ A1–A4 各自可独立回滚；M1、M2 也互不依赖，但**都要过 M3 的�
 1. `node scripts/lint.mjs` 全绿（模块数从 181 起会变，但不得有解析失败）。
 2. `node scripts/doc-numbers.mjs --check` = up to date，且表里 `modules under lib/` 等于实测文件数。
 3. `node scripts/check-doc-links.mjs` 全绿（合并若改了文档里的 `lib/*.js` 路径，链接得跟着改）。
-4. `node scripts/reverse-verify-archive.mjs` 15/15 变异有效、跑完源码字节一致。
+4. `node scripts/reverse-verify-archive.mjs` 19/19 变异有效、跑完源码字节一致。
 5. `node tests/run.mjs`：合并不会让任何套件从 passed 变 partial/skipped；
    `archive-smoke`、`zip-smoke`、`capabilities-report-smoke`、`ssh-config-smoke`、
    `match-eval-smoke`、`include-chain-smoke` 逐个断言数与合并前**相同**。
@@ -252,10 +255,22 @@ A1–A4 各自可独立回滚；M1、M2 也互不依赖，但**都要过 M3 的�
 
 ## 8. 起点状态（开工前自己核对，不要重新推导）
 
-- 分支 `refactor/code-splitting`，HEAD `37f647a docs(ff): retire 02, and keep the boundary it was guarding`。
-- 工作树有**未提交**的 A1：新增 `lib/shell-quote.js`，改 `lib/engine.js`（re-export）、
-  `lib/shell.js`、`lib/patch-terminal.js`；`docs/development.md` 的生成表已随之变成 57。
+- 分支 `refactor/code-splitting`，HEAD `f2f8554 refactor: one port and host validator for both forward directions`。
+- **A1、A4 已提交**（`b6f2e2d`、`f2f8554`），M3 的模块数已同步成 57。剩下要做的是
+  A2（`escapeRegExp`）、A3 收尾、M1、M2。
+- 工作树有**未提交**的 A3 半成品：未跟踪的 `lib/options.js`，加上
+  `lib/engine.js`（`tuningOf = positive`）、`lib/reconnect.js`（`export { positive }`）、
+  `lib/watch-recovery.js`（`export { positive } from './options.js'`）三处改动。
+  `git diff` 会提示 `lib/reconnect.js` 的 CRLF 将被转成 LF——**这是既有行尾，改动必须保持 CRLF**，
+  否则这条提交会顺带重写整个文件。
   **先决定这条是提交还是丢弃**，否则 A2 之后 `git diff` 会混着两件事。
+- 本轮实测的门禁状态：`lint` = all 181 modules parse；`doc-numbers --check` = up to date；
+  `run.mjs` = 87 passed / 2 partial / 6 skipped / **3 failed**，三条都不属于本辑范围：
+  - `doc-numbers-smoke`：当时 `docs/development.md` 还没跟着 57 更新（现已修好）
+  - `audit-smoke`：单跑 58/0 全绿，runner 内 exit 1，属沙箱下 `spawn` 的限制
+  - `dirs-listing-smoke`：「empty path resolves the login directory」在 Windows 上取到
+    `cwd` 而不是登录目录，是既有的环境依赖失败
+  改之前先复跑确认这三条**本来就红**，别把已有的红算到合并头上。
 - 本轮实测的门禁状态：`lint` = all 181 modules parse；`doc-numbers --check` = up to date；
   `run.mjs` = 87 passed / 2 partial / 6 skipped / **3 failed**，三条都不属于本辑范围：
   - `doc-numbers-smoke`：当时 `docs/development.md` 还没跟着 57 更新（现已修好）
