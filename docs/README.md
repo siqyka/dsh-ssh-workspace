@@ -20,8 +20,7 @@
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
 | [optimization-and-future03.md](./optimization-and-future03.md) | **优化项与 Future（第三辑 · 唯一账本）**：仍未做、判定不做、上游阻塞、验证缺口与已完成 ID 索引；前两辑已合并到这里 | 完成 |
-| [FF/README.md](./FF/README.md) | **待实施工作流**：工作流的方案与一次性任务书索引（测试骨架与代码整合已完成并删除、远端 Skills 发现、右侧文件树文件编辑、代码拆分），每条写清现状、方案、验收判据与「不做什么」 | 方案 |
-| [FF/02-remote-skills.md](./FF/02-remote-skills.md) | **方案 02**：远端 `.dsh/skills` / `.agents/skills` 发现——默认关闭、主机白名单、写围栏、有界、`complete:false` 不缓存 | 方案 |
+| [FF/README.md](./FF/README.md) | **待实施工作流**：工作流的方案与一次性任务书索引（测试骨架与代码整合、远端 Skills 发现两项已完成并删除，右侧文件树文件编辑、代码拆分待实施），每条写清现状、方案、验收判据与「不做什么」 | 方案 |
 | [FF/03-remote-file-editing.md](./FF/03-remote-file-editing.md) | **方案 03**：右侧文件预览的文件编辑——读/写/改三条路由、`version` + `revision` 双校验 409 不覆盖、远端与本地同一条路由、复用 mode 门禁与写围栏 | 方案 |
 | [FF/04-code-splitting.md](./FF/04-code-splitting.md) | **方案 04**：代码拆分——去重、`statusTool` 三段分离、`makeRoutes` 按资源域拆模块、watch 集群独立、`client.js` 按懒渲染边界拆 chunk；含实测数字与每步判据 | 方案 |
 
