@@ -1419,7 +1419,10 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
     (client.match(/body: file,/gu) ?? []).length === 0,
     'a Blob/File body is still posted somewhere')
   check('...while the raw streaming route stays declared server-side',
-    routes.includes('path: ROUTES.upload') && routes.includes("guardRaw(req, res, 'POST')"),
+    // The route moved into lib/routes/transfers.js; the claim is unchanged —
+    // the raw endpoint still exists and is still behind the raw guard.
+    readFileSync(path.join(packageRoot, 'lib', 'routes', 'transfers.js'), 'utf8').includes('path: ROUTES.upload') &&
+      readFileSync(path.join(packageRoot, 'lib', 'routes', 'transfers.js'), 'utf8').includes("guardRaw(req, res, 'POST')"),
     'the streaming route was removed, not merely left unused by the browser')
   for (const key of ['transfer.networkFailFast', 'transfer.retried']) {
     const count = client.split(`'${key}'`).length - 1

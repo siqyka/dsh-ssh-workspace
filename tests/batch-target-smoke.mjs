@@ -316,7 +316,7 @@ const ITEMS = [
 
 // ---- the server side: a folder download is now a folder -------------------
 {
-  const routes = readFileSync(path.join(here, '..', 'lib', 'routes.js'), 'utf8')
+  const routes = readFileSync(path.join(here, '..', 'lib', 'routes', 'transfers.js'), 'utf8')
   const kit = readFileSync(path.join(here, '..', 'lib', 'routes', 'kit.js'), 'utf8')
   check('the transfer route walks a remote tree down when recursive is set',
     /recursive && direction === 'download'/u.test(routes) && /await downloadTree\(engine, \{/u.test(routes),

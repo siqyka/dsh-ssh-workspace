@@ -1143,13 +1143,17 @@ try {
 // same one — a duplicated `1024 ** 3` in routes.js would drift silently.
 {
   const { DEFAULT_MAX_BYTES, oversizeMessage } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
-  const routesSource = readFileSync(path.join(pluginRoot, 'lib/routes.js'), 'utf8')
+  // The byte-moving helpers moved into routes/transfer-bytes.js; the routes that
+  // call them stayed in routes/transfers.js. The checks below ask "does the code
+  // that moves bytes import the shared limit and bound it", so they read the
+  // file that moves bytes.
+  const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'transfer-bytes.js'), 'utf8')
   const transferSource = readFileSync(path.join(pluginRoot, 'lib/transfer.js'), 'utf8')
 
   check('the shared limit is 1 GiB', DEFAULT_MAX_BYTES === 1024 * 1024 * 1024, String(DEFAULT_MAX_BYTES))
-  check('routes.js imports the limit instead of hard-coding it',
-    /import \{[^}]*DEFAULT_MAX_BYTES[^}]*\} from '\.\/transfer\.js'/u.test(routesSource), 'not imported')
-  check('routes.js hard-codes no gigabyte literal',
+  check('the byte-moving code imports the limit instead of hard-coding it',
+    /import \{[^}]*DEFAULT_MAX_BYTES[^}]*\} from '\.\.\/transfer\.js'/u.test(routesSource), 'not imported')
+  check('it hard-codes no gigabyte literal',
     !/1024\s*\*\s*1024\s*\*\s*1024/u.test(routesSource), 'a second copy of the limit exists')
   check('transfer.js states the limit once',
     (transferSource.match(/const DEFAULT_MAX_BYTES/gu) ?? []).length === 1, 'duplicated constant')
@@ -1162,13 +1166,16 @@ try {
     /written > DEFAULT_MAX_BYTES/u.test(routesSource), 'no running-total check')
   check('the browser upload route also pre-checks the declared length',
     /declared > DEFAULT_MAX_BYTES/u.test(routesSource), 'no declared-length check')
+  // The download's size check is in the ROUTE, not the helper: it decides before
+  // `writeHead`, which is the whole point of the next assertion.
+  const downloadSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'transfers.js'), 'utf8')
   check('the browser download route bounds the file size',
-    /size > DEFAULT_MAX_BYTES/u.test(routesSource), 'no size check')
+    /size > DEFAULT_MAX_BYTES/u.test(downloadSource), 'no size check')
   // A 200 with an error body is indistinguishable from content once the headers
   // are out, so the download refusal must happen before `writeHead`.
   {
-    const headAt = routesSource.indexOf("'content-type': 'application/octet-stream'")
-    const checkAt = routesSource.indexOf('size > DEFAULT_MAX_BYTES')
+    const headAt = downloadSource.indexOf("'content-type': 'application/octet-stream'")
+    const checkAt = downloadSource.indexOf('size > DEFAULT_MAX_BYTES')
     check('the download refusal precedes the response headers',
       checkAt > 0 && headAt > 0 && checkAt < headAt, `check@${checkAt} head@${headAt}`)
   }
