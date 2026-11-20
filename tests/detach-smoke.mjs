@@ -22,6 +22,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 let passed = 0
@@ -189,7 +191,7 @@ const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFile
 
   // Installed through the documented seam, which is how DSH itself reaches it.
   const shellTarget = { execute: async () => { opened += 1; return {} } }
-  const shellRouter = installRemoteShell({ get: (name) => (name === 'shell' ? shellTarget : undefined) }, { engine })
+  const shellRouter = installRemoteShell(createHost({ services: { shell: shellTarget } }).ctx, { engine })
   check('installing the shell seam returns a router', shellRouter !== undefined)
   let shellRefused = false
   try {

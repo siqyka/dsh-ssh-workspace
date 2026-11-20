@@ -25,6 +25,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(path.join(here, '..', 'lib', 'client.js'), 'utf8')
 
@@ -102,7 +104,7 @@ const ITEMS = [
 // ---- the fallback that makes one dialog enough ----------------------------
 {
   // No File System Access API at all: the host chooser answers instead.
-  const ctx = { get: (name) => (name === 'uiWorkspace' ? { pickDirectory: async () => 'C:\\Users\\u\\Downloads' } : undefined) }
+  const ctx = createHost({ services: { uiWorkspace: { pickDirectory: async () => 'C:\\Users\\u\\Downloads' } } }).ctx
   const { pickDirTarget } = api({ window: {} })
   const folder = await pickDirTarget(ctx)
   check('without the browser picker the HOST chooser supplies a plain path',

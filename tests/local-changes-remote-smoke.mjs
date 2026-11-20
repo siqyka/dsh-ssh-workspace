@@ -39,6 +39,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 // The live half imports remote-fs.js, which borrows a Host peer. Point the
@@ -136,7 +138,7 @@ function harness (options = {}) {
       throw new Error('unexpected local spawn')
     },
   }
-  const ctx = { get: name => (name === 'subprocess' ? service : undefined), effect: (fn) => fn() }
+  const ctx = createHost({ services: { subprocess: service } }).ctx
   const logger = { info: () => {}, warn: (message) => warnings.push(message), debug: () => {} }
   const router = installRemoteSubprocess(ctx, { engine, logger: options.logger ?? logger })
   return { service, router, scripts, localCalls, warnings, diagnostics, record }
@@ -901,7 +903,7 @@ async function runLive (hostAlias) {
   }
 
   const service = { spawn: localExec }
-  const ctx = { get: name => (name === 'subprocess' ? service : undefined), effect: (fn) => fn() }
+  const ctx = createHost({ services: { subprocess: service } }).ctx
   installRemoteSubprocess(ctx, {
     engine,
     logger: { info: () => {}, warn: message => console.log(`  WARN  ${message}`), debug: () => {} },

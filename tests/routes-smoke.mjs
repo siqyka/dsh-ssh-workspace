@@ -20,6 +20,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+import { fakeUploadEngine } from './support/fake-upload-sftp.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 let passed = 0
@@ -160,133 +163,9 @@ function fakeReq (options = {}) {
   }
 }
 
-/** A fake engine that serves and accepts in-memory files. */
-function fakeEngine (files, directories = new Set()) {
-  const state = { opened: 0, closed: 0, renamed: [], unlinked: [], mkdirs: [], holds: 0, holdPeak: 0, inFlight: 0 }
-  return {
-    state,
-    async withSftp (_alias, work) {
-      // The record is passed to the callback the way the real engine passes it:
-      // `holds` is the sweeper's long-lived-consumer counter, and a streaming
-      // read pins it for as long as the generator is open (see openRemoteRead).
-      const record = { holds: 0, idleAt: Date.now(), inFlight: 0 }
-      state.record = record
-      state.inFlight += 1
-      try {
-        return await work({
-        stat (target, callback) {
-          if (directories.has(target)) {
-            callback(null, { size: 0, isDirectory: () => true, mode: 0o040755 })
-            return
-          }
-          if (!files.has(target)) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
-          const content = files.get(target)
-          callback(null, { size: content.length, isDirectory: () => false, mode: 0o100644 })
-        },
-        open (target, flags, callback) {
-          state.opened += 1
-          // Record what the route actually asked for. The upload path opens
-          // staging files with 'wx' (O_EXCL) so two concurrent uploads to one
-          // destination cannot share a staging name — a double that only knows
-          // 'w' would silently send that request down the READ branch, which is
-          // how this stub hid the flag change instead of verifying it.
-          state.openFlags = [...(state.openFlags ?? []), { target, flags }]
-          if (flags.includes('w')) {
-            // Writes go to a buffer the handle accumulates; publish renames it.
-            callback(null, { __content: Buffer.alloc(0), __write: true, __target: target })
-            return
-          }
-          // `r+` is a WRITE open too — it keeps the bytes already there and
-          // publishes them on close. The chunked upload transport depends on
-          // exactly that: chunk N reopens the staging file its predecessor
-          // closed, appends at an offset, and the last one renames it. A double
-          // that treated `r+` as read-only would deliver a file holding only the
-          // first chunk, which is the silent truncation this suite exists to
-          // catch.
-          if (flags.includes('r+')) {
-            const existing = files.get(target)
-            if (existing === undefined) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
-            callback(null, { __content: existing, __write: true, __target: target })
-            return
-          }
-          const content = files.get(target)
-          if (content === undefined) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
-          callback(null, { __content: content, __position: 0 })
-        },
-        write (handle, buffer, offset, length, position, callback) {
-          // `position` is honoured, not appended. The stub used to do
-          // `handle.__content = concat([__content, ...])`, which IGNORES the
-          // offset — so a route that wrote every chunk at offset 0 (the real bug
-          // that shipped: a 700 MB upload landed as one 64 KiB chunk while the
-          // response said `ok: true`) produced a correct-looking file here. A
-          // double that cannot represent the bug cannot catch it.
-          const start = typeof position === 'number' && position >= 0 ? position : handle.__content.length
-          const end = start + length
-          if (handle.__content.length < end) {
-            const grown = Buffer.alloc(end)
-            handle.__content.copy(grown, 0)
-            handle.__content = grown
-          }
-          buffer.copy(handle.__content, start, offset, offset + length)
-          state.writes = [...(state.writes ?? []), { position: start, length }]
-          callback(null)
-        },
-        read (handle, buffer, offset, length, position, callback) {
-          // The stream is live right now, so this is where the connection pin
-          // must be observable. Recording it here (rather than after the
-          // request returns) is the difference between "the hold was released"
-          // and "the hold was never taken".
-          state.holdsDuringStream = state.record?.holds ?? 0
-          const slice = handle.__content.subarray(position, position + length)
-          slice.copy(buffer, offset)
-          callback(null, slice.length, buffer)
-        },
-        close (_handle, callback) {
-          state.closed += 1
-          // A write handle publishes its bytes into the virtual filesystem on
-          // close, which is what makes the following rename carry real content.
-          // Without this the double loses every uploaded byte and the rename
-          // publishes an empty file.
-          if (_handle?.__write === true && typeof _handle.__target === 'string') {
-            files.set(_handle.__target, _handle.__content ?? Buffer.alloc(0))
-          }
-          callback(null)
-        },
-        mkdir (target, callback) { state.mkdirs.push(target); callback(null) },
-        // The upload fence walks the destination with `lstat` and asks the
-        // server to `realpath` the deepest existing component. This double has
-        // no symbolic links, so a resolved spelling is the spelling itself —
-        // enough to let an in-roots upload pass and to keep the walk honest
-        // about what exists.
-        lstat (target, callback) {
-          if (target === '/' || directories.has(target)) { callback(null, { mode: 0o040755, isDirectory: () => true }); return }
-          if (files.has(target)) { callback(null, { mode: 0o100644, isDirectory: () => false }); return }
-          callback(Object.assign(new Error('no such file'), { code: 2 }))
-        },
-        realpath (target, callback) {
-          if (target === '/') { callback(null, '/'); return }
-          if (!directories.has(target) && !files.has(target)) { callback(Object.assign(new Error('no such file'), { code: 2 }), null); return }
-          callback(null, target)
-        },
-        rename (from, to, callback) {
-          state.renamed.push([from, to])
-          const content = files.get(from) ?? Buffer.alloc(0)
-          files.delete(from)
-          files.set(to, content)
-          callback(null)
-        },
-        unlink (target, callback) { state.unlinked.push(target); files.delete(target); callback(null) },
-      }, record)
-      } finally {
-        state.inFlight -= 1
-      }
-    },
-  }
-}
-
 console.log('\n=== routes smoke ===\n')
 
-const engine = fakeEngine(new Map([
+const engine = fakeUploadEngine(new Map([
   ['/srv/report.txt', Buffer.from('hello from the remote host')],
 ]), new Set(['/srv/subdir']))
 const forwards = { list: () => [], open: async () => ({}), close: () => false }
@@ -360,7 +239,7 @@ check('the transfer route is registered', routes.some(route => route.path === RO
   const name = 'dzfp_20260602_戚盈凯_发票.pdf'
   const payload = Buffer.from('%PDF-1.4\n% remote invoice\n')
   const files = new Map([[`/srv/${name}`, payload]])
-  const localEngine = fakeEngine(files)
+  const localEngine = fakeUploadEngine(files)
   const localRoutes = makeRoutes({ engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined } })
   const route = localRoutes.find(entry => entry.path === ROUTES.download)
   const server = createHttpServer((req, res) => {
@@ -588,7 +467,7 @@ check('the upload route is registered', upload !== undefined)
     ['application/json (the JSON guard is not the raw guard)', 'application/json'],
   ]) {
     const files = new Map()
-    const localEngine = fakeEngine(files)
+    const localEngine = fakeUploadEngine(files)
     const localRoutes = makeRoutes({
       engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
     })
@@ -611,7 +490,7 @@ check('the upload route is registered', upload !== undefined)
   // The control: the same request WITH the right type succeeds, so the refusals
   // above are caused by the media type and not by a broken fixture.
   const files = new Map()
-  const localEngine = fakeEngine(files)
+  const localEngine = fakeUploadEngine(files)
   const localRoutes = makeRoutes({
     engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
   })
@@ -663,7 +542,7 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
 // directory created when it does not exist yet.
 {
   const files = new Map()
-  const localEngine = fakeEngine(files)
+  const localEngine = fakeUploadEngine(files)
   const localRoutes = makeRoutes({
     engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
   })
@@ -699,7 +578,7 @@ function fakeUploadReq ({ url, host = 'localhost:4074', chunks, method = 'POST',
 // reach the publish step instead of falling through as "nothing to send".
 {
   const files = new Map()
-  const emptyEngine = fakeEngine(files)
+  const emptyEngine = fakeUploadEngine(files)
   const emptyRoutes = makeRoutes({
     engine: emptyEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
   })
@@ -744,7 +623,7 @@ async function postChunk (route, body, chunks = []) {
 }
 {
   const files = new Map()
-  const chunkEngine = fakeEngine(files)
+  const chunkEngine = fakeUploadEngine(files)
   const chunkRoutes = makeRoutes({ engine: chunkEngine, router: {}, forwards, shells, ctx: { get: () => undefined } })
   const route = chunkRoutes.find(entry => entry.path === ROUTES.uploadChunk)
   const dir = '/srv/chunked'
@@ -827,11 +706,11 @@ async function postChunk (route, body, chunks = []) {
 {
   const server = { requestTimeout: 300_000, setTimeout () {} }
   const gated = makeRoutes({
-    engine: fakeEngine(new Map()),
+    engine: fakeUploadEngine(new Map()),
     router: {},
     forwards,
     shells,
-    ctx: { get: (name) => (name === 'webServer' ? { server } : undefined) },
+    ctx: createHost({ services: { webServer: { server } } }).ctx,
   })
   const gatedUpload = gated.find(route => route.path === ROUTES.upload)
   const ask = (name) => `${ROUTES.upload}?alias=a&path=${encodeURIComponent('/srv/app')}&name=${encodeURIComponent(name)}`
@@ -904,7 +783,7 @@ async function postChunk (route, body, chunks = []) {
     const { res, state } = fakeRes()
     res.socket = { server: socketServer }
     const viaSocket = makeRoutes({
-      engine: fakeEngine(new Map()),
+      engine: fakeUploadEngine(new Map()),
       router: {},
       forwards,
       shells,
@@ -925,11 +804,11 @@ async function postChunk (route, body, chunks = []) {
     // deliberately absent, turning a working deployment into a failing one.
     const disabled = { requestTimeout: 0, setTimeout () {} }
     const routesFor = makeRoutes({
-      engine: fakeEngine(new Map()),
+      engine: fakeUploadEngine(new Map()),
       router: {},
       forwards,
       shells,
-      ctx: { get: (name) => (name === 'webServer' ? { server: disabled } : undefined) },
+      ctx: createHost({ services: { webServer: { server: disabled } } }).ctx,
     }).find(route => route.path === ROUTES.upload)
     await routesFor.handler(fakeUploadReq({ url: ask('x.bin'), chunks: [Buffer.from('x')] }), fakeRes().res)
     check('a host with the deadline disabled keeps it disabled',
@@ -941,7 +820,7 @@ async function postChunk (route, body, chunks = []) {
     // must still serve the upload — the window is an optimisation, not a
     // requirement.
     const headless = makeRoutes({
-      engine: fakeEngine(new Map()),
+      engine: fakeUploadEngine(new Map()),
       router: {},
       forwards,
       shells,
@@ -973,7 +852,7 @@ async function postChunk (route, body, chunks = []) {
   // from offset 0, because the second chunk IS the whole answer. So the payload
   // here is deliberately several DISTINCT chunks of unequal length.
   const files = new Map()
-  const localEngine = fakeEngine(files)
+  const localEngine = fakeUploadEngine(files)
   const localRoutes = makeRoutes({
     engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
   })
@@ -1002,7 +881,7 @@ async function postChunk (route, body, chunks = []) {
 {
   // A root-level destination must not produce a doubled slash.
   const files = new Map()
-  const localEngine = fakeEngine(files)
+  const localEngine = fakeUploadEngine(files)
   const localRoutes = makeRoutes({
     engine: localEngine, router: {}, forwards, shells, ctx: { get: () => undefined },
   })
@@ -1027,7 +906,7 @@ async function postChunk (route, body, chunks = []) {
 {
   const servedDirs = new Set(['/srv', '/srv/app', '/etc', '/tmp', '/tmp/build'])
   const inRoots = new Map()
-  const inRootsEngine = fakeEngine(inRoots, servedDirs)
+  const inRootsEngine = fakeUploadEngine(inRoots, servedDirs)
   const fencedRoutes = makeRoutes({
     engine: inRootsEngine,
     router: { assertEnabled () {}, roots: new Set(['ssh://a/srv/app']) },
@@ -1267,17 +1146,19 @@ async function postChunk (route, body, chunks = []) {
         forwards,
         savedForwards: saved,
         shells,
-        ctx: {
-          get: (name) => name !== 'workspaceRegistry' ? undefined : {
-            list: () => [
-              { id: 'ws-off', path: 'ssh://box/srv/off', title: 'off', sessionIds: ['s1', 's2'] },
-              { id: 'ws-on', path: 'ssh://box/srv/on', title: 'on', sessionIds: ['s3'] },
-              // A registry entry with no membership array must not crash the
-              // route: older hosts may omit it entirely.
-              { id: 'ws-bare', path: 'ssh://box/srv/bare', title: 'bare' },
-            ],
+        ctx: createHost({
+          services: {
+            workspaceRegistry: {
+              list: () => [
+                { id: 'ws-off', path: 'ssh://box/srv/off', title: 'off', sessionIds: ['s1', 's2'] },
+                { id: 'ws-on', path: 'ssh://box/srv/on', title: 'on', sessionIds: ['s3'] },
+                // A registry entry with no membership array must not crash the
+                // route: older hosts may omit it entirely.
+                { id: 'ws-bare', path: 'ssh://box/srv/bare', title: 'bare' },
+              ],
+            },
           },
-        },
+        }).ctx,
       })
       await statusRoutes.find(route => route.path === ROUTES.status).handler(
         fakeReq({ url: ROUTES.status, headers: { host: 'localhost:4074' } }), res)
@@ -1422,7 +1303,7 @@ async function postChunk (route, body, chunks = []) {
     }
     const detachRoutes = makeRoutes({
       engine: routeEngine, router: fakeRouter, forwards: { list: () => [], open: async () => ({}), close: () => false },
-      ctx: { get: (name) => (name === 'workspaceRegistry' ? registry : undefined) },
+      ctx: createHost({ services: { workspaceRegistry: registry } }).ctx,
     })
     const findDetach = (routePath) => detachRoutes.find(route => route.path === routePath)
 
@@ -1816,7 +1697,7 @@ async function postChunk (route, body, chunks = []) {
   // The engine behind the streaming routes must be able to serve a file, so
   // the download assertions prove the fence PASSES and the bytes flow — not
   // merely that the answer is not 403.
-  const lanEngine = Object.assign(fakeEngine(new Map([
+  const lanEngine = Object.assign(fakeUploadEngine(new Map([
     ['/srv/report.txt', Buffer.from('hello from the remote host')],
   ])), { pool: new Map() })
   const lanRoutes = makeRoutes({

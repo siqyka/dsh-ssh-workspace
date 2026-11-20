@@ -25,6 +25,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { fakeForwardEngine } from './support/fake-forward-engine.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { ForwardManager, probeLocalPort, joinForwards } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
 const { HostConfigStore, forwardsOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
@@ -42,21 +44,6 @@ function check (label, ok, detail) {
 console.log('\n=== forward persist smoke ===\n')
 
 /** An engine double whose `forwardOut` dials a real loopback server. */
-function fakeEngine (farSidePort) {
-  const handlers = new Map()
-  const client = {
-    once (event, handler) { handlers.set(event, handler) },
-    off (event, handler) { if (handlers.get(event) === handler) handlers.delete(event) },
-    emit (event, ...args) { const handler = handlers.get(event); if (handler !== undefined) handler(...args) },
-    forwardOut (_srcHost, _srcPort, _dstHost, _dstPort, callback) {
-      const socket = createConnection({ host: '127.0.0.1', port: farSidePort })
-      socket.once('connect', () => callback(null, socket))
-      socket.once('error', (error) => callback(error))
-    },
-  }
-  const record = { client, holds: 0, idleAt: Date.now(), inFlight: 0, broken: false }
-  return { record, engine: { async acquire () { return record } } }
-}
 
 /** A temporary store file plus its directory, cleaned up by the caller. */
 function makeStore () {
@@ -184,7 +171,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { record, engine } = fakeEngine(echo.port)
+      const { record, engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const freePort = await pickFreePort()
 
@@ -231,7 +218,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { engine } = fakeEngine(echo.port)
+      const { engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const busy = await new Promise((resolve) => {
         const server = createServer(() => {})
@@ -260,7 +247,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { engine } = fakeEngine(echo.port)
+      const { engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const port = await pickFreePort()
       store.putForward({ id: 'fwd-late', alias: 'alpha', remotePort: echo.port, localPort: port, enabled: true })
@@ -289,7 +276,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { engine } = fakeEngine(echo.port)
+      const { engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const portA = await pickFreePort()
       const portB = await pickFreePort(portA)
@@ -323,7 +310,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { engine } = fakeEngine(echo.port)
+      const { engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const busy = await new Promise((resolve) => {
         const server = createServer(() => {})
@@ -348,7 +335,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { record, engine } = fakeEngine(echo.port)
+      const { record, engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const port = await pickFreePort()
       store.putForward({ id: 'fwd-drop', alias: 'alpha', remotePort: echo.port, localPort: port, enabled: true })
@@ -380,7 +367,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { record, engine } = fakeEngine(echo.port)
+      const { record, engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const port = await pickFreePort()
       store.putForward({ id: 'fwd-cut', alias: 'alpha', remotePort: echo.port, localPort: port, enabled: true })
@@ -430,7 +417,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { engine } = fakeEngine(echo.port)
+      const { engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       const opened = await forwards.open('alpha', { remotePort: echo.port, localPort: 0 })
       check('a transient forward has an ephemeral local port', opened.localPort > 0)
@@ -481,7 +468,7 @@ try {
   {
     const { store, dispose } = makeStore()
     try {
-      const { engine } = fakeEngine(echo.port)
+      const { engine } = fakeForwardEngine(echo.port)
       const { forwards, saved } = makeController(store, { engine })
       for (const [label, input] of [
         ['a zero local port', { alias: 'a', remotePort: 80, localPort: 0 }],

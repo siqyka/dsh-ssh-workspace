@@ -30,6 +30,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 import {
   GIT_HISTORY_DEFAULT_LIMIT,
   GIT_HISTORY_MAX_LIMIT,
@@ -385,7 +387,7 @@ if (routesModule !== null) {
       engine: {},
       router: {},
       forwards: { list: () => [] },
-      ctx: { get: (name) => services[name] },
+      ctx: createHost({ services }).ctx,
     })
   }
 

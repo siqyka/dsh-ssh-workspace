@@ -776,6 +776,11 @@ console.log('\n[the wiring keeps the two phases in order]')
  * section exists for.
  */
 function readOwnershipSchema (source) {
+  // Normalised before matching: the literal below spans lines, and a checkout
+  // with CRLF line endings made `indexOf` return -1 — a red suite that said
+  // nothing about the code. `.gitattributes` pins the checkout to LF, but this
+  // comparison must not depend on that promise holding on someone else's
+  // machine.
   const marker = "ownership: {\n            type: 'object',\n            additionalProperties: false,\n            properties: {"
   const at = source.indexOf(marker)
   if (at === -1) return null
@@ -815,8 +820,8 @@ console.log('\n[the returned copy cannot drift from the declared schema]')
   // shipped without the two new fields, so the Host rejected the WHOLE status
   // result (`missing required property value.ownership.updatedAt`, then
   // `...stage`) and every status surface, panel included, read it as null.
-  const tools = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
-  const routes = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  const tools = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8').replace(/\r\n/gu, '\n')
+  const routes = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8').replace(/\r\n/gu, '\n')
 
   const toolSites = tools.split('ownershipSnapshotCopy(engine.ownership)').length - 1
   check('every status surface returns a structural copy', toolSites === 2 && routes.includes('ownershipSnapshotCopy(engine.ownership)'), `${toolSites} tool site(s)`)

@@ -302,14 +302,14 @@ onKeyDown: (event) => {
 
 1. `routes.js`：`ROUTES` 加三条 + `FS_STALE_VERSION → 409` 映射 + `EDIT_MAX_BYTES`；
 2. 服务端三个处理函数（读/写/改），先远端分支，再本地分支；
-3. 裸检出测试（依赖 FF-01 的内存 SFTP）；
+3. 裸检出测试（用 `tests/support/fake-sftp.mjs` 的内存 SFTP，FF-01 已交付）；
 4. 客户端按钮 + 对话框（`modalLayer` + `.sshwsp-dialog-fill`）；
 5. 源码级客户端断言；
 6. 文档与 CHANGELOG。
 
 ## 相关
 
-- [FF-01 测试骨架](./01-test-harness-and-code-consolidation.md)：`tests/support/fake-sftp.mjs` 是本辑测试的前置
+- [../development.md](../development.md) 的「共享替身」一节：`tests/support/fake-sftp.mjs` 是本辑测试的前置（原 FF-01 任务书已随交付删除）
 - [../ui.md](../ui.md)：弹窗与 `modalLayer`、`sidebar.right.tab.files.actions` 的既有用法
 - [../protocol.md](../protocol.md)：`ssh://` 语法与写入围栏
 - [../architecture.md](../architecture.md)：`ctx.fs` 接管与 `remote-fs.js` 的分层

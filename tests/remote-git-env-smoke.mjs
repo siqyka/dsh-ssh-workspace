@@ -22,6 +22,8 @@ import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { installRemoteSubprocess } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-subprocess.js')).href)
 
@@ -74,10 +76,7 @@ function harness (run = {}) {
   }
   let localSpawns = 0
   const service = { spawn: () => { localSpawns += 1; throw new Error('unexpected local spawn') } }
-  const ctx = {
-    get: (name) => (name === 'subprocess' ? service : undefined),
-    effect: (fn) => fn(),
-  }
+  const ctx = createHost({ services: { subprocess: service } }).ctx
   installRemoteSubprocess(ctx, { engine, logger: undefined })
   return { service, scripts, localSpawns: () => localSpawns }
 }

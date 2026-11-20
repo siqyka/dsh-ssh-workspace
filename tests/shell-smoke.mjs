@@ -22,6 +22,8 @@
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { fakeChannelEngine } from './support/fake-channel-engine.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { ShellManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/shell.js')).href)
 
@@ -120,19 +122,17 @@ function fakeChannel (options = {}) {
   return { channel, state, emitted }
 }
 
-/** An engine double handing out one prepared channel per `open`. */
-function fakeEngine (channels) {
-  const opened = []
-  return {
-    opened,
-    /** No workspace is detached in this suite. */
-    assertNotDisabled () {},
-    async openChannel (_alias, command, options) {
-      const prepared = channels[opened.length] ?? channels.at(-1)
-      opened.push({ command, options })
-      return { channel: prepared.channel, release: prepared.release ?? (() => {}) }
-    },
-  }
+/**
+ * The engine over a prepared channel list.
+ *
+ * The double itself lives in `tests/support/fake-channel-engine.mjs`; this is
+ * the one-line adaptation this suite needs (the engine, not the log). The three
+ * engines further down are deliberately NOT this: they gate, fail or dispose
+ * mid-open, and a shared factory cannot be all three without becoming the thing
+ * under test.
+ */
+function channelEngine (channels) {
+  return fakeChannelEngine(channels).engine
 }
 
 console.log('\n=== shell smoke ===\n')
@@ -140,7 +140,7 @@ console.log('\n=== shell smoke ===\n')
 // --- one command round trip ------------------------------------------------
 {
   const prepared = fakeChannel({ results: { 'echo hi': { output: 'hi', code: 0 } } })
-  const engine = fakeEngine([prepared])
+  const engine = channelEngine([prepared])
   const shells = new ShellManager({ engine })
   const result = await shells.run('test', 'echo hi')
   check('a command returns its output without the echoed command line',
@@ -156,7 +156,7 @@ console.log('\n=== shell smoke ===\n')
 // --- a non-zero status is reported, not swallowed ---------------------------
 {
   const prepared = fakeChannel({ results: { 'exit 3': { output: '', code: 3 } } })
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   const result = await shells.run('test', 'exit 3')
   check('a non-zero exit status survives the marker', result.exitCode === 3, String(result.exitCode))
 }
@@ -164,7 +164,7 @@ console.log('\n=== shell smoke ===\n')
 // --- the second call reuses the live session -------------------------------
 {
   const prepared = fakeChannel({ results: { 'cd /srv': { output: '', code: 0 }, pwd: { output: '/srv', code: 0 } } })
-  const engine = fakeEngine([prepared])
+  const engine = channelEngine([prepared])
   const shells = new ShellManager({ engine })
   await shells.run('test', 'cd /srv')
   const second = await shells.run('test', 'pwd')
@@ -177,7 +177,7 @@ console.log('\n=== shell smoke ===\n')
 {
   const first = fakeChannel({ results: { pwd: { output: '/one', code: 0 } } })
   const second = fakeChannel({ results: { pwd: { output: '/two', code: 0 } } })
-  const engine = fakeEngine([first, second])
+  const engine = channelEngine([first, second])
   const shells = new ShellManager({ engine })
   const a = await shells.run('test', 'pwd', { session: 'a' })
   const b = await shells.run('test', 'pwd', { session: 'b' })
@@ -194,7 +194,7 @@ console.log('\n=== shell smoke ===\n')
     // Never answer: then drop the channel.
     setTimeout(() => prepared.channel.emit('close'), 10)
   }
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   let message
   try { await shells.run('test', 'forever') } catch (error) { message = error.message }
   check('a dropped channel rejects the pending call',
@@ -206,7 +206,7 @@ console.log('\n=== shell smoke ===\n')
   let releases = 0
   const prepared = fakeChannel({ results: { 'echo hi': { output: 'hi', code: 0 } } })
   prepared.release = () => { releases += 1 }
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   await shells.run('test', 'echo hi')
   const shell = shells.shells.get('test\u0000default')
   shell.close()
@@ -217,7 +217,7 @@ console.log('\n=== shell smoke ===\n')
 {
   const prepared = fakeChannel({ results: {} })
   prepared.channel.write = () => { prepared.state.writes += 1 }
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   let message
   try { await shells.run('test', 'forever', { timeoutMs: 30 }) } catch (error) { message = error.message }
   check('a command that never answers times out',
@@ -242,7 +242,7 @@ console.log('\n=== shell smoke ===\n')
     },
     deferFirst: true,
   })
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   let timedOut
   try {
     await shells.run('test', 'sleep 5', { timeoutMs: 30 })
@@ -364,7 +364,7 @@ console.log('\n=== shell smoke ===\n')
 // --- a multi-byte character split across chunks survives --------------------
 {
   const prepared = fakeChannel({ results: { 'echo 中文': { output: '中文', code: 0 } }, splitOutput: true })
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   const result = await shells.run('test', 'echo 中文')
   check('a CJK character split across chunks is decoded intact',
     result.output === '中文', JSON.stringify(result.output))
@@ -374,14 +374,14 @@ console.log('\n=== shell smoke ===\n')
 // --- a reopen reuses the directory the session was STARTED in ---------------
 {
   const firstPrepared = fakeChannel({ results: {} })
-  const shells = new ShellManager({ engine: fakeEngine([firstPrepared]) })
+  const shells = new ShellManager({ engine: channelEngine([firstPrepared]) })
   await shells.open('test', { session: 'work', cwd: '/srv/app' })
   // The connection dies; the channel closes, so the session is finished.
   firstPrepared.channel.emit('close')
   // The SAME manager opens the session again: it must reconnect to the same
   // directory, not to the login directory.
   const secondPrepared = fakeChannel({ results: { pwd: { output: '/srv/app', code: 0 } } })
-  shells.engine = fakeEngine([secondPrepared])
+  shells.engine = channelEngine([secondPrepared])
   const result = await shells.run('test', 'pwd', { session: 'work' })
   check('a reopen lands in the session\'s original directory',
     result.output === '/srv/app', JSON.stringify(result.output))
@@ -392,7 +392,7 @@ console.log('\n=== shell smoke ===\n')
 // --- a first open is NOT reported as a reopen -------------------------------
 {
   const prepared = fakeChannel({ results: { pwd: { output: '/home/u', code: 0 } } })
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   const result = await shells.run('test', 'pwd', { session: 'fresh', cwd: '/home/u' })
   check('a first open is not a reopen', result.reopened === false, JSON.stringify(result))
   check('a first open says where it started', result.cwd === '/home/u', JSON.stringify(result.cwd))
@@ -401,7 +401,7 @@ console.log('\n=== shell smoke ===\n')
 // --- an explicit close forgets the start directory --------------------------
 {
   const prepared = fakeChannel({ results: { pwd: { output: '/a', code: 0 } } })
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   await shells.open('test', { session: 'gone', cwd: '/a' })
   shells.close('test', 'gone')
   check('closing a session forgets where it started', shells.starts.size === 0,
@@ -411,11 +411,11 @@ console.log('\n=== shell smoke ===\n')
 // --- an explicit cwd on a reopen overrides the remembered one --------------
 {
   const firstPrepared = fakeChannel({ results: { pwd: { output: '/old', code: 0 } } })
-  const shells = new ShellManager({ engine: fakeEngine([firstPrepared]) })
+  const shells = new ShellManager({ engine: channelEngine([firstPrepared]) })
   await shells.open('test', { session: 'move', cwd: '/old' })
   firstPrepared.channel.emit('close')
   const secondPrepared = fakeChannel({ results: { pwd: { output: '/new', code: 0 } } })
-  shells.engine = fakeEngine([secondPrepared])
+  shells.engine = channelEngine([secondPrepared])
   const result = await shells.run('test', 'pwd', { session: 'move', cwd: '/new' })
   check('an explicit cwd wins over the remembered start',
     result.cwd === '/new', JSON.stringify(result.cwd))
@@ -426,7 +426,7 @@ console.log('\n=== shell smoke ===\n')
 // --- the session list names the start directory WITHOUT calling it cwd -----
 {
   const prepared = fakeChannel({ results: {} })
-  const shells = new ShellManager({ engine: fakeEngine([prepared]) })
+  const shells = new ShellManager({ engine: channelEngine([prepared]) })
   await shells.open('test', { session: 'listed', cwd: '/var/log' })
   const [row] = shells.list()
   check('the list reports where the session started', row.startedIn === '/var/log',

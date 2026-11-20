@@ -34,6 +34,9 @@ process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { transferFile, uploadTree, downloadTree } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
 
+import { createFakeSftp, fakeSftpEngine } from './support/fake-sftp.mjs'
+import { createHost } from './support/plugin-host.mjs'
+
 let passed = 0
 let failures = 0
 function check (label, ok, detail) {
@@ -44,150 +47,46 @@ function check (label, ok, detail) {
 }
 
 /**
- * An SFTP double over a Map, with the subset `transfer.js` uses.
+ * The shared in-memory SFTP tree (`tests/support/fake-sftp.mjs`), in the shape
+ * this suite was written against.
  *
- * `failAfter` makes the Nth write throw, which is how the mid-transfer failure
- * (and therefore the staging cleanup) is exercised.
+ * It used to be a hand-rolled Map double that overwrote on rename and never
+ * advertised `posix-rename@openssh.com` — so every upload here silently took the
+ * non-atomic fallback and the atomic publish was untested. The shared double
+ * fails a rename onto an existing destination and advertises the extension, so
+ * what runs below is the path production actually takes.
  *
- * `links` maps an absolute path to the absolute path it points at, which is how
- * the reachability fence gets exercised: the fence walks the path with `lstat`
- * and asks the server to `realpath` the deepest existing component, so a parent
- * directory that is a symlink escaping the served roots has to be visible in
- * both of those answers.
+ * `failAfter` is kept as a thin alias for `tree.failAfterWrites(n)`, which is how
+ * the mid-transfer failure (and therefore the staging cleanup) is exercised.
+ * `state.bytesWritten` deliberately ignores the resume sidecar, whose bytes are
+ * bookkeeping rather than payload.
  */
 function fakeSftp (options = {}) {
-  const files = new Map(options.files ?? [])
-  const state = { writes: 0, bytesWritten: 0, renamed: [], unlinked: [] }
-  const failAfter = options.failAfter ?? Number.POSITIVE_INFINITY
-  const handles = new Map()
-  let nextHandle = 1
-  // `mkdir` marks a path as a directory; `stat` reports the marker, so the
-  // production code's "is this a directory" check sees the truth.
-  const dirs = new Set(options.dirs ?? [])
-  const links = new Map(options.links ?? [])
-  // The longest linked prefix of `target`, replaced by its target, resolved
-  // repeatedly so a chain of links settles. A link deeper in the path is not
-  // followed by an `lstat` of an ancestor, exactly as on a real server.
-  const resolveThroughLinks = (target) => {
-    let current = target
-    for (let hop = 0; hop < 16; hop += 1) {
-      let hit
-      for (const [from, to] of links) {
-        if (current === from || current.startsWith(`${from}/`)) {
-          if (hit === undefined || from.length > hit.from.length) hit = { from, to }
-        }
-      }
-      if (hit === undefined) return current
-      current = `${hit.to}${current.slice(hit.from.length)}`.replace(/\/{2,}/gu, '/')
-    }
-    return current
-  }
-  const exists = (target) => files.has(target) || dirs.has(target) || links.has(target)
-  // `stat` follows the final component and every link above it, exactly as a
-  // real server does — so a write staged under a symlinked parent still finds
-  // its directory, and only the FENCE can be the thing that stops it.
-  const entryAt = (target) => {
-    const resolved = resolveThroughLinks(target)
-    if (files.has(resolved)) return { kind: 'file', bytes: files.get(resolved) }
-    if (dirs.has(resolved)) return { kind: 'directory' }
-    return undefined
-  }
-  const sftp = {
-    _extensions: {},
-    stat (target, callback) {
-      const entry = entryAt(target)
-      if (entry === undefined) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
-      callback(null, {
-        isFile: () => entry.kind === 'file',
-        isDirectory: () => entry.kind === 'directory',
-        size: entry.kind === 'file' ? entry.bytes.length : 0,
-        mode: entry.kind === 'directory' ? 0o755 : 0o644,
-        mtime: 0,
-      })
-    },
-    // `lstat` reports the link itself rather than following it, which is what
-    // lets the fence's ancestor walk see that a component exists at all.
-    lstat (target, callback) {
-      if (links.has(target)) {
-        callback(null, {
-          isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true,
-          size: 0, mode: 0o777, mtime: 0,
-        })
-        return
-      }
-      sftp.stat(target, callback)
-    },
-    realpath (target, callback) {
-      if (!exists(target) && !exists(resolveThroughLinks(target))) {
-        callback(Object.assign(new Error('no such file'), { code: 2 }), null)
-        return
-      }
-      callback(null, resolveThroughLinks(target))
-    },
-    mkdir (target, _attrs, callback) { if (typeof _attrs === 'function') callback = _attrs; dirs.add(target); callback(null) },
-    open (target, flags, _attrs, callback) {
-      if (typeof _attrs === 'function') callback = _attrs
-      const handle = { id: nextHandle++, target, flags }
-      handles.set(handle.id, handle)
-      // `w` truncates: opening for write is what creates the destination file.
-      if (flags === 'w' || flags === 'w+') files.set(target, Buffer.alloc(0))
-      callback(null, handle)
-    },
-    write (handle, buffer, offset, length, position, callback) {
-      if (typeof callback !== 'function') return
-      state.writes += 1
-      // Count only writes to a destination that is NOT a resume sidecar: the
-      // sidecar is written first and would otherwise be counted as payload.
-      if (!String(handle.target).endsWith('.json')) state.bytesWritten += length
-      if (state.writes > failAfter) { callback(Object.assign(new Error('write refused'), { code: 4 })); return }
-      const current = files.get(handle.target) ?? Buffer.alloc(0)
-      const slice = buffer.subarray(offset, offset + length)
-      const at = position === undefined || position === null ? current.length : position
-      const next = Buffer.alloc(Math.max(current.length, at + slice.length))
-      current.copy(next, 0)
-      slice.copy(next, at)
-      files.set(handle.target, next)
-      callback(null)
-    },
-    close (handle, callback) { handles.delete(handle.id); callback(null) },
-    read (handle, buffer, offset, length, position, callback) {
-      const current = files.get(handle.target) ?? Buffer.alloc(0)
-      const at = position ?? 0
-      const slice = current.subarray(at, at + length)
-      // The production reader hands its own buffer, which an SFTP double
-      // receives as a plain Uint8Array; set() works on both shapes.
-      if (typeof buffer.set === 'function') buffer.set(slice, offset)
-      else slice.copy(buffer, offset)
-      callback(null, slice.length, buffer)
-    },
-    readdir (target, callback) { callback(null, []) },
-    rename (from, to, callback) {
-      state.renamed.push([from, to])
-      const entry = files.get(from) ?? Buffer.alloc(0)
-      files.delete(from)
-      files.set(to, entry)
-      callback(null)
-    },
-    unlink (target, callback) { state.unlinked.push(target); files.delete(target); callback(null) },
-    ext_openssh_rename (from, to, callback) {
-      state.renamed.push([from, to])
-      const entry = files.get(from) ?? Buffer.alloc(0)
-      files.delete(from)
-      files.set(to, entry)
-      callback(null)
+  const { sftp, tree } = createFakeSftp({
+    files: options.files ?? [],
+    dirs: options.dirs ?? [],
+    links: options.links ?? [],
+  })
+  if (options.failAfter !== undefined) tree.failAfterWrites(options.failAfter)
+  return {
+    sftp,
+    tree,
+    files: tree.files,
+    dirs: tree.dirs,
+    state: {
+      get writes () { return tree.writes },
+      get bytesWritten () {
+        return tree.writeLog
+          .filter(entry => !entry.path.endsWith('.json'))
+          .reduce((total, entry) => total + entry.length, 0)
+      },
+      get renamed () { return tree.renames },
+      get unlinked () { return tree.unlinks },
     },
   }
-  return { sftp, files, dirs, state }
 }
 
 /** An engine whose only job is to hand the double to `withSftp`. */
-function fakeEngine (sftp) {
-  return {
-    async withSftp (_alias, operation) { return await operation(sftp) },
-    capabilities: new Map(),
-    async probeCapabilities () { return { rg: true, git: true, inotifywait: true } },
-  }
-}
 
 console.log('\n=== transfer smoke ===\n')
 
@@ -203,7 +102,7 @@ try {
     // is that it survives until the rename flips it atomically.
     files.set('/srv/app/artifact.bin', new Uint8Array(Buffer.from('old')))
     const progress = []
-    const result = await transferFile(fakeEngine(sftp), {
+    const result = await transferFile(fakeSftpEngine(sftp), {
       alias: 'test',
       direction: 'upload',
       localPath: source,
@@ -232,7 +131,7 @@ try {
     files.set('/srv/app/failing.bin', Buffer.from('previous'))
     let failed = false
     try {
-      await transferFile(fakeEngine(sftp), {
+      await transferFile(fakeSftpEngine(sftp), {
         alias: 'test',
         direction: 'upload',
         localPath: source,
@@ -253,7 +152,7 @@ try {
     const { sftp, files } = fakeSftp({ dirs: ['/srv', '/srv/app', '/srv/tree'] })
     files.set('/srv/app/log.txt', new Uint8Array(Buffer.from('hello-remote')))
     const target = path.join(scratch, 'log.txt')
-    const result = await transferFile(fakeEngine(sftp), {
+    const result = await transferFile(fakeSftpEngine(sftp), {
       alias: 'test',
       direction: 'download',
       localPath: target,
@@ -268,7 +167,7 @@ try {
     const { sftp } = fakeSftp({ dirs: ['/srv', '/srv/app'] })
     let message
     try {
-      await transferFile(fakeEngine(sftp), {
+      await transferFile(fakeSftpEngine(sftp), {
         alias: 'test',
         direction: 'download',
         localPath: path.join(scratch, 'absent.txt'),
@@ -286,7 +185,7 @@ try {
     await writeFile(path.join(tree, 'a.txt'), 'a')
     await writeFile(path.join(tree, 'nested', 'b.txt'), 'bb')
     const { sftp, files } = fakeSftp({ dirs: ['/srv', '/srv/app', '/srv/tree'] })
-    const result = await uploadTree(fakeEngine(sftp), { alias: 'test', localPath: tree, remotePath: '/srv/tree' })
+    const result = await uploadTree(fakeSftpEngine(sftp), { alias: 'test', localPath: tree, remotePath: '/srv/tree' })
     check('a tree upload counts its files', result.files === 2, String(result.files))
     check('a tree upload recreates nested paths', files.has('/srv/tree/nested/b.txt'),
       JSON.stringify([...files.keys()]))
@@ -302,16 +201,13 @@ try {
     const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
     const modeOf = { current: undefined }
     /** A policy service whose mode the test drives. */
-    const policyCtx = {
-      get (name) {
-        if (name === 'sandboxPolicy') return { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local/root' }) }
-        return undefined
-      },
-    }
+    const policyCtx = createHost({
+      services: { sandboxPolicy: { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local/root' }) } },
+    }).ctx
     /** An engine whose SFTP double is fresh per call. */
     const uploadEngine = () => {
       const { sftp } = fakeSftp({ dirs: ['/srv', '/srv/app'] })
-      return { ...fakeEngine(sftp), assertNotDisabled () {} }
+      return { ...fakeSftpEngine(sftp), assertNotDisabled () {} }
     }
     const toolOf = (context) => workspaceTools(context, uploadEngine(), undefined, undefined, undefined)
       .find(tool => tool.name === 'ssh_workspace_transfer')
@@ -337,12 +233,12 @@ try {
     // A deployment without a sandbox policy must behave as it always did: no
     // policy service at all is "unconfined", not "read-only".
     modeOf.current = undefined
-    const unconfinedResult = await call('upload', { get: () => undefined })
+    const unconfinedResult = await call('upload', createHost().ctx)
     check('no policy service means unconfined, not read-only', unconfinedResult.ok === true, JSON.stringify(unconfinedResult))
 
     // A policy that cannot resolve fails CLOSED for a mutation gate: a refused
     // upload is retryable, while writing during "view only" is not detectable.
-    const brokenCtx = { get: (name) => name === 'sandboxPolicy' ? { resolve: () => { throw new Error('boom') } } : undefined }
+    const brokenCtx = createHost({ services: { sandboxPolicy: { resolve: () => { throw new Error('boom') } } } }).ctx
     const brokenResult = await call('upload', brokenCtx)
     check('an unresolvable policy refuses the upload rather than guessing', brokenResult.ok === false, JSON.stringify(brokenResult))
 
@@ -353,14 +249,11 @@ try {
     {
       const scopedEngine = () => {
         const { sftp } = fakeSftp({ dirs: ['/srv', '/srv/app', '/srv/other'] })
-        return { ...fakeEngine(sftp), assertNotDisabled () {} }
+        return { ...fakeSftpEngine(sftp), assertNotDisabled () {} }
       }
-      const scopedCtx = (root) => ({
-        get (name) {
-          if (name === 'sandboxPolicy') return { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) }
-          return undefined
-        },
-      })
+      const scopedCtx = (root) => createHost({
+        services: { sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) } },
+      }).ctx
       const scopedTool = (context) => workspaceTools(context, scopedEngine(), undefined, undefined, undefined)
         .find(tool => tool.name === 'ssh_workspace_transfer')
 
@@ -382,12 +275,9 @@ try {
         /ssh:\/\/test\/srv\/app/u.test(outside.error ?? ''), String(outside.error))
 
       // danger-full-access is not scope-checked: that IS the documented way out.
-      const fullCtx = {
-        get (name) {
-          if (name === 'sandboxPolicy') return { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: 'ssh://test/srv/app' }) }
-          return undefined
-        },
-      }
+      const fullCtx = createHost({
+        services: { sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: 'ssh://test/srv/app' }) } },
+      }).ctx
       const full = await scopedTool(fullCtx).execute(
         { alias: 'test', direction: 'upload', localPath: source, remotePath: '/srv/other/up.txt' },
         { agent: { session: { id: 's1' } } },
@@ -412,7 +302,7 @@ try {
     const servedElsewhere = fakeSftp({ dirs: ['/srv', '/srv/app', '/etc'] })
     let unmounted
     try {
-      await transferFile(fakeEngine(servedElsewhere.sftp), {
+      await transferFile(fakeSftpEngine(servedElsewhere.sftp), {
         alias: 'test', direction: 'upload', localPath: source,
         remotePath: '/etc/cron.d/dsh-probe', roots: rootsFor('ssh://other/srv/app'),
       })
@@ -426,7 +316,7 @@ try {
     const notServed = fakeSftp({ dirs: ['/srv', '/srv/app', '/etc'] })
     let offRoot
     try {
-      await transferFile(fakeEngine(notServed.sftp), {
+      await transferFile(fakeSftpEngine(notServed.sftp), {
         alias: 'test', direction: 'upload', localPath: source,
         remotePath: '/etc/cron.d/dsh-probe', roots: rootsFor('ssh://test/srv/app'),
       })
@@ -443,7 +333,7 @@ try {
     })
     let throughLink
     try {
-      await transferFile(fakeEngine(escaping.sftp), {
+      await transferFile(fakeSftpEngine(escaping.sftp), {
         alias: 'test', direction: 'upload', localPath: source,
         remotePath: '/srv/app/out/artifact.bin', roots: rootsFor('ssh://test/srv/app'),
       })
@@ -458,7 +348,7 @@ try {
 
     // And the fence must not break the ordinary case.
     const happy = fakeSftp({ dirs: ['/srv', '/srv/app'] })
-    const allowed = await transferFile(fakeEngine(happy.sftp), {
+    const allowed = await transferFile(fakeSftpEngine(happy.sftp), {
       alias: 'test', direction: 'upload', localPath: source,
       remotePath: '/srv/app/artifact.bin', roots: rootsFor('ssh://test/srv/app'),
     })
@@ -468,7 +358,7 @@ try {
     // a build that stages outside the workspace must not fail for a reason its
     // local twin never hits.
     const staged = fakeSftp({ dirs: ['/srv', '/srv/app', '/tmp', '/tmp/build'] })
-    const toTemp = await transferFile(fakeEngine(staged.sftp), {
+    const toTemp = await transferFile(fakeSftpEngine(staged.sftp), {
       alias: 'test', direction: 'upload', localPath: source,
       remotePath: '/tmp/build/artifact.o', roots: rootsFor('ssh://test/srv/app'),
     })
@@ -481,11 +371,11 @@ try {
     const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
     const source = path.join(scratch, 'tree', 'a.txt')
     const served = fakeSftp({ dirs: ['/srv', '/srv/app', '/etc'] })
-    const engine = { ...fakeEngine(served.sftp), assertNotDisabled () {} }
+    const engine = { ...fakeSftpEngine(served.sftp), assertNotDisabled () {} }
     const router = { roots: new Set(['ssh://test/srv/app']) }
-    const ctx = {
-      get: (name) => (name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: 'ssh://test/srv/app' }) } : undefined),
-    }
+    const ctx = createHost({
+      services: { sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: 'ssh://test/srv/app' }) } },
+    }).ctx
     const tool = workspaceTools(ctx, engine, router, undefined, undefined)
       .find(toolEntry => toolEntry.name === 'ssh_workspace_transfer')
     const result = await tool.execute(
@@ -502,10 +392,10 @@ try {
     const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
     const source = path.join(scratch, 'tree', 'a.txt')
     const served = fakeSftp({ dirs: ['/srv', '/srv/app'] })
-    const ctx = {
-      get: (name) => (name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'future-mode', workspaceRoot: 'ssh://test/srv/app' }) } : undefined),
-    }
-    const tool = workspaceTools(ctx, { ...fakeEngine(served.sftp), assertNotDisabled () {} },
+    const ctx = createHost({
+      services: { sandboxPolicy: { resolve: () => ({ mode: 'future-mode', workspaceRoot: 'ssh://test/srv/app' }) } },
+    }).ctx
+    const tool = workspaceTools(ctx, { ...fakeSftpEngine(served.sftp), assertNotDisabled () {} },
       { roots: new Set(['ssh://test/srv/app']) }, undefined, undefined)
       .find(toolEntry => toolEntry.name === 'ssh_workspace_transfer')
     const result = await tool.execute(
@@ -523,7 +413,7 @@ try {
 
     // "view only" is exactly the mode where it should keep working.
     const downloadSftp = fakeSftp({ dirs: ['/srv', '/srv/app'], files: [['/srv/app/down.txt', new Uint8Array(Buffer.from('x'))]] })
-    const downloadTool = workspaceTools(policyCtx, { ...fakeEngine(downloadSftp.sftp), assertNotDisabled () {} }, undefined, undefined, undefined)
+    const downloadTool = workspaceTools(policyCtx, { ...fakeSftpEngine(downloadSftp.sftp), assertNotDisabled () {} }, undefined, undefined, undefined)
       .find(tool => tool.name === 'ssh_workspace_transfer')
     modeOf.current = 'read-only'
     const downloadResult = await downloadTool.execute(
@@ -578,7 +468,7 @@ try {
     }
 
     const destination = path.join(scratch, 'downloaded')
-    const result = await downloadTree(fakeEngine(sftp), {
+    const result = await downloadTree(fakeSftpEngine(sftp), {
       alias: 'test',
       remotePath: '/remote',
       localPath: destination,
@@ -617,7 +507,7 @@ try {
     const writesBefore = state.writes
     const bytesBefore = state.bytesWritten
 
-    const result = await transferFile(fakeEngine(sftp), {
+    const result = await transferFile(fakeSftpEngine(sftp), {
       alias: 'test',
       direction: 'upload',
       localPath: source,
@@ -660,7 +550,7 @@ try {
     })))
     const writesBefore = state.writes
     const bytesBefore = state.bytesWritten
-    await transferFile(fakeEngine(sftp), {
+    await transferFile(fakeSftpEngine(sftp), {
       alias: 'test',
       direction: 'upload',
       localPath: source,
@@ -683,15 +573,15 @@ try {
   {
     const source = path.join(scratch, 'keep.bin')
     await writeFile(source, Buffer.from('0123456789'))
-    const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
-    // Fail the publish: the partial must survive so the next attempt resumes.
-    const failing = {
-      ...sftp,
-      rename (from, to, cb) { cb(Object.assign(new Error('link died'), { code: 4 })) },
-    }
+    const { sftp, tree, files } = fakeSftp({ dirs: ['/srv'] })
+    // Fail the PUBLISH, which is the last step: the partial must survive so the
+    // next attempt resumes. The refusal is aimed at the atomic rename rather
+    // than at `rename`, because the shared double advertises the extension —
+    // aiming at the fallback would let the upload succeed and prove nothing.
+    tree.fail({ method: 'ext_openssh_rename', code: 4, message: 'link died' })
     let thrown
     try {
-      await transferFile(fakeEngine(failing), {
+      await transferFile(fakeSftpEngine(sftp), {
         alias: 'test',
         direction: 'upload',
         localPath: source,
@@ -711,13 +601,10 @@ try {
   {
     const source = path.join(scratch, 'cleanup.bin')
     await writeFile(source, Buffer.from('0123456789'))
-    const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
-    const failing = {
-      ...sftp,
-      rename (from, to, cb) { cb(Object.assign(new Error('link died'), { code: 4 })) },
-    }
+    const { sftp, tree, files } = fakeSftp({ dirs: ['/srv'] })
+    tree.fail({ method: 'ext_openssh_rename', code: 4, message: 'link died' })
     try {
-      await transferFile(fakeEngine(failing), {
+      await transferFile(fakeSftpEngine(sftp), {
         alias: 'test',
         direction: 'upload',
         localPath: source,
@@ -774,7 +661,7 @@ try {
       close (handle, cb) { cb(undefined) },
     }
     const destination = path.join(scratch, 'shaped')
-    await downloadTree(fakeEngine(sftp), {
+    await downloadTree(fakeSftpEngine(sftp), {
       alias: 'test',
       remotePath: '/shaped',
       localPath: destination,
@@ -814,7 +701,7 @@ try {
       close (handle, cb) { cb(undefined) },
     }
     const destination = path.join(scratch, 'linked')
-    const result = await downloadTree(fakeEngine(sftp), {
+    const result = await downloadTree(fakeSftpEngine(sftp), {
       alias: 'test',
       remotePath: '/linked',
       localPath: destination,
@@ -852,7 +739,7 @@ try {
     const destination = path.join(scratch, 'mixed')
     await mkdir(destination, { recursive: true })
     await writeFile(path.join(destination, 'exists.txt'), 'old')
-    const result = await downloadTree(fakeEngine(sftp), {
+    const result = await downloadTree(fakeSftpEngine(sftp), {
       alias: 'test',
       remotePath: '/mixed',
       localPath: destination,
@@ -881,7 +768,7 @@ try {
     {
       const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
       files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
-      const result = await transferFile(fakeEngine(sftp), {
+      const result = await transferFile(fakeSftpEngine(sftp), {
         alias: 'test',
         direction: 'upload',
         localPath: source,
@@ -901,7 +788,7 @@ try {
       files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
       let thrown
       try {
-        await transferFile(fakeEngine(sftp), {
+        await transferFile(fakeSftpEngine(sftp), {
           alias: 'test',
           direction: 'upload',
           localPath: source,
@@ -922,7 +809,7 @@ try {
     {
       const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
       files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
-      const result = await transferFile(fakeEngine(sftp), {
+      const result = await transferFile(fakeSftpEngine(sftp), {
         alias: 'test',
         direction: 'upload',
         localPath: source,
@@ -942,7 +829,7 @@ try {
     {
       const { sftp, files } = fakeSftp({ dirs: ['/srv'] })
       files.set('/srv/conflict.bin', new Uint8Array(Buffer.from('old')))
-      const result = await transferFile(fakeEngine(sftp), {
+      const result = await transferFile(fakeSftpEngine(sftp), {
         alias: 'test',
         direction: 'upload',
         localPath: source,
@@ -1088,7 +975,7 @@ try {
     let error
     let result
     try {
-      result = await uploadTree(fakeEngine(sftp), {
+      result = await uploadTree(fakeSftpEngine(sftp), {
         alias: 'test',
         localPath: tree,
         remotePath: '/srv/ct',
@@ -1156,7 +1043,7 @@ try {
       files: [['/srv/nt/a/b/deep.txt', Buffer.from('OLD-DEEP')]],
       dirs: ['/srv', '/srv/nt'],
     })
-    const result = await uploadTree(fakeEngine(sftp), {
+    const result = await uploadTree(fakeSftpEngine(sftp), {
       alias: 'test',
       localPath: nestedTree,
       remotePath: '/srv/nt',
@@ -1199,7 +1086,7 @@ try {
 
     let error
     try {
-      await uploadTree(fakeEngine(sftp), {
+      await uploadTree(fakeSftpEngine(sftp), {
         alias: 'test',
         localPath: raceTree,
         remotePath: '/srv/rt',
@@ -1229,7 +1116,7 @@ try {
     })
     let error
     try {
-      await uploadTree(fakeEngine(sftp), {
+      await uploadTree(fakeSftpEngine(sftp), {
         alias: 'test',
         localPath: deepTree,
         remotePath: '/srv/dt',

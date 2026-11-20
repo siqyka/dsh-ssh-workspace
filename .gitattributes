@@ -1,0 +1,17 @@
+# Line endings are a repository fact, not a per-checkout accident.
+#
+# Without this file, `core.autocrlf` decided what a checkout looked like, and a
+# test that compared source text against a literal containing `\n` passed on one
+# machine and failed on another (`workspace-ownership-smoke` did exactly that).
+# Normalising the index to LF and checking out LF everywhere removes the class.
+* text=auto eol=lf
+
+# Binaries: never rewritten, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tgz binary

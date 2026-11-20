@@ -27,6 +27,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { fakeSftpEngineFromTree } from './support/fake-sftp.mjs'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 
@@ -301,43 +303,6 @@ if (downloadTreeAsTar === undefined) {
   console.log('  SKIP  DSH_CORE_ROOT is not set (the archive-of-a-tree checks need @deepseek-ai/dsh-fs)')
 } else {
 
-/** An engine over a fake remote tree. */
-function fakeEngine (tree) {
-  return {
-    async withSftp (_alias, work) {
-      return await work({
-        // `tree` maps an absolute directory to its entries; `files` maps an
-        // absolute file path to its content.
-        readdir (dir, callback) {
-          const entries = tree.dirs.get(dir)
-          if (entries === undefined) { callback(Object.assign(new Error('no such directory'), { code: 2 })); return }
-          callback(null, entries.map(entry => ({
-            filename: entry.name,
-            attrs: {
-              size: entry.size ?? 0,
-              mtime: 1700000000,
-              isDirectory: () => entry.dir === true,
-              isFile: () => entry.dir !== true,
-              isSymbolicLink: () => entry.link === true,
-            },
-          })))
-        },
-        open (target, flags, callback) {
-          const content = tree.files.get(target)
-          if (content === undefined) { callback(Object.assign(new Error('no such file'), { code: 2 })); return }
-          callback(null, { __content: content })
-        },
-        read (handle, buffer, offset, length, position, callback) {
-          const slice = handle.__content.subarray(position, position + length)
-          slice.copy(buffer, offset)
-          callback(null, slice.length, buffer)
-        },
-        close (_handle, callback) { callback(null) },
-      })
-    },
-  }
-}
-
 {
   const dirs = new Map([
     ['/srv/project', [
@@ -354,7 +319,7 @@ function fakeEngine (tree) {
     ['/srv/project/src/index.ts', Buffer.from('abc')],
     ['/srv/project/build/out.js', Buffer.from('xy')],
   ])
-  const { stream } = await downloadTreeAsTar(fakeEngine({ dirs, files }), {
+  const { stream } = await downloadTreeAsTar(fakeSftpEngineFromTree({ dirs, files }), {
     alias: 'test',
     remotePath: '/srv/project',
     exclude: ['build'],
@@ -396,7 +361,7 @@ function fakeEngine (tree) {
   // Nothing skipped, nothing excluded: no note.
   const dirs = new Map([['/srv/plain', [{ name: 'a.txt', size: 1 }]]])
   const files = new Map([['/srv/plain/a.txt', Buffer.from('x')]])
-  const { stream } = await downloadTreeAsTar(fakeEngine({ dirs, files }), { alias: 'test', remotePath: '/srv/plain' })
+  const { stream } = await downloadTreeAsTar(fakeSftpEngineFromTree({ dirs, files }), { alias: 'test', remotePath: '/srv/plain' })
   const archive = Buffer.concat(await (async () => {
     const parts = []
     for await (const chunk of stream) parts.push(chunk)
@@ -422,7 +387,7 @@ function fakeEngine (tree) {
     ['/srv/only/keep.txt', Buffer.from('k')],
     ['/srv/only/build/out.js', Buffer.from('o')],
   ])
-  const { stream } = await downloadTreeAsTar(fakeEngine({ dirs, files }), {
+  const { stream } = await downloadTreeAsTar(fakeSftpEngineFromTree({ dirs, files }), {
     alias: 'test',
     remotePath: '/srv/only',
     exclude: ['build'],

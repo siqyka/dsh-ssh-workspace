@@ -21,6 +21,8 @@ import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const coreRoot = process.env.DSH_CORE_ROOT
 if (!coreRoot) {
   console.log('\n=== phase6 smoke ===\n')
@@ -85,10 +87,7 @@ async function runExec (closeArgs, output) {
     },
   }
   const engine = { acquire: async () => record, release: () => {}, forget: () => {}, assertNotDisabled () {} }
-  const ctx = {
-    get: (name) => (name === 'shell' ? { execute: async () => ({}) } : undefined),
-    effect: (fn) => { fn() },
-  }
+  const ctx = createHost({ services: { shell: { execute: async () => ({}) } } }).ctx
   const router = installRemoteShell(ctx, { engine, logger: undefined })
   const handle = await router.execute({ workdir: 'ssh://h/root', command: 'sleep 999', timeoutMs: 0, onExpiry: 'none' })
   const outcome = {}

@@ -7,7 +7,7 @@
 
 | # | 工作流 | 方案 | 任务书 | 状态 |
 | --- | --- | --- | --- | --- |
-| 01 | 测试骨架与代码整合（内存 SFTP + 插件宿主 + 渲染；清基线红） | [01-test-harness-and-code-consolidation.md](./01-test-harness-and-code-consolidation.md) | [prompt](./01-test-harness-and-code-consolidation-prompt.md) | 方案 |
+| 01 | 测试骨架与代码整合（内存 SFTP + 插件宿主 + 渲染；清基线红） | — | — | **已实施**（`tests/support/`，`docs/development.md` 的「共享替身」一节） |
 | 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | [02-remote-skills.md](./02-remote-skills.md) | [prompt](./02-remote-skills-prompt.md) | **已实施** |
 | 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | [03-remote-file-editing.md](./03-remote-file-editing.md) | [prompt](./03-remote-file-editing-prompt.md) | 方案 |
 
@@ -15,8 +15,8 @@
 
 ## 三条工作流之间的关系
 
-- **01 是地基**：02 和 03 的验收都依赖「裸检出上能跑远端读写」，而那正是 01 要补的
-  `tests/support/fake-sftp.mjs`。**先做 01，否则 02/03 的测试只能靠真主机，等于没测。**
+- **01 是地基，且已完成**：02 和 03 的验收都依赖「裸检出上能跑远端读写」，那正是 01 补上的
+  `tests/support/fake-sftp.mjs`（连同 `plugin-host.mjs` 与 `render.mjs`）。02 已经在用它，03 照着用即可。
 - **02 与 03 互不依赖**，可以并行；两者都复用同一套权限语汇：会话 mode（`lib/mode-gate.js`）、
   写围栏（`lib/remote-fs.js:2019/2040/2082`）、审计不写内容。
 - 三份方案共有一条底线：**替身不得比真宿主宽松**、**远端内容按不可信处理**、

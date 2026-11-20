@@ -25,6 +25,9 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+import { fakePtyChannel, fakePtyEngine } from './support/fake-channel-engine.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const {
   RemoteTerminalRouter,
@@ -41,56 +44,13 @@ function check (label, ok, detail) {
   }
 }
 
-/**
- * A channel double standing in for an ssh2 PTY channel.
- *
- * `close` is triggered explicitly (or by `terminate`) so the exit settlement is
- * deterministic instead of depending on a timer.
- */
-function fakeChannel () {
-  const handlers = new Map()
-  const state = { writes: [], window: undefined, closed: false, released: 0 }
-  const channel = {
-    stderr: { on () {} },
-    on (event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]) },
-    once (event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]) },
-    emit (event, ...args) { for (const handler of handlers.get(event) ?? []) handler(...args) },
-    write (data, callback) { state.writes.push(data); callback?.() },
-    end () {},
-    setWindow (rows, cols, height, width, callback) {
-      state.window = { rows, cols }
-      callback?.()
-    },
-    close () {
-      if (state.closed) return
-      state.closed = true
-      channel.emit('close', 0, null)
-    },
-  }
-  return { channel, state }
-}
-
-/** An engine double that hands out the next fake channel and records the open. */
-function fakeEngine () {
-  const opens = []
-  const engine = {
-    /** No workspace is detached in this suite. */
-    assertNotDisabled () {},
-    async openChannel (alias, command, options) {
-      const { channel, state } = fakeChannel()
-      // Snapshot the abort state the router handed to the open: a signal that
-      // fires later must not be visible here, and a pre-aborted one must be.
-      opens.push({ alias, command, options, state, abortedAtOpen: options?.signal?.aborted === true })
-      return { channel, release: () => { state.released += 1 } }
-    },
-  }
-  return { engine, opens }
-}
+/** The PTY channel double, from the shared channel-engine module. */
+const fakeChannel = fakePtyChannel
 
 console.log('\n=== terminal smoke ===\n')
 
 {
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const handle = await router.spawnTerminal({
     cwd: 'ssh://alpha/home/dev/proj',
@@ -115,7 +75,7 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const handle = await router.spawnTerminal({ cwd: 'ssh://beta/srv/app', argv: ['bash'], rows: 24, cols: 80 })
   const chunks = []
@@ -136,7 +96,7 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const handle = await router.spawnTerminal({ cwd: 'ssh://gamma/tmp', rows: 24, cols: 80 })
   await handle.write('echo hi\n')
@@ -148,7 +108,7 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
-  const { engine } = fakeEngine()
+  const { engine } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const handle = await router.spawnTerminal({ cwd: 'ssh://delta/tmp', rows: 24, cols: 80 })
   const foreground = await handle.inspectForeground()
@@ -156,7 +116,7 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const handle = await router.spawnTerminal({ cwd: 'ssh://epsilon/tmp', rows: 24, cols: 80 })
   await handle.signalForeground('SIGINT')
@@ -174,7 +134,7 @@ console.log('\n=== terminal smoke ===\n')
 }
 
 {
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const handle = await router.spawnTerminal({ cwd: 'ssh://eta/tmp', rows: 24, cols: 80 })
   await handle.terminate()
@@ -194,7 +154,7 @@ console.log('\n=== terminal smoke ===\n')
     { argv: ['/bin/sh'], expect: /exec sh -l/u },
   ]
   for (const item of cases) {
-    const { engine, opens } = fakeEngine()
+    const { engine, opens } = fakePtyEngine()
     const router = new RemoteTerminalRouter({ engine })
     await router.spawnTerminal({ cwd: 'ssh://kappa/srv/app', rows: 24, cols: 80, argv: item.argv })
     const command = opens[0].command
@@ -202,7 +162,7 @@ console.log('\n=== terminal smoke ===\n')
     check(`shell dialect ${JSON.stringify(item.argv[0])} maps to the remote family`,
       ok, command)
   }
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   await router.spawnTerminal({ cwd: 'ssh://kappa/srv/app', rows: 24, cols: 80, argv: ['/bin/bash'] })
   check('a bash request falls back to sh when the remote lacks bash',
@@ -216,7 +176,7 @@ console.log('\n=== terminal smoke ===\n')
   // handle. A missing method made the harness's observation fall through its
   // catch block (and the allocation-cleanup path binds it unguarded), so the
   // remote handle must answer the same shape as the local one.
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const handle = await router.spawnTerminal({ cwd: 'ssh://ion/srv/app', rows: 24, cols: 80, argv: ['bash'] })
   const active = await handle.inspectActivity()
@@ -241,7 +201,7 @@ console.log('\n=== terminal smoke ===\n')
   // backend passes it to node-pty's spawn and the process outlives the call.
   // The browser terminal's create() call carries a per-request signal that
   // aborts when that RPC settles, so the SSH channel must not follow it.
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const controller = new AbortController()
   const handle = await router.spawnTerminal({
@@ -258,7 +218,7 @@ console.log('\n=== terminal smoke ===\n')
 
 {
   // A signal that is already aborted must stop the open before a live PTY exists.
-  const { engine, opens } = fakeEngine()
+  const { engine, opens } = fakePtyEngine()
   const router = new RemoteTerminalRouter({ engine })
   const controller = new AbortController()
   controller.abort()
@@ -274,8 +234,8 @@ console.log('\n=== terminal smoke ===\n')
   const service = {
     spawnTerminal (spec) { calls.push(spec); return { local: true } },
   }
-  const ctx = { get (name) { return name === 'subprocess' ? service : undefined } }
-  const { engine } = fakeEngine()
+  const ctx = createHost({ services: { subprocess: service } }).ctx
+  const { engine } = fakePtyEngine()
   const router = installRemoteTerminal(ctx, { engine })
   check('installing returns a router', router !== undefined)
 

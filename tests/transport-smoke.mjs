@@ -35,6 +35,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 // remote-fs.js (pulled in for the tool set) resolves the DSH peer packages, so
@@ -335,10 +337,7 @@ function quietEngine () {
       }
     },
   }
-  const ctx = {
-    get (name) { return name === 'jobs' ? jobs : undefined },
-    jobs,
-  }
+  const ctx = createHost({ services: { jobs } }).ctx
   const engine = {
     async exec () {
       return { success: true, exitCode: 0, timedOut: false, stdout: 'inline', stderr: '', truncated: false, durationMs: 2 }
@@ -358,7 +357,7 @@ function quietEngine () {
 
 // --- #8: no jobs seam degrades to inline, not to a dangling id -------------
 {
-  const ctx = { get: () => undefined }
+  const ctx = createHost().ctx
   const engine = {
     async exec () {
       return { success: true, exitCode: 0, timedOut: false, stdout: 'inline-ran', stderr: '', truncated: false, durationMs: 3 }

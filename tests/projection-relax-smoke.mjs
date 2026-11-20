@@ -31,6 +31,8 @@
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 let passed = 0
@@ -120,7 +122,7 @@ function directoryDefinition () {
   }
 }
 
-const ctxFor = (registry) => ({ get: (name) => name === 'sessionProjections' ? registry : undefined })
+const ctxFor = (registry) => createHost({ services: { sessionProjections: registry } }).ctx
 
 /**
  * Whether a schema ACCEPTS a value.

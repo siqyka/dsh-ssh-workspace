@@ -37,6 +37,8 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const {
   INSTALLED,
@@ -77,9 +79,15 @@ function fakeProvider (answer) {
   return { service, calls }
 }
 
-/** One fake Cordis ctx whose only service is (or is not) `ptcRuntime`. */
+/**
+ * One host whose only service is (or is not) `ptcRuntime`.
+ *
+ * The shared double rather than an object literal: a missing service must read
+ * as `undefined` through a host that REFUSES reads after disposal, so a suite
+ * cannot accidentally keep patching a torn-down fiber.
+ */
 function fakeCtx (service) {
-  return { get: name => (name === 'ptcRuntime' ? service : undefined) }
+  return createHost(service === undefined ? {} : { services: { ptcRuntime: service } }).ctx
 }
 
 console.log('\n[resolving a remote cwd]')

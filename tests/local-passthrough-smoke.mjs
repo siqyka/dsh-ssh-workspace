@@ -16,6 +16,8 @@ import { tmpdir } from 'node:os'
 import nodePath from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), '..')
 
 let passed = 0
@@ -325,7 +327,7 @@ console.log('\n[5] hot reload rebinds the live matcher')
     async lstat (path) { return { type: 'file' } }
   }
   const target = new BaseFs()
-  const ctx = { get: name => name === 'fs' ? target : undefined }
+  const ctx = createHost({ services: { fs: target } }).ctx
   try {
     const first = installRemoteFileSystem(ctx, { engine: {}, passthrough: matcher }, RemoteFileSystem)
     check('installRemoteFileSystem passes the matcher to a fresh router',

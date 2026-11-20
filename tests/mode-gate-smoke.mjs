@@ -24,6 +24,8 @@
  */
 
 import path from 'node:path'
+
+import { createHost } from './support/plugin-host.mjs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -62,11 +64,11 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // ---------------------------------------------------------------------------
 {
   /** A context whose policy service reports whatever `mode` the test sets. */
-  const ctxWith = (mode) => ({
-    get: (name) => name === 'sandboxPolicy'
-      ? { resolve: () => (mode === undefined ? { workspaceRoot: '/local' } : { mode, workspaceRoot: '/local' }) }
-      : undefined,
-  })
+  const ctxWith = (mode) => createHost({
+    services: {
+      sandboxPolicy: { resolve: () => (mode === undefined ? { workspaceRoot: '/local' } : { mode, workspaceRoot: '/local' }) },
+    },
+  }).ctx
 
   check('a composed policy reports its mode', sessionModeOf(ctxWith('workspace-write'), { id: 's1' }) === 'workspace-write')
   check('a read-only session reports read-only', sessionModeOf(ctxWith('read-only'), { id: 's1' }) === 'read-only')
@@ -79,7 +81,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 
   // A policy that THROWS fails closed for a mutation gate: a refused command is
   // retryable and visible, a silent write during "view only" is neither.
-  const broken = { get: (name) => name === 'sandboxPolicy' ? { resolve: () => { throw new Error('boom') } } : undefined }
+  const broken = createHost({ services: { sandboxPolicy: { resolve: () => { throw new Error('boom') } } } }).ctx
   check('an unresolvable policy fails closed', sessionModeOf(broken, { id: 's1' }) === 'read-only')
 
   // No session (an agentless call) still resolves: the deployment default is
@@ -331,7 +333,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // every remote command is refused while the UI says `danger-full-access`.
 {
   const { sessionPolicyOf, remoteReadOnlyMessage } = gate
-  const broken = { get: (name) => name === 'sandboxPolicy' ? { resolve: () => { throw new Error('workspace root must be absolute') } } : undefined }
+  const broken = createHost({ services: { sandboxPolicy: { resolve: () => { throw new Error('workspace root must be absolute') } } } }).ctx
   const policy = sessionPolicyOf(broken, { id: 's1' })
   check('an unresolvable policy still fails closed', policy?.mode === 'read-only')
   check('an unresolvable policy is marked as such', policy?.unresolved === true)
@@ -491,12 +493,9 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // ---------------------------------------------------------------------------
 {
   const modeOf = { current: 'read-only' }
-  const policyCtx = {
-    get (name) {
-      if (name === 'sandboxPolicy') return { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local' }) }
-      return undefined
-    },
-  }
+  const policyCtx = createHost({
+    services: { sandboxPolicy: { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local' }) } },
+  }).ctx
 
   // An engine that records every call reaching the connection layer: the point
   // is not only that the call is refused, but that NOTHING was sent to the host.
@@ -597,12 +596,9 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // ---------------------------------------------------------------------------
 {
   const modeOf = { current: 'read-only' }
-  const policyCtx = {
-    get (name) {
-      if (name === 'sandboxPolicy') return { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local' }) }
-      return undefined
-    },
-  }
+  const policyCtx = createHost({
+    services: { sandboxPolicy: { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local' }) } },
+  }).ctx
   const shells = {
     run: async () => { throw new Error('reached the shell manager') },
     close: () => 1,
@@ -653,7 +649,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
   })()
 
   const target = { execute: async () => ({ status: 'completed', exitCode: 0 }) }
-  const router = installRemoteShell({ get: (name) => (name === 'shell' ? target : undefined) }, { engine })
+  const router = installRemoteShell(createHost({ services: { shell: target } }).ctx, { engine })
   check('installing the shell seam returns a router', router !== undefined)
 
   const spec = (mode) => ({
@@ -714,13 +710,12 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 
   const modeOf = { current: 'read-only' }
   const session = { id: 's1', header: { cwd: 'ssh://alpha/home/dev/proj' } }
-  const ctx = {
-    get (name) {
-      if (name === 'sandboxPolicy') return { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local' }) }
-      if (name === 'agents') return { get: (id) => (id === 's1' ? { session } : undefined) }
-      return undefined
+  const ctx = createHost({
+    services: {
+      sandboxPolicy: { resolve: () => ({ mode: modeOf.current, workspaceRoot: '/local' }) },
+      agents: { get: (id) => (id === 's1' ? { session } : undefined) },
     },
-  }
+  }).ctx
 
   // An engine whose connection layer counts calls: "refused" is only meaningful
   // together with "nothing reached the host".

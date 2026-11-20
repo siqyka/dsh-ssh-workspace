@@ -46,6 +46,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(path.join(here, '..', 'lib', 'client.js'), 'utf8')
 
@@ -214,9 +216,9 @@ console.log('\n[what the pull still cannot answer]')
   const { missingGroupedSessions } = liftCatchUp({ clock, API: { status: '/s' }, fetchJson: async () => ({}) })
 
   /** A context whose two stores answer with the given snapshots. */
-  const ctxWith = (sessions, workspaces) => ({
-    get: (name) => (name === 'sessions' ? sessions : workspaces),
-  })
+  const ctxWith = (sessions, workspaces) => createHost({
+    services: { sessions, workspaces },
+  }).ctx
   const remote = (sessionIds) => ({ items: [{ workspaceId: 'w1', path: 'ssh://host/srv/proj', sessionIds }] })
 
   check('a claimed id with no summary is a miss',
@@ -281,23 +283,24 @@ function makeWatch ({ statuses, missing = () => 0, sessions = {} } = {}) {
       return next
     },
   })
-  const ctx = {
-    get: (name) => (name === 'sessions'
-      ? {
-          list: { getSnapshot: () => ({ phase: 'ready', byId: {} }) },
-          refresh: () => {
-            pulls.push({ at: clock.now() })
-            return Promise.resolve()
-          },
-        }
-      : {
-          list: {
-            getSnapshot: () => ({
-              items: [{ workspaceId: 'w1', path: 'ssh://h/srv/proj', sessionIds: Array.from({ length: missing() }, (_, index) => `s${index}`) }],
-            }),
-          },
-        }),
-  }
+  const ctx = createHost({
+    services: {
+      sessions: {
+        list: { getSnapshot: () => ({ phase: 'ready', byId: {} }) },
+        refresh: () => {
+          pulls.push({ at: clock.now() })
+          return Promise.resolve()
+        },
+      },
+      workspaces: {
+        list: {
+          getSnapshot: () => ({
+            items: [{ workspaceId: 'w1', path: 'ssh://h/srv/proj', sessionIds: Array.from({ length: missing() }, (_, index) => `s${index}`) }],
+          }),
+        },
+      },
+    },
+  }).ctx
   const watch = helpers.createSessionCatchUp(ctx)
   return { ...helpers, watch, clock, requests, pulls }
 }

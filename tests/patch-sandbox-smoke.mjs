@@ -37,6 +37,8 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const {
   INSTALLED,
@@ -149,7 +151,7 @@ console.log('\n[policy localization]')
 console.log('\n[install / uninstall]')
 {
   const { service, calls } = fakeProvider()
-  const ctx = { get (name) { return name === 'sandbox' ? service : undefined } }
+  const ctx = createHost({ services: { sandbox: service } }).ctx
   const router = installRemoteSandbox(ctx, {})
   check('installing returns a router', router !== undefined)
 

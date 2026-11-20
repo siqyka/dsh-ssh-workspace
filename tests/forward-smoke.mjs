@@ -20,6 +20,8 @@ import { createConnection, createServer } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { fakeForwardEngine } from './support/fake-forward-engine.mjs'
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
 
@@ -40,30 +42,6 @@ function check (label, ok, detail) {
  * wiring it to a real socket makes the whole splice path real code while
  * needing no SSH host.
  */
-function fakeEngine (farSidePort) {
-  const handlers = new Map()
-  const state = { holds: 0, forwardOutCalls: [], acquireCalls: 0 }
-  const client = {
-    // A minimal EventEmitter: the manager subscribes to 'close'.
-    once (event, handler) { handlers.set(event, handler) },
-    off (event, handler) { if (handlers.get(event) === handler) handlers.delete(event) },
-    emit (event, ...args) { const handler = handlers.get(event); if (handler !== undefined) handler(...args) },
-    forwardOut (_srcHost, _srcPort, dstHost, dstPort, callback) {
-      state.forwardOutCalls.push({ dstHost, dstPort })
-      const socket = createConnection({ host: '127.0.0.1', port: farSidePort })
-      socket.once('connect', () => callback(null, socket))
-      socket.once('error', (error) => callback(error))
-    },
-  }
-  const record = { client, holds: 0, idleAt: Date.now(), inFlight: 0, broken: false }
-  return {
-    state,
-    record,
-    engine: {
-      async acquire () { state.acquireCalls += 1; return record },
-    },
-  }
-}
 
 /** Start a loopback echo server; resolves to {port, close}. */
 async function startEchoServer () {
@@ -115,7 +93,7 @@ const echo = await startEchoServer()
 try {
   // --- bytes actually travel through the tunnel ---------------------------
   {
-    const { engine, state, record } = fakeEngine(echo.port)
+    const { engine, state, record } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     const opened = await forwards.open('alpha', { remotePort: echo.port, localPort: 0 })
     check('open reports the port it bound', Number.isInteger(opened.localPort) && opened.localPort > 0, JSON.stringify(opened.localPort))
@@ -133,7 +111,7 @@ try {
 
   // --- repeating the same target reuses the entry --------------------------
   {
-    const { engine } = fakeEngine(echo.port)
+    const { engine } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     const first = await forwards.open('beta', { remotePort: echo.port, localPort: 0 })
     const second = await forwards.open('beta', { remotePort: echo.port, localPort: 0 })
@@ -150,7 +128,7 @@ try {
   // exists — asserted through `acquire`, which is the only way a real engine
   // establishes one.
   {
-    const { engine, state } = fakeEngine(echo.port)
+    const { engine, state } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     check('no connection was taken before the forward', state.acquireCalls === 0, String(state.acquireCalls))
     const opened = await forwards.open('theta', { remotePort: echo.port, localPort: 0 })
@@ -164,7 +142,7 @@ try {
   // The other direction of the same requirement: a tunnel going away is not a
   // reason to drop the connection, so closing must never reach for it.
   {
-    const { engine, state } = fakeEngine(echo.port)
+    const { engine, state } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     const opened = await forwards.open('iota', { remotePort: echo.port, localPort: 0 })
     const afterOpen = state.acquireCalls
@@ -175,7 +153,7 @@ try {
 
   // --- close releases the local port --------------------------------------
   {
-    const { engine, state, record } = fakeEngine(echo.port)
+    const { engine, state, record } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     const opened = await forwards.open('gamma', { remotePort: echo.port, localPort: 0 })
     check('close reports the id existed', forwards.close(opened.id) === true)
@@ -197,7 +175,7 @@ try {
 
   // --- a transport drop tears the forward down -----------------------------
   {
-    const { engine, state, record } = fakeEngine(echo.port)
+    const { engine, state, record } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     const opened = await forwards.open('delta', { remotePort: echo.port, localPort: 0 })
     check('the forward is open before the drop', forwards.list().length === 1)
@@ -219,7 +197,7 @@ try {
   // it. Asserted per-alias rather than globally: another host's tunnels must
   // survive, or disconnecting one machine would silently break another's.
   {
-    const { engine, state, record } = fakeEngine(echo.port)
+    const { engine, state, record } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     // Two DIFFERENT targets: repeating one target is deliberately a reuse, so
     // the same remote port would only ever produce one entry.
@@ -237,8 +215,8 @@ try {
   // --- closeForAlias leaves other hosts alone ------------------------------
   {
     // Two aliases, two records: the manager must pick by alias, not by record.
-    const { engine: engineA, record: recordA } = fakeEngine(echo.port)
-    const { engine: engineB, record: recordB } = fakeEngine(echo.port)
+    const { engine: engineA, record: recordA } = fakeForwardEngine(echo.port)
+    const { engine: engineB, record: recordB } = fakeForwardEngine(echo.port)
     const records = { alpha: recordA, beta: recordB }
     const engine = { async acquire (alias) { return records[alias] } }
     const forwards = new ForwardManager({ engine })
@@ -255,7 +233,7 @@ try {
 
   // --- port validation ----------------------------------------------------
   {
-    const { engine } = fakeEngine(echo.port)
+    const { engine } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     let rejected
     try { await forwards.open('epsilon', { remotePort: 70000 }) } catch (error) { rejected = error }
@@ -268,7 +246,7 @@ try {
 
   // --- disposed manager refuses to open ----------------------------------
   {
-    const { engine } = fakeEngine(echo.port)
+    const { engine } = fakeForwardEngine(echo.port)
     const forwards = new ForwardManager({ engine })
     forwards.dispose()
     let refused

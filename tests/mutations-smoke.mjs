@@ -15,6 +15,8 @@
 import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+
+import { createHost } from './support/plugin-host.mjs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isWithinLocalRoot, mutationNameRefusal, renameTargetPath, rootMutationRefusal, deletionSummary } from '../lib/mutations.js'
 
@@ -244,13 +246,12 @@ if (!coreRoot) {
       { id: 's-remote', header: { cwd: 'ssh://qy/srv/proj' }, mode: 'workspace-write' },
       { id: 's-remote-ro', header: { cwd: 'ssh://qy/srv/proj' }, mode: 'read-only' },
     ]
-    const ctx = {
-      get (name) {
-        if (name === 'sessions') return { get: id => sessions.find(s => s.id === id), list: () => sessions }
-        if (name === 'sandboxPolicy') return { resolve: ({ session }) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: session?.header?.cwd ?? 'C:\\fallback' }) }
-        return undefined
+    const ctx = createHost({
+      services: {
+        sessions: { get: id => sessions.find(s => s.id === id), list: () => sessions },
+        sandboxPolicy: { resolve: ({ session }) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: session?.header?.cwd ?? 'C:\\fallback' }) },
       },
-    }
+    }).ctx
     const routes = makeRoutes({ engine, router, ctx, allowLan: false, allowedHosts: [] })
 
     const rename = await post(routes, ROUTES.rename, { path: 'ssh://qy/srv/proj/a.txt', newName: 'b.txt', sessionId: 's-remote' })
@@ -330,13 +331,12 @@ if (!coreRoot) {
   const localRoot = mkdtempSync(path.join(tmpdir(), 'dsh-ws-mut-'))
   const outsideRoot = mkdtempSync(path.join(tmpdir(), 'dsh-ws-out-'))
   const sessions = [{ id: 's-local', header: { cwd: localRoot }, mode: 'workspace-write' }]
-  const ctx = {
-    get (name) {
-      if (name === 'sessions') return { get: id => sessions.find(s => s.id === id), list: () => sessions }
-      if (name === 'sandboxPolicy') return { resolve: ({ session }) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: session?.header?.cwd ?? localRoot }) }
-      return undefined
+  const ctx = createHost({
+    services: {
+      sessions: { get: id => sessions.find(s => s.id === id), list: () => sessions },
+      sandboxPolicy: { resolve: ({ session }) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: session?.header?.cwd ?? localRoot }) },
     },
-  }
+  }).ctx
   const routes = makeRoutes({
     engine: { async withSftp () { throw new Error('local path went to SFTP') } },
     router: { roots: new Set() },
@@ -442,13 +442,12 @@ if (!coreRoot) {
   }
 
   const readOnlySessions = sessions.concat([{ id: 's-local-ro', header: { cwd: localRoot }, mode: 'read-only' }])
-  const readOnlyCtx = {
-    get (name) {
-      if (name === 'sessions') return { get: id => readOnlySessions.find(s => s.id === id), list: () => readOnlySessions }
-      if (name === 'sandboxPolicy') return { resolve: ({ session }) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: session?.header?.cwd ?? localRoot }) }
-      return undefined
+  const readOnlyCtx = createHost({
+    services: {
+      sessions: { get: id => readOnlySessions.find(s => s.id === id), list: () => readOnlySessions },
+      sandboxPolicy: { resolve: ({ session }) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: session?.header?.cwd ?? localRoot }) },
     },
-  }
+  }).ctx
   const readOnlyRoutes = makeRoutes({
     engine: { async withSftp () { throw new Error('local path went to SFTP') } },
     router: { roots: new Set() },

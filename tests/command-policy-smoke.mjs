@@ -13,6 +13,8 @@
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { RULE_SETS, DEFAULT_POLICY, normalizePolicy, matchRule, needsConfirmation, approvalUnavailableMessage } =
@@ -244,19 +246,18 @@ if (tools === undefined) {
    */
   const makeCtx = (allowed) => {
     const asked = []
-    return {
-      asked,
+    const host = createHost({
       config: { confirmCommands: { mode: 'rules', rules: ['destructive'] } },
-      get (name) {
-        if (name !== 'approval') return undefined
-        return {
+      services: {
+        approval: {
           async request (request) {
             asked.push(request)
             return allowed ? 'allowed-once' : 'rejected'
           },
-        }
+        },
       },
-    }
+    })
+    return { asked, config: host.ctx.config, get: name => host.ctx.get(name) }
   }
 
   /** An engine double that records every command it was asked to run. */

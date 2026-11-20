@@ -27,6 +27,8 @@
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { createHost } from './support/plugin-host.mjs'
+
 // `lib/peers.js` searches `DSH_PEER_ROOT`; `run.mjs` supplies the root it built
 // as `DSH_CORE_ROOT`. Bridge them before the first `lib/` import, because
 // `remote-fs.js` resolves its peers at module load. Every peer-consuming suite
@@ -178,7 +180,7 @@ shells.starts.set('prod-db-01\u0000default', { cwd: '/srv/app', reopens: 2 })
 // makes `startedIn` unknowable.
 shells.shells.set('bastion\u0000scratch', { alive: false })
 
-const ctx = { get: () => undefined, config: {} }
+const ctx = createHost({ config: {} }).ctx
 const tools = workspaceTools(ctx, engine, router, forwards, shells, reverseForwards)
 
 // ---------------------------------------------------------------------------
