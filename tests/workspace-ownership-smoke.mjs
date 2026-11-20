@@ -745,7 +745,8 @@ console.log('\n[the wiring keeps the two phases in order]')
   check('a failure cannot reject unhandled', /\.catch\(\(\) => \{\}\)/u.test(block))
 
   const tools = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
-  check('the status tool declares the ownership object', tools.includes('ownership: {') && !tools.includes('workspace-ownership'))
+  const schemaSource = readFileSync(path.join(pluginRoot, 'lib', 'status-schema.js'), 'utf8')
+  check('the status tool declares the ownership object', schemaSource.includes('ownership: {') && !tools.includes('workspace-ownership'))
   check('...and emits it only when measured', tools.split('engine.ownership === undefined ? {} : {').length - 1 >= 2)
   check('the bundle input carries the snapshot', tools.includes('ownershipSnapshotCopy(engine.ownership)'))
 
@@ -781,7 +782,7 @@ function readOwnershipSchema (source) {
   // nothing about the code. `.gitattributes` pins the checkout to LF, but this
   // comparison must not depend on that promise holding on someone else's
   // machine.
-  const marker = "ownership: {\n            type: 'object',\n            additionalProperties: false,\n            properties: {"
+  const marker = "ownership: {\n"
   const at = source.indexOf(marker)
   if (at === -1) return null
   let depth = 0
@@ -796,11 +797,20 @@ function readOwnershipSchema (source) {
     index += 1
   }
   const block = source.slice(at, index + 1)
+  // The field list lives under `properties`, and that key's own indentation
+  // decides where its children sit. This used to be a hard-coded 14 because the
+  // schema lived inside `statusTool`; moving the schema into
+  // `lib/status-schema.js` changed the nesting without changing the meaning,
+  // and a number baked into the assertion would have called that a regression.
+  const propertiesLine = /^(\s*)properties: \{$/mu.exec(block)
+  if (propertiesLine === null) return null
+  const childIndent = propertiesLine[1].length + 2
   const all = []
   const required = []
   let current = null
   for (const line of block.split('\n')) {
-    const opened = /^\s{14}(\w+): \{/u.exec(line)
+    const indent = line.length - line.trimStart().length
+    const opened = indent === childIndent ? /^(\w+): \{/u.exec(line.trim()) : null
     if (opened !== null) {
       current = opened[1]
       all.push(current)
@@ -822,6 +832,7 @@ console.log('\n[the returned copy cannot drift from the declared schema]')
   // `...stage`) and every status surface, panel included, read it as null.
   const tools = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8').replace(/\r\n/gu, '\n')
   const routes = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8').replace(/\r\n/gu, '\n')
+  const schemaSource = readFileSync(path.join(pluginRoot, 'lib', 'status-schema.js'), 'utf8').replace(/\r\n/gu, '\n')
 
   const toolSites = tools.split('ownershipSnapshotCopy(engine.ownership)').length - 1
   check('every status surface returns a structural copy', toolSites === 2 && routes.includes('ownershipSnapshotCopy(engine.ownership)'), `${toolSites} tool site(s)`)
@@ -830,7 +841,7 @@ console.log('\n[the returned copy cannot drift from the declared schema]')
     !/engine\.ownership\.updatedAt/u.test(tools) && !/engine\.ownership\.scanned/u.test(tools) && !/engine\.ownership\.at \?\?/u.test(tools),
   )
 
-  const schema = readOwnershipSchema(tools)
+  const schema = readOwnershipSchema(schemaSource)
   check('the ownership schema block parses', schema !== null && schema.all.length >= 8, schema === null ? 'not found' : `${schema.all.length} properties`)
   const snapshotKeys = Object.keys(emptyOwnershipSnapshot(() => 0))
   const absent = schema.required.filter(name => !snapshotKeys.includes(name))
