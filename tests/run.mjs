@@ -83,6 +83,7 @@ const SUITES = [
   'remote-skills',
   'toast',
   'client-shape',
+  'client-chunk',
   'panel-ctx',
   'selection',
   'tree-select',
