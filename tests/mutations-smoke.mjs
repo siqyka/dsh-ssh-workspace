@@ -19,6 +19,7 @@ import path from 'node:path'
 import { createHost } from './support/plugin-host.mjs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isWithinLocalRoot, mutationNameRefusal, renameTargetPath, rootMutationRefusal, deletionSummary } from '../lib/mutations.js'
+import { routeSource } from './support/route-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 function exists (target) { try { lstatSync(target); return true } catch { return false } }
@@ -71,7 +72,7 @@ console.log('\n=== mutations smoke ===\n')
 // Source wiring (always run)
 // ---------------------------------------------------------------------------
 {
-  const routes = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  const routes = routeSource(pluginRoot)
   const client = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
   check('the route table has a rename and a delete endpoint',
     /rename: '\/api\/dsh-ssh-workspace\/rename'/u.test(routes) &&

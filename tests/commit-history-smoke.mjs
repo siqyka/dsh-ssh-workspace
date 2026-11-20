@@ -461,9 +461,9 @@ if (routesModule !== null) {
   {
     // The route must not accept a cwd (or any other path) from the caller: the
     // only accepted query names are session and limit.
-    const source = readFileSync(path.join(pluginRoot, 'lib/routes.js'), 'utf8')
+    const source = readFileSync(path.join(pluginRoot, 'lib/routes/entries.js'), 'utf8')
     const start = source.indexOf('path: ROUTES.gitHistory')
-    const end = source.indexOf('// ---- mount status', start)
+    const end = source.indexOf('// ---- the mutation mode', start)
     const block = start < 0 || end < 0 ? '' : source.slice(start, end)
     check('the route handler reads only `session` and `limit` from the query',
       block !== '' && !/queryParam\(url, '(?:path|cwd|dir)'\)/u.test(block), 'a path query parameter appeared')

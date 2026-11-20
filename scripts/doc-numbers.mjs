@@ -163,7 +163,7 @@ export function renderNumbers (options = {}) {
     '',
     '| figure | value | source |',
     '| --- | --- | --- |',
-    `| HTTP routes | ${routes} | \`lib/routes.js\` |`,
+    `| HTTP routes | ${routes} | \`lib/routes.js\` + \`lib/routes/\` |`,
     `| model-facing tools | ${tools} | \`lib/tools.js\` |`,
     `| upstream patch modules | ${patches} | \`lib/patch-*.js\` |`,
     `| modules under \`lib/\` | ${modules} | directory listing |`,
@@ -268,7 +268,7 @@ function main () {
 
   fs.writeFileSync(TARGET, expected)
   const suites = suiteNames()
-  console.log(`doc-numbers: wrote ${path.relative(root, TARGET)} (${suites.length} suites, ${countRoutes(readOrEmpty(path.join(root, 'lib', 'routes.js')))} routes)`)
+  console.log(`doc-numbers: wrote ${path.relative(root, TARGET)} (${suites.length} suites, ${routeSources().reduce((total, source) => total + countRoutes(source), 0)} routes)`)
 }
 
 // Only run when invoked directly, so the exports stay importable by a suite.

@@ -11,7 +11,7 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 33 | `lib/routes.js` |
+| HTTP routes | 33 | `lib/routes.js` + `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
 | modules under `lib/` | 63 | directory listing |

@@ -30,11 +30,16 @@ function check (label, ok, detail) {
   }
 }
 
-const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
 const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
 
 console.log('\n[1] the counters read the source')
 {
+  // The route family now spans `lib/routes.js` plus `lib/routes/`, so the
+  // counter is exercised against the sum of every source: the composition
+  // point alone holds no descriptors any more, and asserting a positive
+  // single-file count would fail for a reason that is not a defect.
+  const sources = numbers.routeSources()
+  const routesSource = sources.join('\n')
   const baseline = numbers.countRoutes(routesSource)
   check('the route count is a positive integer', Number.isInteger(baseline) && baseline > 0, String(baseline))
   // A new route written in the established style must be counted without
@@ -54,7 +59,6 @@ console.log('\n[1] the counters read the source')
   // The route handlers are moving into `lib/routes/`. The figure has to follow
   // them, or it would drop the moment a handler left `lib/routes.js` — and a
   // number that changes because of a refactor stops being trusted.
-  const sources = numbers.routeSources()
   check('the route sources are found', sources.length > 0, String(sources.length))
   check('they include the composition point', sources.some(source => source.includes('export function makeRoutes')))
   // The figure the document reports is the SUM over every source, so a route
