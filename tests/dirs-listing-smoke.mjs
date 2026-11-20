@@ -1,9 +1,8 @@
 /**
  * The pickers' one-round-trip directory listing, against a REAL shell.
  *
- * Two shapes live here: `dirsListingCommand` (subdirectories only) and
- * `entriesListingCommand` (directories first, then files — what the pickers
- * actually request, so the folder they are about to mount can be read).
+ * One shape lives here: `dirsListingCommand`. The pickers request directories
+ * only (`dirs=1`), so there is no second command to keep in step with this one.
  *
  * ## Why the listing stopped using `sftp.readdir`
  *
@@ -115,7 +114,7 @@ if (process.env.DSH_CORE_ROOT) {
   process.env.DSH_PEER_ROOT = [process.env.DSH_CORE_ROOT, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 }
 
-const { dirsListingCommand, parseDirsListing, entriesListingCommand, parseEntriesListing } = await import(
+const { dirsListingCommand, parseDirsListing } = await import(
   pathToFileURL(path.join(pluginRoot, 'lib', 'routes.js')).href
 )
 
@@ -138,23 +137,6 @@ function list (dir, limit, cwd) {
   return { command, result: outcome, parse: parseDirsListing(outcome, limit) }
 }
 
-/**
- * The all-entries variant: directories AND files, directories first.
- *
- * @param {string} dir - absolute directory, or '' for the login directory.
- * @param {number} limit - the cap the command is built with.
- * @param {string} [cwd] - the shell's working directory (`path === ''`).
- * @returns {{parse: object|null, result: object, command: string}} the parsed answer and the raw run.
- */
-function listAll (dir, limit, cwd) {
-  const command = entriesListingCommand(dir === '' ? '' : shellPath(dir), limit)
-  const result = spawnSync('sh', ['-c', command], {
-    cwd: cwd ?? pluginRoot,
-    encoding: 'utf8',
-  })
-  const outcome = { exitCode: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
-  return { command, result: outcome, parse: parseEntriesListing(outcome, limit) }
-}
 
 const root = await mkdtemp(path.join(tmpdir(), 'dsh-dirs-listing-'))
 try {
@@ -164,18 +146,12 @@ try {
   await mkdir(path.join(root, 'alpha', 'inner'))
   await writeFile(path.join(root, 'notes.txt'), 'x')
   // Symlinks need a privilege Windows does not grant by default. Their point
-  // here is that `ls -p` never marks one as a directory; a plain file covers
-  // that too, so the two extra names are only asserted where they exist.
-  let symlinks = true
-  try {
-    await symlink('alpha', path.join(root, 'linkdir'))
-    await symlink('/nonexistent', path.join(root, 'dangling'))
-  } catch {
-    symlinks = false
-  }
+  // here is that `ls -p` never marks one as a directory, and a plain file
+  // covers that too — so they are created where the platform allows it and
+  // never depended on for a count.
+  await symlink('alpha', path.join(root, 'linkdir')).catch(() => {})
+  await symlink('/nonexistent', path.join(root, 'dangling')).catch(() => {})
   const DIRS = '-dash,.hidden,alpha,beta,locked,noread,with space'
-  const FILES = symlinks ? 'dangling,linkdir,notes.txt' : 'notes.txt'
-  const ALL = symlinks ? 10 : 8
   // chmod does not deny access on Windows, so these two states cannot be built
   // there and the assertions that need them say so instead of failing.
   const permissions = !isWindows
@@ -237,63 +213,6 @@ try {
     check('a trailing slash is echoed as given and still lists',
       parse !== null && samePath(parse.path, `${root}/`) && parse.total === 7, JSON.stringify(parse))
   }
-
-  // ---- the all-entries variant ------------------------------------------------
-
-  console.log('[directories and files]')
-  {
-    const { parse, result } = listAll(root, 500)
-    check('the all-entries command lists directories first, then files',
-      parse !== null &&
-        parse.names.slice(0, 7).join() === DIRS &&
-        parse.names.slice(7).sort().join() === FILES,
-      parse === null ? result.stderr.trim() : parse.names.join())
-    check('...typing the leading names by position, not a per-name column',
-      parse?.dirCount === 7 && parse?.total === ALL, JSON.stringify(parse))
-    check('...and the account can write there', parse?.writable === true, String(parse?.writable))
-  }
-
-  {
-    const { parse } = listAll(root, 3)
-    check('the all-entries cap spends on directories first',
-      parse?.names.length === 3 && parse?.dirCount === 3 && parse?.total === ALL &&
-        parse.names.every(name => ['-dash', '.hidden', 'alpha'].includes(name)),
-      JSON.stringify(parse))
-  }
-
-  {
-    const { parse } = listAll(root, ALL - 1)
-    // One slot short of the whole directory: every directory keeps its place
-    // and the files fill what is left, in name order.
-    const files = FILES.split(',')
-    check('...and only then lets files into the remaining room',
-      parse?.names.length === ALL - 1 && parse?.dirCount === 7 &&
-        parse.names.slice(7).join() === files.slice(0, files.length - 1).join(),
-      JSON.stringify(parse))
-  }
-
-  {
-    const { parse } = listAll(path.join(root, 'nope'), 10)
-    check('a missing directory is a fallback for the all-entries listing too',
-      parse === null, JSON.stringify(parse))
-  }
-
-  {
-    const all = { exitCode: 0, stdout: 'd\nf\n', stderr: '__dsh_ssh_ws_all__ 2 1 1 /x\n' }
-    check('the all-entries parser reads the expected shape',
-      parseEntriesListing(all, 2)?.names.join() === 'd,f' && parseEntriesListing(all, 2)?.dirCount === 1)
-    check('...and refuses a non-zero exit', parseEntriesListing({ ...all, exitCode: 1 }, 2) === null)
-    check('...a missing marker',
-      parseEntriesListing({ exitCode: 0, stdout: 'd\n', stderr: '' }, 2) === null)
-    check('...the script\'s fallback line',
-      parseEntriesListing({ exitCode: 0, stdout: '', stderr: '__dsh_ssh_ws_all__ fallback\n' }, 2) === null)
-    check('...a name count that is not min(total, limit)',
-      parseEntriesListing({ ...all, stdout: 'd\n' }, 2) === null)
-    check('...more directories than the total says',
-      parseEntriesListing({ exitCode: 0, stdout: 'd\nf\n', stderr: '__dsh_ssh_ws_all__ 2 3 1 /x\n' }, 2) === null)
-  }
-
-  // ---- the shapes the caller must NOT trust ---------------------------------
 
   console.log('[refusals and fallback]')
   {

@@ -306,7 +306,9 @@ function makeDialog ({ name, props }) {
   const hooks = makeHooks()
   const clock = makeClock()
   const requests = []
-  const HOME_ROWS = [{ name: 'Documents', type: 'directory' }, { name: 'projects', type: 'directory' }, { name: 'notes.txt', type: 'file' }]
+  // What the server answers for `dirs=1`: directories only. A file in here would
+  // be a fixture the real route cannot produce.
+  const HOME_ROWS = [{ name: 'Documents', type: 'directory' }, { name: 'projects', type: 'directory' }]
   let tree = null
 
   const jsx = (type, nodeProps) => ({ type, props: nodeProps ?? {} })
@@ -318,7 +320,6 @@ function makeDialog ({ name, props }) {
     API: { ls: '/ls', mount: '/mount', hosts: '/hosts' },
     BROWSE_LIST_LIMIT: 2000,
     FolderIcon: function FolderIcon () {},
-    FileIcon: function FileIcon () {},
     GlobeIcon: function GlobeIcon () {},
     ArrowLeftIcon: function ArrowLeftIcon () {},
     CloseIcon: function CloseIcon () {},
@@ -341,7 +342,7 @@ function makeDialog ({ name, props }) {
     },
   }
 
-  const parts = [...HELPERS, 'compareListingEntries', 'usePathDraftPreview', name].map(liftFunction)
+  const parts = [...HELPERS, 'usePathDraftPreview', name].map(liftFunction)
   // eslint-disable-next-line no-new-func
   const Component = new Function(
     'React', 'setTimeout', 'clearTimeout', 'jsx', 'jsxs', 'PATH_PREVIEW_DEBOUNCE_MS', ...Object.keys(stubs),
@@ -639,12 +640,10 @@ console.log('[the dialogs]')
   check('...with that directory\'s rows',
     dialog.rows().join() === 'Documents,projects', dialog.rows().join())
   check('...after exactly one listing', dialog.requests.length === 1, dialog.requests.join())
-  const fileRow = dialog.find((node) => String(node.props?.className ?? '').includes('sshwsp-entry-file'))
-  check('a file in the listing is an inert row, not a control',
-    fileRow !== undefined && fileRow.type === 'div' &&
-      fileRow.props.onClick === undefined && fileRow.props.onDoubleClick === undefined &&
-      fileRow.props.children[1].props.children === 'notes.txt',
-    fileRow === undefined ? 'no file row rendered' : String(fileRow.type))
+  check('...and the listing asked the server for directories only',
+    dialog.requests.every(url => /[?&]dirs=1(&|$)/u.test(url)) &&
+      !dialog.requests.some(url => /[?&]all=1(&|$)/u.test(url)),
+    dialog.requests.join())
 
   dialog.setDraft('/home/me/pro')
   check('typing a prefix narrows the rendered rows immediately',

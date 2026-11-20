@@ -999,31 +999,29 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
     liveIn('DirectoryBrowser', /id: dialog\.titleId, children: t\('browser\.title'/u),
     'aria-labelledby points at nothing')
 
-  // Every row is a directory row. The dialog used to branch — a file was a
-  // static `div`, a directory a `button` — and the file branch was a row the
-  // picker could neither enter nor do anything else with, so it is gone along
-  // with the `rowClassName` / `rowChildren` pair that only existed to feed it.
-  // A directory row is the control; a file row is inert context for the
-  // folder being mounted. Both are pinned here — a file rendered as a button
-  // is a half-control, and a file branch that disappeared would take the
-  // user's view of the folder with it.
+  // Every row is a directory row, and it is the only row kind. The dialog used
+  // to branch — a file was a static `div`, a directory a `button` — and then
+  // briefly rendered both again; a file row is a thing this picker can neither
+  // enter nor act on, so it is gone along with its glyph and its class. A
+  // directory row is the control, and a type test has no business in the map:
+  // the request (`dirs=1`) already guarantees what arrives.
   check('a directory row is a real button control',
-    liveIn('DirectoryBrowser', /if \(entry\.type !== 'directory'\) \{[\s\S]{0,900}?\}\s*return jsx\('button'/u) &&
+    liveIn('DirectoryBrowser', /return jsx\('button', \{[\s\S]{0,300}?className: 'sshwsp-entry sshwsp-entry-dir'/u) &&
       !/rowcheck|type: 'checkbox'/u.test(bodyOf('DirectoryBrowser')),
     'a directory row is no longer a button, or a checkbox column came back')
-  check('...and a file row is inert, not a second control',
-    liveIn('DirectoryBrowser', /className: 'sshwsp-entry sshwsp-entry-file'[\s\S]{0,400}?FileIcon/u) &&
-      !/onClick: \(event\) => \{ if \(event\.detail === 0\) handleEntry\(entry\) \},[\s\S]{0,200}?sshwsp-entry-file/u.test(bodyOf('DirectoryBrowser')),
-    'a file row is clickable, or the file row lost its own class')
+  check('...and no file row survives anywhere',
+    !/sshwsp-entry-file|function FileIcon/u.test(source) &&
+      !/entry\.type !== 'directory'[\s\S]{0,80}?sshwsp-entry/u.test(bodyOf('DirectoryBrowser')),
+    'a file row, its glyph or its branch is back in a picker that only lists directories')
   check('...with no selection contract left behind',
     !/rowClassName|rowChildren/u.test(bodyOf('DirectoryBrowser')) &&
       !/'aria-selected'|setSelection|selectReduce/u.test(bodyOf('DirectoryBrowser')) &&
       !/\.sshwsp-entry-selected \{/u.test(source),
     'the selection paint came back')
-  check('...and both pickers ask for the whole listing',
-    (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&all=1/gu) ?? []).length === 2 &&
-      (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []).length === 0,
-    'a picker still filters to directories, so files never reach its rows')
+  check('...and both pickers ask for directories only',
+    (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []).length === 2 &&
+      !/BROWSE_LIST_LIMIT\}&all=1/u.test(source),
+    'a picker asks for files it can neither enter nor act on')
 
   // A directory row is entered by DOUBLE click. A single click used to enter
   // too, which made the listing impossible to read: every attempt to inspect a

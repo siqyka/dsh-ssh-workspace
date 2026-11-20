@@ -539,26 +539,27 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 两个 picker（`DirectoryBrowser` 与 `RemoteWorkspaceDialog`）以前各要一份列表：
 `sftp.readdir` 每条都带 attrs，服务器要逐条 `lstat`。小目录是两三个往返，共享 `/tmp`
 这种几万条的地方就变成几千次 stat 加几十个 READDIR 包——在 300 ms 链路上 25 000 条
-30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字**，于是列表改走
-`engine.exec` 的一次命令（`lib/routes.js` 的 `dirsListingCommand` /
-`entriesListingCommand`）：`ls -1ap` 过一层 `awk`，**上限在远端就生效**（大目录最多
-只传 `limit` 个名字），同一轮里 `pwd -P` 解析登录目录、`test -w` 报可写性。
+30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字，而且只要目录**，于是列表改走
+`engine.exec` 的一次命令（`lib/routes.js` 的 `dirsListingCommand`）：`ls -1ap` 过一层
+`awk`，**上限在远端就生效**（大目录最多只传 `limit` 个名字），同一轮里 `pwd -P` 解析
+登录目录、`test -w` 报可写性。
 
 三条设计约束：
 
-- **stdout 只走名字，stderr 只走一行标记**（`__dsh_ssh_ws_dirs__ <total> <w> <dir>` /
-  `__dsh_ssh_ws_all__ <total> <dirs> <w> <dir>`）。目录名可以和状态行一模一样，所以两者
-  不能共用流；`ls` 的报错被命令丢弃，标记行是解析器唯一接受的东西。
+- **stdout 只走名字，stderr 只走一行标记**（`__dsh_ssh_ws_dirs__ <total> <w> <dir>`）。
+  目录名可以和状态行一模一样，所以两者不能共用流；`ls` 的报错被命令丢弃，标记行是解析器
+  唯一接受的东西。
 - **任何形状不符都回退 SFTP**：非 POSIX 登录 shell、缺 `awk`、目录不可读、退出码非 0、
-  名字数 ≠ `min(total, limit)`、目录数 > 总数、回显路径非绝对、脚本自己打的 `fallback`
+  名字数 ≠ `min(total, limit)`、名字数 > 总数、回显路径非绝对、脚本自己打的 `fallback`
   行——全部 `null`。这是优化，不是第二套实现；解析器一旦开始猜，两种列法就会悄悄分叉。
-- **all 变体的类型按位置判**：目录先流式输出、文件缓冲到最后，`room = lim - dirs`，所以
-  文件再多也挤不掉一个目录；响应里不传逐名的 type 列，`dirCount` 就是分界线。
+- **类型由 `ls -p` 的尾斜杠给出，不由解析器猜**：只认以 `/` 结尾的行，文件、符号链接与
+  `./` / `../` 都被排除。选择器要的是「能进哪」，多列一批进不去的名字只是把它们混进同一
+  个上限里。
 
-`/ls` 因此多两个开关：`dirs=1`（只要目录）与 `all=1`（全都要），互斥、非 `1` 一律 400。
-成功就走快路径返回（`entries` 只有 `name` / `type`，`size` 与 `mtime` 填 0——选择器从来
-没显示过目录行的大小），失败落回原来的 SFTP 分支。`uploadable` 提成 `isUploadable`
-供两条路径复用，仍与上传路由用同一份 `writeFenceRoots`。
+`/ls` 因此多一个开关：`dirs=1`（只要目录），非 `1` 一律 400。成功就走快路径返回
+（`entries` 只有 `name` 与 `type: 'directory'`，`size` 与 `mtime` 填 0——选择器从来没显示过
+目录行的大小），失败落回原来的 SFTP 分支。`uploadable` 提成 `isUploadable` 供两条路径
+复用，仍与上传路由用同一份 `writeFenceRoots`。
 
 **审计**：这条 exec 带 `audit: false`。它是一次界面读取，和 `sftp.readdir` 同性质，而
 后者从来不在审计环里；记进去会让面板每敲一个键多出一条多行脚本，把用户真正跑过的
