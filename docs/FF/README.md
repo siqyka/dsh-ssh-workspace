@@ -11,7 +11,7 @@
 | 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | — | — | **已实施**（`lib/remote-skills.js`，`tests/remote-skills-smoke.mjs` 55 项；说明见 `docs/features.md` 五之三 与 `docs/architecture.md` 的「远端技能发现」一节） |
 | 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | [03-remote-file-editing.md](./03-remote-file-editing.md) | [prompt](./03-remote-file-editing-prompt.md) | 方案 |
 | 04 | 代码拆分（去重 + `tools` / `routes` / `remote-fs` 的 watch 集群 + `client.js` 的懒渲染边界） | [04-code-splitting.md](./04-code-splitting.md) | [prompt](./04-code-splitting-prompt.md) | 方案 |
-| 05 | 同功能模块合并（`tar`+`zip` → `archive`；`match-eval` 并回 `ssh-config` 消环；四组重复函数收进共享模块） | [05-module-merges.md](./05-module-merges.md) | — | 方案（A1 已落工作树未提交） |
+| 05 | 同功能模块合并（`tar`+`zip` → `archive`；`match-eval` 并回 `ssh-config` 消环；四组重复函数收进共享模块） | [05-module-merges.md](./05-module-merges.md) | — | 进行中（轨道 A 的 A1–A4 已提交；M1、M2 未开工） |
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
 

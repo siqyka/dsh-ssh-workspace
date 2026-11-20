@@ -182,11 +182,11 @@ re-export 让这 6 行一行都不用动；同时 `shell.js`（原本只依赖 `
 | # | 提交 | 内容 | 结束时应绿的门 |
 | --- | --- | --- | --- |
 | A1 | `refactor(shell-quote): one home for the POSIX quoting rule` | **已提交** `b6f2e2d` | `lint`、`run.mjs` |
-| A2 | `refactor(text): one escapeRegExp` | 新建 `lib/text.js`，三处改 import | `lint`、`include-chain-smoke`、`ssh-config-smoke` |
-| A3 | `refactor(options): one positive()` | 新建 `lib/options.js`；**工作树里已写好，待提交** | `lint`、`reconnect-smoke`、`watch-recovery-smoke` |
+| A2 | `refactor(text): one escapeRegExp` | **已提交** `d217f5c`（新建 `lib/text.js` 25 行） | `lint`、`include-chain-smoke`、`ssh-config-smoke` |
+| A3 | `refactor(options): one positive()` | **已提交** `75aaaa7`（新建 `lib/options.js` 31 行） | `lint`、`reconnect-smoke`、`watch-recovery-smoke` |
 | A4 | `refactor(forward): one requirePort / normalizedHost` | **已提交** `f2f8554` | `lint`、`forward-smoke`、`reverse-forward-smoke` |
 | M1 | `refactor(archive): merge the tar and zip writers` | 组一（含 3 处脚本/测试同步） | `archive-smoke`、`zip-smoke`、`capabilities-report-smoke`、`reverse-verify-archive` |
-| M2 | `refactor(ssh-config): fold match-eval into the config parser` | 组二（消环） | `ssh-config-smoke`、`match-eval-smoke`、`include-chain-smoke`、`hosts-smoke` |
+| M2 | `refactor(ssh-config): fold match-eval into the config parser` | 组二（消环） | `ssh-config-smoke`、`match-eval-smoke`、`include-chain-smoke`、`host-listing-smoke`（套件名是 `'host-listing'`，`tests/run.mjs:65`；没有 `hosts-smoke` 这个套件） |
 | M3 | `docs: the module count moved` | `doc-numbers` 重生成 + 源码结构表 | `doc-numbers-smoke`、`check-doc-links` |
 
 A1–A4 各自可独立回滚；M1、M2 也互不依赖，但**都要过 M3 的门**。
@@ -264,7 +264,7 @@ A1–A4 各自可独立回滚；M1、M2 也互不依赖，但**都要过 M3 的�
 | A1 `quote` → `lib/shell-quote.js` | **已提交** `b6f2e2d refactor: one POSIX quoter for every remote command` |
 | A3 `positive` → `lib/options.js` | **已提交** `77ffb00 refactor: one option-number coercion helper`（提交号在不同克隆里可能不同，认标题） |
 | A4 `requirePort` + `normalizedHost` → `lib/forward-common.js` | **已提交** `f2f8554 refactor: one port and host validator for both forward directions` |
-| A2 `escapeRegExp` → `lib/text.js` | 视工作树而定：若 `git status --short` 里有 `lib/text.js` 或 `lib/include-chain.js` 的改动，说明已开工未提交 |
+| A2 `escapeRegExp` → `lib/text.js` | **已提交** `d217f5c refactor: one regex escaper`（`lib/text.js` 25 行；`include-chain.js` / `shell.js` 改 import，`ssh-config.js` 改 re-export） |
 | M1 `tar`+`zip` → `lib/archive.js` | 未开工 |
 | M2 `match-eval` 并回 `ssh-config` | 未开工 |
 
