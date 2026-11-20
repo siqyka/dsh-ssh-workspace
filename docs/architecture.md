@@ -553,6 +553,39 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 目录目标加 `-r`（与本地递归 watcher 对齐），文件目标不加（`inotifywait` 对文件
 加 `-r` 会被拒绝），因此先 stat 判断目标是文件还是目录。
 
+## 远端技能发现（`lib/remote-skills.js`）
+
+`ctx.skills.registerProvider()` 是宿主提供的唯一入口：注册一个 provider，`list()` 回答「这个工作区有哪些
+技能」，`get()` 回答「把某一个的正文给我」。本插件注册的是 `ssh-workspace-remote-skills`，
+rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之间，所以同名的远端技能压过用户级、
+让位给项目级。rank 250 与宿主的 `RUNTIME_RANK` 撞号是**有意**的：同层并列时 runtime provider 排前。
+
+三处不能复用宿主代码，各有具体原因：
+
+- **不能复用 `discoverRoot`**：它用 `node:path.join` 拼 `SKILL.md`。Windows 上
+  `join('ssh://box/data/proj/.agents/skills/x', 'SKILL.md')` 得到
+  `.\ssh:\box\data\proj\.agents\skills\x\SKILL.md`，`isRemotePath()` 认不出（只认 `ssh://` 前缀），
+  于是落到本机后端、ENOENT、候选被**静默丢弃**——目录型远端技能在 Windows 上一个都发现不了，且没有任何
+  报错。本模块自建发现循环，路径全程 `normalizeRemotePath` / `formatRemotePath`，测试钉住 locator 里
+  不出现反斜杠。
+- **不能复用宿主的 frontmatter 解析**：`parseFrontmatter` 是宿主包的私有函数，而本插件只依赖 `ssh2`。
+  自写一个**子集**解析器（标量、布尔、一层嵌套、块标量），比引入 YAML 依赖更小，也比「猜」更安全：
+  认不出的行跳过，旧拼写（`modelInvocable` 等）直接判定不是技能。
+- **不能指望宿主替我们过滤**：`validateCandidate` 在 `provider.list()` 的 `try` **之外**且是 `throw`，
+  一个非法候选会让整个会话的技能目录读取失败、本地技能一起消失。所以非法名字 / 空描述 / 非法
+  `invocation` 在 `list()` 返回前就被滤掉。
+
+读取路径的围栏是**我们自己的**：`remote-fs.js` 里 `assertWithinRemoteRoots` 只被 `#assertWritable`
+调用，`readText` 只判「工作区是否被停用」。因此 `get()` 每次加载正文前先 `assertFencedRealpath`
+（`verb: 'read'`、`includeLeaf: true`），远端被种下的符号链接不会把读取带出已挂载的根；拒绝发生在
+读字节之前。
+
+失败语义分两层：单个根读失败、超时、条目数超限 → `complete: false` 且保留已读到的候选，宿主据此
+**不缓存**这一趟；`list()` 整体抛错 → 同样不缓存，并记一条 `degraded` 诊断。只有「没开启」「主机不在
+白名单」「cwd 不在已挂载根内」「根不存在」四种情况是**完整的空答案**，而且前三种**一次 SSH 操作都不发**。
+
+`remote-fs.js` 的 `stat`/`open`/`read`/`close` 由本模块经导出助手调用，SFTP 通道走
+`engine.withSftp(alias, fn, { kind: 'read' })`，与其他读路径共用连接池与重连。
 ## 引擎与连接模型
 
 `lib/engine.js`：每个别名一条 ssh2 长连接 + 一个 SFTP 通道（常开）——文件

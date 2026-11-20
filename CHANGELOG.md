@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 新增
+
+- **远端技能发现（`lib/remote-skills.js`，默认关闭）**：远端工作区里的 `.dsh/skills` 与 `.agents/skills` 现在能被 `skill` 工具发现和加载，rank 250（夹在项目级与用户级之间）。三条不能复用宿主代码的理由都落在实现里：宿主的 `discoverRoot` 用 `node:path.join` 拼 `SKILL.md`，在 Windows 上把 `ssh://box/data/proj` 拼成 `.\ssh:\box\...`——既不是远端路径也不报错，目录型候选会被静默丢弃，所以发现循环自建、路径全程 `normalizeRemotePath` / `formatRemotePath`（测试钉住 locator 里不出现反斜杠）；宿主的 frontmatter 解析是私有函数，本插件只依赖 `ssh2`，故自写子集解析（标量 / 布尔 / 一层嵌套 / 块标量），认不出的行跳过、旧拼写 `modelInvocable` 等直接判定不是技能；宿主的 `validateCandidate` 在 `provider.list()` 的 `try` 之外且是 `throw`，一个非法候选会让整个会话的技能目录读取失败、本地技能一起消失，所以非法名字 / 空描述 / 非法 `invocation` 在返回前就滤掉。**读也过围栏**：`remote-fs.js` 的 `assertWithinRemoteRoots` 只被 `#assertWritable` 调用，读取不判围栏，因此 `get()` 每次加载正文前自己调一次 `assertFencedRealpath`，远端种下的符号链接不会把读取带出工作区。**默认关闭 + 主机白名单**：技能描述一被读到就进模型上下文，与「模型主动打开一个文件」是不同风险等级；`*` / `bo?x` 这类通配别名被拒绝并记警告。有界（每根 200 条 / 每主机 32 个 / 单文件 64 KiB / 5 秒）且**不完整不等于空**——某个根读失败时 `complete: false` 并保留已读到的候选，宿主据此不缓存，一次断线不会被写成「这台主机没有技能」。状态工具与面板 `/status` 增加 `remoteSkills` 块，诊断只记数量与别名。
 ### 修复
 
 - **「新建远程工作区」的滚轮根本到不了对话框**：这个弹窗由 `WorkspacePickFlow` **内联渲染**在侧栏里，是 `SidebarRoot` 的 `.scrollArea` 的 DOM 后代；宿主在那上面绑了 `passive: false` 的 wheel 监听，把每一次滚轮都 `preventDefault()` 之后手动写给它自己的视口。`position: fixed` 只改变绘制、不改变冒泡，所以对话框体一个 `scroll` 事件都收不到——前两次改的都是对话框内部的滚动容器尺寸，改得再对也没用（浏览目录弹窗从我们自己的插槽打开，不在那棵子树里，因此一直正常）。新增 `modalLayer()`，五个弹窗统一 `createPortal` 到 `document.body`；顺带躲开 `.composerSeat` 的 `will-change: transform` 把 `position: fixed` 的包含块从视口改写掉。宿主对 composer 内的浮层有同样的约定（`ConversationRoot.module.css`）。

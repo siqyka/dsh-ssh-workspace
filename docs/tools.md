@@ -122,6 +122,11 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 能被用户读到的连接历史**。排查「为什么刚才断了」「为什么文件树不刷新」先看这里——
 `degraded` 表示 `inotifywait` 推送失效退回轮询，或大文件读取退回了共享 SFTP 通道。
 
+`remoteSkills` 只在注册了 provider 时出现（`enabled` / `hosts[]` / `last{alias, at, skills, skipped, complete}`）；
+它回答的是「这次发现读了哪台主机、拿到几个、有没有跳过」，**不含技能正文也不含描述**——那些会进
+模型上下文，不该顺带出现在一次状态查询里。`enabled: false` 与「开启了但这台主机没技能」是两种
+不同的状态，前者不该被读成后者。
+
 `seams[]` 与 `upstreamWorkarounds[]` 是同一问题的两半，分开给：前者说「我这次的接缝接管
 装上了没有」（`installed` / `absent` / `failed`），后者说「宿主是不是已经不需要这条补丁了」。
 一个 `failed` 的接缝意味着某项文档承诺的功能静默消失，而其余部分看起来一切正常——这正是

@@ -14,8 +14,8 @@
 | HTTP routes | 33 | `lib/routes.js` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 54 | directory listing |
-| test suites | 91 | `tests/run.mjs` |
+| modules under `lib/` | 55 | directory listing |
+| test suites | 92 | `tests/run.mjs` |
 | passing assertions (sampled) | 4882 | measured 2026-11-18 |
 
 <!-- doc-numbers:end -->
@@ -55,7 +55,8 @@
 | `lib/routes.js` | 浏览器半边的 33 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / mutation-policy / self-check / support-bundle / passthrough-settings） |
 | `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
 | `lib/tools.js` | 11 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
-| `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → 各 profile → 部署自带树 |
+| `lib/remote-skills.js` | 远端技能发现：`ctx.skills` 上注册 `ssh-workspace-remote-skills`（rank 250），扫会话工作区下的 `.dsh/skills` 与 `.agents/skills`。路径全程 `normalizeRemotePath` / `formatRemotePath`——宿主的 `discoverRoot` 用 `node:path.join`，在 Windows 上会把 `ssh://` 拼成 `.\ssh:\...` 而让候选静默消失；frontmatter 自写子集解析（不引入 YAML）；非法候选在返回前滤掉（宿主 `validateCandidate` 是 `throw`，会带走整个会话的技能目录）；`get()` 每次加载正文前重做 `assertFencedRealpath`（`remote-fs.js` 的围栏只挂写路径）。默认关闭，按主机白名单开启，有界，`complete: false` 不缓存 |
+| `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → `DSH_CORE_ROOT` → 各 profile → 部署自带树。`DSH_CORE_ROOT` 在列表里，是因为每个套件与 `tests/run.mjs` 都用它拼 stub 根：不认这个名字，套件就会先造出 stub 树、再被告知 peer 缺失 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现 |
 | `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。自检（缺工具、环境告警）**只进 `notes`，不参与判定**——它是主机的属性，不是这个会话的故障。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
 | `lib/client.js` | 浏览器半边：面板、添加工作区流程、标记装饰、全部样式与中英文案 |
@@ -279,6 +280,7 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `audit-smoke` | 无 | 58 | 远端命令审计（`lib/audit.js`）：脱敏**双向**（秘密消失且命令仍可读）、Authorization / 带前缀赋值 / 旗标 / URL 参数 / 家目录、普通命令不被改写、有界环与 `seq` 跨淘汰单调、拒绝条目说「未执行」、`outcome: 'unknown'` 与超时各自成态、畸形条目不抛、引擎确实为每次 `exec` 写一条、命令爆发不会挤掉诊断环 |
 | `diagnosis-smoke` | 无 | 77 | 诊断判定（`lib/diagnosis.js`）：**正常启动必须是绿的**（`broken` / `pending` / `already` / `disabled` 四种补丁状态、正在重试的连接都不算问题）、**真问题必须变红且说清是哪一条**（退役补丁、未固定的主机密钥、被跳过的 host、读不出的存储、没人重试的断连、放弃重连、开不起来的已存转发、超时与结果未知的命令）、**`unknown` 既不是绿也不是红**，以及聚合规则（确定的坏压过不确定）。**自检是提示不是判定**：缺工具与环境告警只进 `notes`，不改变 `state` / `warn` / `unknown`，也不与 `findings` 重叠；报告里它们出现在 `advisory (not counted in the verdict):` 一节，而同一份报告中的真问题仍然变红（两条断言互为反向，防止只是「把话改小声」）。另钉住报告新增的三处事实（host keys 一节、skipped 主机带原因、代次说明）与「别名绝不进 detail 字符串」（脱敏必须发生在字符串形成处）。命令那组按**条数**断言而非 grep 文案：把非零退出也算成问题时，打印的是同一句话，文案匹配看不见这个回归 |
 | `workspace-ownership-smoke` | 无 | 153 | 会话归属补偿（`lib/ownership.js`）：宿主把 `ssh://` 会话从工作区记账里筛掉时**文件还在、丢的是记账**，所以断言全在账上——只在**规范化后完全相等**时认领（子目录、另一台主机同路径、本地 cwd 都不算，宿主也只认字符串相等）、**子会话（`origin: 'subagent'`）不算候选**（它继承父会话的 cwd 但永远不是侧栏一行，把它算进去会产出永远清不掉的 `pending`，测试同时断言「从不尝试 attach」）、先挂根后认领的顺序（源码里 `reclaimOwnership(` 必须出现在 `addRoot(` 之后，顺序被打乱会静默失效）、认领后**回读 `sessionIds` 验证**（宿主对「记录里已有该 id」会短路且不重建路径索引，把这种 no-op 记成成功正是本模块要结束的静默）、单个 `attachSession` 抛错只算一条 `pending` 且理由含 `ENOENT` 但不含别名（路径换成 `<workspace>`）、detach 的工作区进 `skipped` 不进 `failures`、`sessionQuery` → `sessionPersistence` 的降级顺序与「两个来源都没有」时 `pending` 必须是 0（未知不是零）、无远端工作区时**不读会话清单**也不记事件、连跑两次第二次不再 attach、`diagnose({ ownership })` 在 `pending > 0` 时产出 `workspace-ownership` 的 warn 且 `pending === 0` 不产出，三处接线（状态工具 schema、bundle 输入、面板 `diagnosisInput`）读的是同一份内存快照，以及**每次激活无条件执行一次**的宿主索引重建（`listStoredHeaders()` → `replaceHeaderIndex()` → `indexLiveSessions()`；重建**先于**认领、重建后回读记账即算恢复、不重复 attach）、健康启动同样 `reindexed` 且只重建一次、空清单不重建、非契约方法缺失或抛错降级为 `unsupported` / `failed: …` 并保留原因、卡住的认领按预算变成 `pending`（理由含 `did not answer within`）、整趟认领有组预算（超出记 `claim budget`）、重建成功后把**筛选后**的成员视图按宿主的 `domain/changed` 形状重新广播（只广播给已连接的客户端，`unsupported` 时不广播、抛错时记 `publishError` 但不中断补偿，广播数落在快照的 `published`） |
+| `remote-skills-smoke` | 无 | 55 | 远端技能发现（`lib/remote-skills.js`）：配置归一（关闭即关闭、通配符 alias 被拒而不是展开、越界上限回落到默认而不是放宽）、frontmatter 子集解析（引号标量、布尔、嵌套映射、块标量；**旧键 `modelInvocable` / `userInvocable` / `disableModelInvocation` 必须拒绝而不是猜**）、**发现**（目录 bundle 的 `SKILL.md` 与平铺 `.md` 都能找到，非 markdown、无 frontmatter 的 bundle 被跳过）、**locator 里不许出现反斜杠**——宿主 `node:path.join` 会把 `ssh://` 拼成 `.\ssh:\box\...`，那串既不是远端路径也不会报错，只会让候选被静默丢弃，所以本套件把这条钉成断言、在 Windows 上也跑得出来、上限（`maxSkills` 截断、超 `maxBytes` 跳过而非截断、含 NUL 不算文本）、**不完整不等于空**（某个根读失败时 `complete: false` 且保留已读到的候选，宿主据此不缓存）、TTL 缓存与 `invalidate()`、**`get()` 重新过围栏**（逃出挂载根的 locator 必须返回 undefined，且拒绝发生在读字节之前——`remote-fs.js` 的读路径没有写围栏）、诊断条目只记数量与别名、不含技能正文。`off means off` 与白名单两条断言数的是 **SSH 操作次数为 0**，因为空数组也是「正常但没技能」的样子 |
 | `support-bundle-smoke` | 无 | 61 | 支持包（`lib/support-bundle.js`）与连接分代：alias / 家目录 / 登录用户必须打码而地址与端口保留、路径形状存活、三个字符以内的 alias 整体打码、几乎为空的输入仍产出可读报告、**命令必须从 rows 渲染**（退回预格式化文本会漏 alias）、代次单调（从 map 读而不是从 record 读）与第 1 代保持安静 |
 | `routes-smoke` | 无 | 265 | 33 条路由的请求 / 响应契约、两种卸载模式、归档、停用围栏、`sessionIds` 强制转字符串、断开必须连带拆除转发且走 `closeAlias`、下载失败必须是非 2xx |
 | `secrets-smoke` | 无 | 26 | 凭据存储与加密、迁移、`~/.ssh/config` 明文兼容、密钥文件按需创建 |

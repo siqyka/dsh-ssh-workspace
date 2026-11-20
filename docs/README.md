@@ -15,17 +15,15 @@
 | [hosts.md](./hosts.md) | 主机配置与认证：存储格式、`~/.ssh/config` 回退、面板管理 | 完成 |
 | [tools.md](./tools.md) | Agent 工具参考：11 个 `ssh_workspace_*` 工具（含 `ssh_workspace_reverse_forward`） | 完成 |
 | [ui.md](./ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记、端口转发与持久会话区、文件引用设置 | 完成 |
-| [forward-persistence.md](./forward-persistence.md) | 端口转发的持久化：已存映射、开关语义、端口预检、启动自动开启 | 完成 |
 | [development.md](./development.md) | 开发、调试与发布：源码结构、依赖解析、测试套件、打包流程 | 完成 |
 | [upstream-workarounds.md](./upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 | 完成 |
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
 | [optimization-and-future03.md](./optimization-and-future03.md) | **优化项与 Future（第三辑 · 唯一账本）**：仍未做、判定不做、上游阻塞、验证缺口与已完成 ID 索引；前两辑已合并到这里 | 完成 |
-| [commit-history.md](./commit-history.md) | 「变更请求」tab 下半的最近提交历史：槽位遮蔽原理、官方面板原样复用、文案座位取自官方命名空间、折叠与持久化、`git-history` 路由的只读约定与安全边界 | 完成 |
-| [remote-git-diagnosis.md](./remote-git-diagnosis.md) | **诊断记录**：Forge 面板误报「当前目录不是 Git 仓库」——`env: {GIT_DIR: undefined}` 被远端桥序列化成字符串 `'undefined'` 的取证、修法与退役判据 | 完成 |
-| [browser-terminal-diagnosis.md](./browser-terminal-diagnosis.md) | **诊断记录**：浏览器终端卡死——`resize()` 等 ssh2 不存在的回调、宿主 `enqueue()` 单链被一条不落地的 promise 钉死的行为链、三个报障归因与修复 | 完成 |
-| [verify/pr6-review.md](./verify/pr6-review.md) | **PR #6 评审记录**：远端 subprocess 路由、终端信号生命周期、两步「添加工作区」、最近提交条——四类修复逐条判定、两个 UI 槽位重写、`git-history` 安全面、P0–P3 问题表与本轮 7 个修复的提交 | 完成 |
-| [verify/remote-shells-prompt.md](./verify/remote-shells-prompt.md) | **一次性任务书**：让「新建终端」的 shell 菜单按远端主机枚举（接管 `terminalController.shells()` + `spawnTerminal` 按已发现集合采用 argv[0]），实现验收后删除本行索引 | 初稿 |
+| [FF/README.md](./FF/README.md) | **待实施工作流**：三条工作流的方案与一次性任务书索引（测试骨架与代码整合、远端 Skills 发现、右侧文件树文件编辑），每条写清现状、方案、验收判据与「不做什么」 | 方案 |
+| [FF/01-test-harness-and-code-consolidation.md](./FF/01-test-harness-and-code-consolidation.md) | **方案 01**：补内存 SFTP + 插件宿主 + 渲染三块骨架，消灭 22 处手搓替身，清掉行尾假红与 3 条长期基线红 | 方案 |
+| [FF/02-remote-skills.md](./FF/02-remote-skills.md) | **方案 02**：远端 `.dsh/skills` / `.agents/skills` 发现——默认关闭、主机白名单、写围栏、有界、`complete:false` 不缓存 | 方案 |
+| [FF/03-remote-file-editing.md](./FF/03-remote-file-editing.md) | **方案 03**：右侧文件预览的文件编辑——读/写/改三条路由、`version` + `revision` 双校验 409 不覆盖、远端与本地同一条路由、复用 mode 门禁与写围栏 | 方案 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 

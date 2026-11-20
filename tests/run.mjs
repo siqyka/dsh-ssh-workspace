@@ -77,6 +77,7 @@ const SUITES = [
   'diagnosis',
   'workspace-ownership',
   'support-bundle',
+  'remote-skills',
   'toast',
   'client-shape',
   'panel-ctx',

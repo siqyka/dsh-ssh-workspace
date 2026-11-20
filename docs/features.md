@@ -359,7 +359,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | 断开两条路径一致 | 端口行「断开」与主机「断开连接」走同一个 `closeAlias()`：映射保留、意图置 `false`、**不记失败原因**——主动断开不是故障，面板不该亮红字 |
 | 远端应用白名单 | 远端应用可能自带 host / 回调校验（Vite `server.allowedHosts`、Next `allowedDevOrigins`、OAuth redirect URI），需一并放行 localhost |
 
-详见 [forward-persistence.md](./forward-persistence.md)。
+详见 [ui.md](./ui.md) 的端口转发与持久会话区。
 
 ## 五之二、断线与重连
 
@@ -379,6 +379,30 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 实现见 [architecture.md](./architecture.md#后台重连libreconnectjs)；接缝接管的落盘位置见
 [architecture.md](./architecture.md#接缝接管的结果表seams)。
 
+## 五之三、远端 Skills 发现
+
+远端仓库里的 `.dsh/skills` 与 `.agents/skills` 可以像本地一样被 `skill` 工具发现和加载。
+这件事与「接管 `ctx.fs`」不是一回事：技能正文里的一句话会直接进模型上下文，所以这一路**默认关闭**，
+按主机白名单开启。
+
+| 功能 | 说明 |
+| --- | --- |
+| 默认关闭 | 配置里不写 `remoteSkills` 就什么都不发生：不拨号、不列目录、注册的 provider 直接答空。宿主把 provider 的 `description` 读进模型目录的**那一刻**就是提示词可见，这与「模型主动去打开一个文件」是不同的风险等级 |
+| 主机白名单 | 只对 `remoteSkills.hosts` 里**点名**的别名生效；`*`、`bo?x` 这类通配写法被拒绝并记一条警告，因为那等于自动信任每一台主机 |
+| 两个根、一层深 | 会话工作区下的 `.dsh/skills` 与 `.agents/skills`：`<root>/<名字>/SKILL.md`（目录 bundle）或 `<root>/<名字>.md`（平铺）。不递归、不跟随目录符号链接 |
+| 只在已挂载的根里 | 会话 `cwd` 不在任何已挂载的远端根内时直接答空且**零 SSH 操作**——没接管这个工作区时，这不是失败 |
+| 路径算术不用 `node:path` | 宿主的 `discoverRoot` 用 `path.join` 拼 `SKILL.md`，在 Windows 上会把 `ssh://box/data/proj` 拼成 `.\ssh:\box\data\proj\...`——这串既不是远端路径也不报错，候选会被静默丢弃。本插件自建发现循环，全程 `normalizeRemotePath` / `formatRemotePath`，并有断言钉住 locator 里不出现反斜杠 |
+| frontmatter 子集 | 只认 `key: 标量`（可带引号）、布尔（`true/false/yes/no/on/off`）、一层嵌套映射、块标量 `|` / `>`。多出来的行**跳过而不是报错**——第三方 `SKILL.md` 里一个奇怪的键不该让整个技能消失。为此不引入 YAML 依赖 |
+| 旧键一律拒绝 | `modelInvocable` / `userInvocable` / `disableModelInvocation` 是上一版拼写，出现即判定该文件不是可用技能，而不是猜一个值 |
+| 非法候选在返回前就被滤掉 | 名字不匹配 `^[a-z0-9]+(?:-[a-z0-9]+)*$`、缺 `description`、`invocation` 取值非法的候选**不返回**。宿主的 `validateCandidate` 是 `throw` 且不在 `try` 里，放进去会让整个会话的技能目录读取失败，本地技能跟着一起消失 |
+| 有界 | 每个根最多列 200 个条目、每台主机最多 32 个技能、单个 `SKILL.md` 最多 64 KiB、整趟 5 秒。上限值非法时**回落到默认而不是放宽** |
+| 超限是跳过不是截断 | 超过 `maxBytes` 的文件整份跳过；截断后的 frontmatter 会解析成垃圾。前 8 KiB 含 NUL 或 UTF-8 解码失败同样跳过 |
+| 不完整不等于空 | 某个根读失败时 `complete: false` 且**保留已读到的候选**——宿主据此不缓存，「这台主机没有技能」不会被写进缓存盖住一次断线 |
+| 读也过围栏 | `remote-fs.js` 的围栏只挂在写路径上（`assertWithinRemoteRoots` 只被 `#assertWritable` 调用），所以 `get()` 每次加载正文前自己调一次 `assertFencedRealpath`：远端被种下的符号链接不会把读取带出工作区。拒绝发生在读字节之前 |
+| 缓存与失效 | 每个「别名 + cwd」缓存 5 分钟；挂载 / 停用、注册被销毁时清空。远端改了技能不必重启，重新挂载或等 TTL 即可 |
+| 诊断只记数量 | `remote-skills` 事件记「从哪个别名发现几个、跳过几个」，**不记正文也不记描述** |
+
+配置见 §八 的 `remoteSkills` 一节，实现见 [architecture.md](./architecture.md#远端技能发现libremote-skillsjs)。
 ## 六、界面集成
 
 | 功能 | 说明 |
@@ -409,7 +433,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | 功能 | 说明 |
 | --- | --- |
 | 主机来源 | `$DSH_HOME/dsh-ssh.json` 优先，缺失时回退读取 `~/.ssh/config` 的具体 `Host` 块；已配好的主机无需重复配置 |
-| `~/.ssh/config` 只读 | 面板不改写 `~/.ssh/config`；与存储同名的主机以存储为准；带 `proxyJump` / `ProxyCommand` 的主机在解析时**明确拒绝**并说明原因 |
+| `~/.ssh/config` 只读 | 面板不改写 `~/.ssh/config`；与存储同名的主机以存储为准；`Include` 跟随、`Match` 求值；带 `ProxyCommand` 的主机在解析时**明确拒绝**并说明原因（`ProxyJump` 已支持） |
 | 认证方式 | `key`（含 `keyPath` 与口令）/ `password` / `agent`（含 `agentPath`） |
 | 凭据加密 | 密码与私钥口令存进 `dsh-ssh.json` 的 `secrets` 段，AES-256-GCM，密钥为 `$DSH_HOME/dsh-ssh.key`（仅本用户可读）；**从不回传浏览器**，编辑时留空表示保留原值 |
 | 明文迁移 | 老版本留在共享存储里的明文凭据在启动时一次性搬进加密段，best-effort——读不懂的存储原样放过而不是覆盖 |
@@ -440,6 +464,13 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | `engine.reconnect.maxDelayMs` | `60000` | 单次等待上限（毫秒） |
 | `engine.reconnect.maxAttempts` | `0` | 最多尝试次数；`0` 表示不限次数 |
 | `engine.reconnect.jitter` | `0.2` | 向下抖动比例（不会超过上限） |
+| `remoteSkills.enabled` | `false` | 是否发现远端技能。**默认关闭**：技能描述一旦被读到就进模型上下文，与「模型主动打开一个文件」是不同风险等级 |
+| `remoteSkills.hosts` | `{}` | 主机白名单：`{ "别名": { roots?, maxEntries?, maxSkills?, maxBytes?, timeoutMs? } }`。键必须是精确别名，`*` / `?` 通配写法被拒绝（那等于自动信任每台主机） |
+| `remoteSkills.hosts.<别名>.roots` | `['.dsh/skills', '.agents/skills']` | 相对会话工作区根的技能目录，一层深：`<root>/<名字>/SKILL.md` 或 `<root>/<名字>.md` |
+| `remoteSkills.hosts.<别名>.maxEntries` | `200` | 单个根最多列多少个条目 |
+| `remoteSkills.hosts.<别名>.maxSkills` | `32` | 单台主机最多返回多少个技能 |
+| `remoteSkills.hosts.<别名>.maxBytes` | `65536` | 单个 `SKILL.md` 的字节上限；超过整份跳过（截断的 frontmatter 会解析成垃圾） |
+| `remoteSkills.hosts.<别名>.timeoutMs` | `5000` | 单趟发现的时间预算，超出后已读到的保留、`complete: false` |
 
 `engine` 下各项均为可选，非法值回落默认，通常无需配置。
 
@@ -460,11 +491,10 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 
 ## 十、明确的边界
 
-不支持的，以及为什么：
-
 | 边界 | 说明 |
 | --- | --- |
-| 跳板机 / `ProxyCommand` | 引擎只直连目标主机（`ssh2` 未接 `proxyJump`）。带 `proxyJump` / `ProxyCommand` 的主机在解析时**明确拒绝并说明原因**，而不是悄悄按直连去试 |
+| `ProxyJump` 跳板机 | **支持**：按 `ssh -J` 的形状逐跳建独立连接（最多 8 跳），目标只看到直接邻居；`a,b` 多跳按顺序、`user@host:port`、方括号 IPv6、`none` 强制直连都接受，每跳各自认证并固定自己的主机密钥。自引用与重复跳在解析时拒绝 |
+| `ProxyCommand` | **拒绝**：它是任意本地命令执行，配置文件是数据、不能变成「读配置 = 执行程序」。带 `ProxyCommand` 的主机在解析时**明确拒绝并说明原因**，而不是悄悄按直连去试 |
 | 文件名编码 | SFTP 只给字节，`readdir` 默认按 UTF-8 解出名字；传 `encoding: 'buffer'` 或具体编码时按该编码转换。非 UTF-8 文件名（如 GBK 主机的历史文件）在所有显示路径上都按 UTF-8 解读，可能出现乱码 |
 | 远端命令的沙箱 | 远端命令以远端登录用户权限运行，**本机沙箱策略不适用**——这是设计取舍，不是缺口 |
 | 下载整个目录 | 两条路都可以：浏览器端走 `/download-tree`（默认一个 zip 归档，`?format=tar` 可回退，见上），工具端用 `recursive: true` 落到本机的一个目录。浏览器端**不**给出解压后的目录——它拿不到目录，只拿得到文件 |
@@ -474,7 +504,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 ## 相关
 
 - [architecture.md](./architecture.md) — 这些功能是怎么实现的
-- [tools.md](./tools.md) — 十个工具的参数与返回
+- [tools.md](./tools.md) — 十一个工具的参数与返回
 - [ui.md](./ui.md) — 界面上的出入口与交互
 - [hosts.md](./hosts.md) — 主机配置与认证
 - [troubleshooting.md](./troubleshooting.md) — 出问题时怎么查
