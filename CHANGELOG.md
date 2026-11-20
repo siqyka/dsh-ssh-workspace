@@ -2,7 +2,7 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
-## [未发布]
+## [0.3.6] - 2026-11-19
 
 ### 新增
 
@@ -18,18 +18,50 @@
 - **列目录从「逐条 stat」改成一轮往返**：`sftp.readdir` 每个条目都带 attrs，服务器要为每一条做一次 `lstat`——共享 `/tmp` 这种几万条的目录在 300 ms 链路上 30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字、而且只要目录**，于是 `GET /ls` 新增 `dirs=1` 快路径：一次 `engine.exec`（`ls -1ap` 过一层 `awk`，只认带尾斜杠的目录，文件与符号链接都被排掉），**上限在远端就生效**（25 000 条的目录最多只传 `limit` 个名字），同一轮里 `pwd -P` 解析登录目录、`test -w` 报可写性。stdout 只走名字、stderr 只走一行标记（目录名可以和状态行一模一样，所以不能共用流）；任何形状不符——非 POSIX 登录 shell、缺 `awk`、目录不可读、退出码非 0、计数不自洽、脚本自认 `fallback`——一律**回退到 SFTP**，这是优化而不是第二套实现。这条 exec 带 `audit: false`：它是一次界面读取，和 `readdir` 同性质，记进审计环只会让面板每敲一个键多出一条多行脚本。
 ### 修复
 
-- **「新建远程工作区」的滚轮根本到不了对话框**：这个弹窗由 `WorkspacePickFlow` **内联渲染**在侧栏里，是 `SidebarRoot` 的 `.scrollArea` 的 DOM 后代；宿主在那上面绑了 `passive: false` 的 wheel 监听，把每一次滚轮都 `preventDefault()` 之后手动写给它自己的视口。`position: fixed` 只改变绘制、不改变冒泡，所以对话框体一个 `scroll` 事件都收不到——前两次改的都是对话框内部的滚动容器尺寸，改得再对也没用（浏览目录弹窗从我们自己的插槽打开，不在那棵子树里，因此一直正常）。新增 `modalLayer()`，五个弹窗统一 `createPortal` 到 `document.body`；顺带躲开 `.composerSeat` 的 `will-change: transform` 把 `position: fixed` 的包含块从视口改写掉。宿主对 composer 内的浮层有同样的约定（`ConversationRoot.module.css`）。
-- **表单固定在顶部，只有目录列表滚动**：整个 body 一起滚同样不行——用户挑目录时看不见自己填的工作区名（截图里正是这样）。现在 `.sshwsp-dialog-body` 是不滚动的 flex 列，`.sshwsp-form` 与路径栏 `flex: 0 0 auto`，剩余高度全归列表；`.sshwsp-dialog-fill` 给出 `height: min(88vh, 760px)` 并把 `max-height` 抬到 `88vh`（只有上限时内容撑不到上限、`flex: 1` 分不出空间；低于基类 `80vh` 又会被悄悄裁掉）。窗口矮于 620px / 500px 时压的是外壳——间距收紧、`calc(100vh - 12px)`、隐藏提示行——而不是继续挤列表：380px 高时标题栏加表单加提示加底栏会把列表压到 23px。实测 1300×620 / 1000×450 / 900×380 / 800×340 四档，表单均不滚动、列表均能滚到最后一行。
-- **「新建远程工作区」的目录列表在小窗口里滑不动**：列表自带 `max-height: min(40vh, 320px)` 与独立滚动，被 `dialog-body` 的 `overflow-y: auto` 裁掉下半截——1300×620 下 40 行目录只有 142px 可见，900×380 下列表整条落在可视区之外（滚轮落在底部按钮上），滚到底也永远看不到最后一行。现在列表不再自带高度上限，整个对话框只有一个滚动容器；浏览目录弹窗的路径栏同时改成 `position: sticky`（`.sshwsp-browser` 因此必须是 `overflow: clip` 而不是 `hidden`，否则 sticky 黏在一个从不滚动的框上等于没生效）。5 档视口 × 40 / 2000 行实测：最后一行全部可达。
-- **两个目录对话框改成双击进入下一级**：单击进入在多选、误触和「只想看一眼」时太容易触发；现在单击只选中，双击才进入。键盘激活（`Enter` / `Space` 产生的 `detail === 0` 点击）仍然进入，没有鼠标也能用。两个弹窗各自加了一行「双击目录进入」的提示，`RemoteWorkspaceDialog` 的目录行补上 `sshwsp-entry-dir`，指针光标与浏览弹窗一致。
-- **两个目录对话框只列目录**：目录行是按钮（双击进入，键盘激活同样进入）。曾经试过让文件行作为「这个目录里有什么」的上下文一起列出（`all=1`，文件行是不可点的 `div`），但那既不能进入也没有下载，只是把用户点不动的东西混进同一个上限里——现在请求一律 `dirs=1`，服务端在**施加上限之前**就滤掉文件，所以 `total` 与 `truncated` 数的是选择器真正显示的行。`all=1` 与 `sshwsp-entry-file` / `FileIcon` 一并删除，非 `1` 的 `dirs` 仍然 400。
-- **只改 CSS 的改动不再需要整页刷新**：`injectStyles()` 原本在发现已有 `<style>` 标签时直接 `return`，而 client-HMR 重建模块会重新执行它——于是 JS 换了新代码、页面留着上一版样式表，CSS-only 的修复「看起来已生效」其实一条规则都没进去。现在复用既有标签改写 `textContent`，注入仍是单份，页面里的表恒等于 bundle 里的表。
+
+本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
+
+## [0.3.6] - 2026-11-19
+
+### 新增
+
+- **测试骨架与基线治理（`tests/support/`，零依赖）**：裸检出上「远端读写」长期没有可跑的覆盖——`writeText` / `editText` / `listDir` / 原子发布 / 版本冲突这些**成功路径**只在 `live` 套件里跑，而它需要一台真主机。本轮补的是替身与收敛，不是「优化测试」：
+  - **内存 SFTP（`fake-sftp.mjs`）**：按**服务器**的行为作答而不是当 mock——`rename` 撞已有目标必须失败（SFTP 规范如此，否则 `publishRename` 的回退分支永远测不到）、默认通告 `posix-rename`（关掉才走非原子回退）、父目录缺失给 ENOENT、`stat` 的 mtime 每次改动推进（`freezeMtime` 复现「同大小同秒改写」）。配套的 `remote-fs-smoke`（67 项）把原子发布、写一半断线后目标不动、`FS_STALE_VERSION` / `FS_NOT_OBSERVED`、三种围栏拒绝、软链逃逸、`editText` 的换行与二进制判定全部搬到裸检出上跑。
+  - **共享宿主替身（`plugin-host.mjs`）**：19 处手搓 `ctx` 字面量收敛到一处。替身**可以比 Cordis 小，绝不能比它松**——重复 `provide`、已销毁 fiber 的读写、同名工具注册在这里同样被拒，否则套件测的是替身。
+  - **引擎替身收敛**：`fakeEngine` 定义处 8 → 3，且三处都只是指向 `tests/support/` 里一份实现的别名；`forward-smoke` 与 `forward-persist-smoke` 两份字节级重复的引擎合成 `fake-forward-engine.mjs`，路由层的上传引擎抽成 `fake-upload-sftp.mjs`（它能表示「写入忽略 offset」「`r+` 当只读」「`w` / `wx` 不区分」这三个真出过的 bug）。
+  - **组件渲染骨架（`render.mjs`）**：从 bundle 里按大括号切出真组件、用 React 形状的钩子桩渲染一次，`render-smoke` 用**真组件**（`SelfCheckList`）驱动并带负向对照（改坏过滤条件后树必须变）。effect 默认不执行——执行等于替 React 断言它何时跑。
+  - **三条长期红清除**：①`transfer-retry` / `transport` 在裸检出上从「失败」变成显式 SKIP 或真跑（缺的是 `ssh2` 本身，不是 `DSH_CORE_ROOT`）；②`workspace-ownership-smoke` 的硬编码 LF marker 改为读入后 `replace(/\r\n/g,'\n')`，CRLF 检出不再红；③新增 `.gitattributes`（`* text=auto eol=lf`）让行尾不再随检出漂移。
+  - **partial 变成待办清单**：`run.mjs` 收尾逐个打印 partial 套件的 SKIP 行，`docs/development.md` 的套件表新增「跳过段」一列，写清跳的是哪一段、缺什么条件。
+- **远端技能发现（`lib/remote-skills.js`，默认关闭）**：远端工作区里的 `.dsh/skills` 与 `.agents/skills` 现在能被 `skill` 工具发现和加载，rank 250（夹在项目级与用户级之间）。三条不能复用宿主代码的理由都落在实现里：宿主的 `discoverRoot` 用 `node:path.join` 拼 `SKILL.md`，在 Windows 上把 `ssh://box/data/proj` 拼成 `.\ssh:\box\...`——既不是远端路径也不报错，目录型候选会被静默丢弃，所以发现循环自建、路径全程 `normalizeRemotePath` / `formatRemotePath`（测试钉住 locator 里不出现反斜杠）；宿主的 frontmatter 解析是私有函数，本插件只依赖 `ssh2`，故自写子集解析（标量 / 布尔 / 一层嵌套 / 块标量），认不出的行跳过、旧拼写 `modelInvocable` 等直接判定不是技能；宿主的 `validateCandidate` 在 `provider.list()` 的 `try` 之外且是 `throw`，一个非法候选会让整个会话的技能目录读取失败、本地技能一起消失，所以非法名字 / 空描述 / 非法 `invocation` 在返回前就滤掉。**读也过围栏**：`remote-fs.js` 的 `assertWithinRemoteRoots` 只被 `#assertWritable` 调用，读取不判围栏，因此 `get()` 每次加载正文前自己调一次 `assertFencedRealpath`，远端种下的符号链接不会把读取带出工作区。**默认关闭 + 主机白名单**：技能描述一被读到就进模型上下文，与「模型主动打开一个文件」是不同风险等级；`*` / `bo?x` 这类通配别名被拒绝并记警告。有界（每根 200 条 / 每主机 32 个 / 单文件 64 KiB / 5 秒）且**不完整不等于空**——某个根读失败时 `complete: false` 并保留已读到的候选，宿主据此不缓存，一次断线不会被写成「这台主机没有技能」。状态工具与面板 `/status` 增加 `remoteSkills` 块，诊断只记数量与别名。
+- **目录列表跟随输入（两个 picker）**：路径栏以前只有回车才生效——键入 `/home/me/pro` 时列表还停在登录目录，找目录只能盲打整条路径再按回车试。现在两个对话框共用 `usePathDraftPreview`：同一目录内的前缀**只本地收窄**（大小写不敏感、保留主机真实拼写、零往返零定时器）；带尾斜杠的路径（`/home/me/` 明确表示这是目录）在输入停顿 `PATH_PREVIEW_DEBOUNCE_MS`（200 ms）之后**只发一次**列目录请求；整条拼全的真实目录名只收窄成一行、**不自动进入**——进目录永远是补尾斜杠、回车或双击。**尾斜杠就是「在目录里」**：导航后草稿写成 `/raid/`，删掉斜杠即回父目录并按 `raid` 收窄，两个状态不再共用同一个字符串。预览请求不写输入框、不先清空列表（失败时旧行还在），并且**只在主机答完后**才把 `path` 指向该目录，所以「挂载此目录」不会指向还在拼写的路径。输入框**删掉了 `onBlur` 复位**：双击的第一下会先 blur，复位会让行在两次点击之间移位。
+- **列目录从「逐条 stat」改成一轮往返**：`sftp.readdir` 每个条目都带 attrs，服务器要为每一条做一次 `lstat`——共享 `/tmp` 这种几万条的目录在 300 ms 链路上 30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字、而且只要目录**，于是 `GET /ls` 新增 `dirs=1` 快路径：一次 `engine.exec`（`ls -1ap` 过一层 `awk`，只认带尾斜杠的目录，文件与符号链接都被排掉），**上限在远端就生效**（25 000 条的目录最多只传 `limit` 个名字），同一轮里 `pwd -P` 解析登录目录、`test -w` 报可写性。stdout 只走名字、stderr 只走一行标记（目录名可以和状态行一模一样，所以不能共用流）；任何形状不符——非 POSIX 登录 shell、缺 `awk`、目录不可读、退出码非 0、计数不自洽、脚本自认 `fallback`——一律**回退到 SFTP**，这是优化而不是第二套实现。这条 exec 带 `audit: false`：它是一次界面读取，和 `readdir` 同性质，记进审计环只会让面板每敲一个键多出一条多行脚本。
+### 修复
+
+- **「新建终端」菜单列的是本机 shell、远端跑的是 `sh -l`**：宿主的 `terminalController.shells()` 走 `subprocess.resolveExecutable` / `terminalEnvironment`，而插件只包了 `spawn` 与 `spawnTerminal`，于是菜单项永远来自本机。新增 `lib/remote-shells.js` 接管 `shells()`：`ssh://` 会话用一次往返跑 `command -v` 探出这台主机真有哪几支（`$SHELL` 那支排第一、按家族去重），本机会话原样交给原方法；探测不到就抛错、菜单显示 failed 并可重试，绝不编一份本机列表；答案按「主机 + 连接代次」缓存，只在重连时重探。
+- **启动侧只采用探测到过的 shell**：`spawnTerminal` 在 `argv[0]` 命中该主机已发现集合时按发现到的绝对路径 + `-l` 启动，其余仍按家族 `command -v` 兜底、最后回落 `sh -l`；宿主 argv 里的 `-i` / `-NoProfile` 一律丢弃。菜单没开过时行为与之前完全一致。
+- **沙箱 launcher 挡在 shell 家族判定前面**（合并 PR #10）：`workspace-write` 下 `dsh-terminal-bash` 会把 argv 包成 `[landlock-run …grant… -- /bin/bash …]`，旧代码读 `argv[0]` 得到 `landlock-run`，回落 `sh`。现在先剥 launcher 再判家族，`landlock-run` / `bwrap` / Windows ACL runner 三种形状都认，`node script.js -- bash` 这种调用方自己的 argv 原样保留。
+- **「新建远程工作区」的滚轮到不了对话框**：弹窗由 `WorkspacePickFlow` 内联渲染在侧栏里，宿主在祖先 `.scrollArea` 上 `preventDefault()` 了每一次滚轮。`position: fixed` 只改绘制不改冒泡，所以两次调内部滚动尺寸都没用。新增 `modalLayer()`，五个弹窗统一 portal 到 `document.body`；顺带躲开 `.composerSeat` 的 `will-change: transform` 改写固定定位包含块的问题。
+- **对话框表单固定在顶部，只有目录列表滚动**：整个 body 一起滚会让用户挑目录时看不见已填的工作区名。`.sshwsp-dialog-body` 改成不滚动的 flex 列，表单与路径栏 `flex: 0 0 auto`，剩余高度全归列表；`.sshwsp-dialog-fill` 同时给 `height` 与抬高的 `max-height`（只有上限时 flex 分不出空间）；窗口矮于 620 / 500px 压外壳而不是继续挤列表。四档视口实测表单不滚、列表可达最后一行。
+- **目录列表在小窗口里滑不动、两个对话框改成双击进入、且只列目录**：列表不再自带 `max-height`，整个对话框只有一个滚动容器（`.sshwsp-browser` 因此改成 `overflow: clip` 让路径栏 sticky 生效）；单击只选中、双击才进下一级，键盘激活（`detail === 0`）仍进入；`GET /ls` 新增 `dirs=1`（只接受 `1`，其余 400），**过滤发生在截断之前**，否则列表会声称「2000 / 4213」。
+- **只改 CSS 的改动不再需要整页刷新**：`injectStyles()` 原本发现已有 `<style>` 标签就 `return`，而 client-HMR 会重新执行它——JS 换了、页面留着上一版样式表。现在复用既有标签改写 `textContent`，注入仍是单份。
+
+### 测试
+
+- 新增 `remote-shells-smoke`（49 项）：一次往返与脚本形状、`$SHELL` 排第一与按家族去重、args 与候选过滤、本机会话零往返、按代次缓存与并发共用 in-flight、三种失败都 reject 且不缓存、停用工作区零往返、卸载还原与形状错配抛错、启动侧查表的四种情形。
+- `terminal-smoke` 40 → 43 项：补齐 `landlock-run`（真实 `--ro` / `--rw` grant 拼写）、`bwrap`、Windows ACL runner 三种包装形状，并钉住「调用方自己的 argv 不得被剥」。
+
+### 文档
+
+- `features.md`：seam 数 6 → 7、终端两行重写为「菜单与启动一致」。
+- `architecture.md`：新增「接管 `ctx.terminalController.shells()`」一节（own property 而非新端点、为什么撞不上 `ambiguous-endpoint`、诚实三态、缓存只由代次驱动）。
+- `ui.md` 新增「新建终端的 shell 菜单」；`troubleshooting.md` 已知限制补 shell 清单的刷新条件与全局偏好；`development.md` / `optimization-and-future03.md` 同步套件数与断言数。
+
 
 ## [0.3.5] - 2026-11-19
 
 ### 新增
 
-- **接缝接管的结果可查（`seams[]`）**：六个 `patch-*.js` 统一走 `installSeam()`，`installed` / `absent` / `failed` 三态由状态工具、面板 `/status` 与诊断报告同时给出；`absent` 不算问题，`failed` 把状态胶囊变红并记一条 `seam` 事件。与 `upstreamWorkarounds` 互补：一个问宿主是否已不需要这条补丁，一个问这次接管到底装上没有。
+- **接缝接管的结果可查（`seams[]`）**：六个 `patch-*.js` 与 shell 发现那处接管统一走 `installSeam()`，`installed` / `absent` / `failed` 三态由状态工具、面板 `/status` 与诊断报告同时给出；`absent` 不算问题，`failed` 把状态胶囊变红并记一条 `seam` 事件。与 `upstreamWorkarounds` 互补：一个问宿主是否已不需要这条补丁，一个问这次接管到底装上没有。
 - **远端工作区里命令能起来**：宿主每条命令通路都先跑 `ctx.sandbox.confine()`，它按主机路径解析 `ssh://…` → `ENOENT` → `SANDBOX_PREPARATION_FAILED`，接缝一次都没被问到。新增 `lib/patch-sandbox.js`，只把 policy 里远端 `workspaceRoot` 换成本机固定名的替身目录（随机名会每条命令泄一个 ACE），`mode` / `sessionId` 原样带过；**不改 `sandboxPolicy.resolve`**，`mode-gate.js` 的会话级收窄正靠那个拼写。真正执行远端命令的仍是 `patch-shell` / `patch-subprocess` / `patch-terminal`。
 - **`run_code`（`ops-ptc` 预设）不再报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`**：PTC worker 是本机进程，cwd 默认成 `ssh://` 根，先被 subprocess 白名单拒，放行也会 `process.chdir('ssh://…')` 失败。新增 `lib/patch-ptc.js` 接管 `ctx.ptcRuntime.resolve`，只换返回 spec 里远端的 `cwd`，本地 spec 按引用原样返回；程序调用的工具仍在远端执行。
 - **官方「变更请求」面板不再整块空白**：`workspace-write` / `read-only` 下 Windows 把 argv 包成 `[<runner.js> …flags, '--', git, …]`，前置是打包版桌面 exe 而不是 `node`。`unwrapSandboxArgv` 多认「与本进程 `process.execPath` 同名同身份的可执行文件」与「front 是 node 且前缀带 runner namespace 标记」两种真实形状，剥离边界仍在 `--` 之前，用户自己的 `git -- status` 原样保留。

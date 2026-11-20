@@ -148,10 +148,72 @@ console.log('\n=== terminal smoke ===\n')
   // the local argv, but it can usually run the same shell family — and when it
   // cannot, `sh -l` must still be there.
   const cases = [
-    { argv: ['/bin/bash'], expect: /bash -l/u, absent: /pwsh/u },
-    { argv: ['/usr/local/bin/zsh', '-l'], expect: /zsh -l/u },
-    { argv: ['C:\\Program Files\\PowerShell\\7\\pwsh.exe'], expect: /exec sh -l/u },
-    { argv: ['/bin/sh'], expect: /exec sh -l/u },
+    { label: 'bare bash', argv: ['/bin/bash'], expect: /bash -l/u, absent: /pwsh/u },
+    { label: 'bare zsh with flags', argv: ['/usr/local/bin/zsh', '-l'], expect: /zsh -l/u },
+    { label: 'bare pwsh', argv: ['C:\\Program Files\\PowerShell\\7\\pwsh.exe'], expect: /exec sh -l/u },
+    { label: 'bare sh', argv: ['/bin/sh'], expect: /exec sh -l/u },
+    // `dsh-terminal-bash` sandbox-confines the argv, so a `workspace-write`
+    // session hands spawnTerminal `[landlock-run, ...grants, '--', shell, ...]`.
+    // Reading argv[0] without unwrapping made every such session fall back to
+    // `sh` while the picker said bash.
+    //
+    // The grant spelling is the runner's own, not bwrap's: `landlockProfileArgs`
+    // (`dsh-sandbox-local/lib/index.js:45-58`) goes through `grantArgs`
+    // (`node-addon-system/lib/index.js:68-73`), which emits `--ro <path>` and
+    // `--rw <path>` pairs, read-only first. A case written against bwrap's
+    // `--ro-bind a b` would still pass — `unwrapSandboxArgv` only looks for the
+    // separator — while proving nothing about the shape that really arrives.
+    {
+      argv: [
+        '/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/landlock-run',
+        '--ro', '/',
+        '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/srv/app',
+        '--', '/bin/bash', '-i',
+      ],
+      label: 'landlock-run wrapper (real --ro/--rw grants)',
+      expect: /bash -l/u,
+    },
+    // bwrap as the Linux fallback chain's first choice: `bwrapProfileArgs`
+    // (`dsh-sandbox-local/lib/index.js:22-43`) really does use `--ro-bind ROOT
+    // ROOT`, so this pair of cases pins BOTH dialects the chain can produce.
+    {
+      label: 'bwrap wrapper',
+      argv: ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent', '--tmpfs', '/tmp', '--bind', '/srv/app', '/srv/app', '--', '/usr/bin/zsh', '-i'], expect: /zsh -l/u },
+    // The Windows runner is the same wrapper in a different spelling:
+    // `windowsAclRunnerInvocation()` puts the interpreter first and the runner
+    // entry second (`dsh-sandbox-local/lib/index.js:539-553`), so `argv[0]` is
+    // `node` / the packaged app binary, not a launcher name. This branch had no
+    // assertion at all before.
+    {
+      argv: [
+        process.execPath,
+        'C:\\Program Files\\DeepSeek Harness\\resources\\app.asar\\node_modules\\@deepseek-ai\\dsh-sandbox-windows-acl\\lib\\runner.js',
+        '--workspace', 'C:\\ws', '--temp', 'C:\\Users\\u\\AppData\\Local\\Temp', '--mode', 'workspace-write',
+        '--', 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', '-NoLogo',
+      ],
+      // pwsh has no POSIX `-l` spelling on the host, so the whitelist refuses it
+      // and the terminal keeps today's `sh -l` — the same answer as the bare
+      // pwsh case above, but now reached THROUGH the unwrapper instead of by
+      // failing to recognise the wrapper at all.
+      label: 'windows-ACL wrapper around pwsh',
+      expect: /exec sh -l/u,
+    },
+    // And the Windows wrapper around a POSIX-family shell: unwrapping is what
+    // lets this one reach the family at all.
+    {
+      argv: [
+        process.execPath,
+        'C:\\app\\node_modules\\@deepseek-ai\\dsh-sandbox-windows-acl\\lib\\runner.js',
+        '--workspace', 'C:\\ws', '--mode', 'workspace-write',
+        '--', 'C:\\Program Files\\Git\\bin\\bash.exe', '-i',
+      ],
+      label: 'windows-ACL wrapper around bash',
+      expect: /bash -l/u,
+    },
+    // A plain interpreter prefix that is NOT a sandbox wrapper must survive:
+    // `node script.js -- bash` is the caller's own argv, and eating it would
+    // turn a local command into a remote `bash -l`.
+    { label: 'plain interpreter prefix is not a wrapper', argv: [process.execPath, 'script.js', '--', '/bin/bash'], expect: /exec sh -l/u },
   ]
   for (const item of cases) {
     const { engine, opens } = fakePtyEngine()
@@ -159,7 +221,7 @@ console.log('\n=== terminal smoke ===\n')
     await router.spawnTerminal({ cwd: 'ssh://kappa/srv/app', rows: 24, cols: 80, argv: item.argv })
     const command = opens[0].command
     const ok = item.expect.test(command) && (item.absent === undefined || !item.absent.test(command))
-    check(`shell dialect ${JSON.stringify(item.argv[0])} maps to the remote family`,
+    check(`shell dialect: ${item.label}`,
       ok, command)
   }
   const { engine, opens } = fakePtyEngine()

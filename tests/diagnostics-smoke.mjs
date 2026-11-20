@@ -293,7 +293,7 @@ console.log('\n[a seam that did not install is reported, an absent one is not]')
   // The install sites must go through the recorder, or the table stays empty on
   // every real startup — the exact failure this table exists to catch.
   check('every patch install site records its verdict',
-    ['PATCH-fs', 'PATCH-sandbox', 'PATCH-shell', 'PATCH-subprocess', 'PATCH-ptc', 'PATCH-terminal']
+    ['PATCH-fs', 'PATCH-sandbox', 'PATCH-shell', 'PATCH-subprocess', 'PATCH-ptc', 'PATCH-terminal', 'PATCH-shell-discovery']
       .every(id => new RegExp(`'${id}',`, 'u').test(indexSource)),
     'an install site bypasses installSeam()')
 }

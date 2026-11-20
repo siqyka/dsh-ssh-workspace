@@ -506,17 +506,68 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 
 两个刻意的取舍：
 
-- **`argv` 不复用**。`dsh-terminal-bash` 按**本机方言**构造命令行（Windows 上是
-  PowerShell），远端 POSIX 主机无法执行。接管层改按**方言**启动远端自己的同名 shell
-  （`bash` → `bash -l`、`zsh` → `zsh -l`…，白名单；远端没有则回落到 `sh -l`）——
-  这正是上一版不做接管的理由，但缺口比方言问题更严重：不接管时持久工具在远端
-  工作区上根本不可用。启动远端 `sh` 让宿主的工具链可用，代价是远端始终是 POSIX
-  方言（工具描述里已写明）。
+- **`argv` 不复用，但也不是无条件丢弃**。`dsh-terminal-bash` 按**本机方言**构造
+  命令行（Windows 上是 PowerShell），远端 POSIX 主机无法执行。接管层先查**该主机已
+  发现过的 shell 集合**（下一节）：命中就按发现到的绝对路径 + 登录参数启动；没命中
+  才按**方言**启动远端同名 shell（`bash` → `bash -l`、`zsh` → `zsh -l`…，白名单），
+  远端没有便回落到 `sh -l`。宿主 argv 里的 `-i` / `-NoProfile` 永远不转发，那是它
+  自己方言的产物。启动远端 `sh` 让宿主的工具链可用，代价是远端始终是 POSIX 方言
+  （工具描述里已写明）。
 - **`inspectForeground` 返回 `undefined`**。本机句柄从进程表读前台进程组；一条
   SSH 通道拿不到等价信息，而给一个错误答案更糟——上层会把"前台仍在运行"当真，
   等满整个超时。返回 `undefined` 选择其文档化的「输出静默」兜底判定，正确且只是
   略不精确。`signalForeground` 则按 PTY 语义写 `\x03`（SIGINT）/ `\x1c`（SIGQUIT），
   无法用 PTY 表达的信号直接拒绝而不是静默忽略。
+
+### 3. 接管 `ctx.terminalController.shells()`（shell 菜单）
+
+菜单项由宿主的 `terminalController.shells()` 给出，而它内部是
+`discoverShells(this.execution(agent).subprocess, …)` → `resolveShell` →
+`subprocess.resolveExecutable()` / `terminalEnvironment()`。插件包装了这个
+`subprocess` 服务，但**只包了 `spawn` 与 `spawnTerminal`**：这两个是"开一个进程"
+的方法，而 `resolveExecutable` 是"这台机器上这个路径能不能执行"。后者没有 seam，
+于是菜单永远回答本机装了哪些 shell——远端独有的一支选不到，本机独有的选了也跑不
+起来（标签写 zsh、远端跑 sh）。
+
+`lib/remote-shells.js` 因此接管 `shells()` 本身：`ssh://` 会话问主机，本机会话原样
+交给原方法。四点在实现里必须这么写：
+
+- **为什么是 own property，而不是新端点**。Cordis 的服务是 traceable proxy，赋值会
+  落到 proxy 的 shadow 上（读的时候看不到），而读取先查 target 自有属性。所以用
+  `Object.defineProperty` 覆盖，并用两个 `Symbol.for` 记住"装过哪些"与"原来是谁"，
+  卸载时按 `uninstallRemoteTerminal` 的写法还原（有原自有属性就 redefine，否则
+  delete 让原型方法露出来）。
+- **为什么不会撞网关的 `ambiguous-endpoint`**。网关解析端点读的是
+  `originalOf(receiver)` 指向的原始对象、**原型**上的 `REMOTE_METHOD_DESCRIPTOR`，
+  调用时是 `Reflect.get(callReceiver, implementation)`。我们加的是 own property，
+  既没新建端点也没改命名空间/方法名——这是替换既有端点的实现，不是声明第二个。
+- **探测是 HTTP 之外的第二次握手，必须诚实**。一次往返跑
+  `command -v` + 一个完成标记（与 `probeCapabilities` 同一套规矩）：没有完成标记、
+  或退出非零、或传输抛错，一律 **reject 且不缓存**，菜单显示 failed 并可重试。
+  这里绝不"降级成一份本机列表"——那正是要修的谎报。并发两个菜单共用同一个
+  in-flight promise。
+- **缓存没有 TTL，失效只由连接代次驱动**。键是
+  `alias` + NUL + `engine.generationOf(alias).generation`，代次只在成功连接时加一
+  （`lib/engine.js:873`），所以**重连就是唯一的自动刷新点**：新一代次重探一次，随后
+  `#retireOtherGenerations()` 把旧代次的条目清掉（否则每次重连都留一条，长时间跑下来
+  会一直涨）。没有定时器、没有 `refresh` 开关，`ssh_workspace_status` 也不暴露它——
+  半台主机的 shell 清单不值得为它扩大状态面。代价说清楚：**主机上装了新 shell 而连接
+  从没断过时，菜单里看不到它，要重连或重启 DSH**。这是有意接受的（装/卸 shell 通常
+  伴随重新登录），而反向的诱惑更容易出错：给 TTL 会把"一次探测"变成"每小时一次探测"，
+  只换来"没断线时也能自愈"这一种情形。
+  另一条边界同样有意：代次上升之前（连接已断、还没重连）**仍会答上一代次的答案**。
+  `generationOf` 里虽有 `connected` 字段（`lib/engine.js:428-430`），但它随连接状态反复
+  抖动，放进键里会把一次网络闪断放大成一次额外往返；而缓存里的每一行都是那台主机**真的
+  报告过**的，此时选中它只会在打开终端时撞上连接错误——错误落在"主机连不上"这一类，
+  不是谎报。
+- **启动侧只信任探测到的路径**。`spawnTerminal` 的查表是同步、只读已结算答案的：
+  开一个终端不该顺带发一次往返。没探测过就是"没命中"，行为与今天完全一致。
+
+已知残留：宿主在请求没有 `shellPath` 时自己走 `resolveShell`，拿到的是**本机**路径。
+查表按家族匹配，所以本机默认 shell 是 bash 时那台主机上的 bash 照样会被启动；主机**没有**
+这个家族时才回落 `sh -l`。也就是说"不选 shell 直接开"会得到同家族的 shell，而不是远端
+自己的默认登录 shell——后者要替换 `resolveShell` 的语义（宿主内部函数，不是端点），
+故留作独立议题，不在这里顺手改。
 
 ## 本机 ↔ 远端传输
 
