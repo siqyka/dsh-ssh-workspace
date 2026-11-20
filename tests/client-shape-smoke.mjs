@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { makeToastDom } from './support/toast-dom.mjs'
 import { routeSource } from './support/route-source.mjs'
 import { clientSource } from './support/client-source.mjs'
+import { compareClientMap } from '../scripts/client-map.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -1288,68 +1289,24 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 // ---------------------------------------------------------------------------
 // The map at the top of the bundle must describe the bundle
 // ---------------------------------------------------------------------------
-// The map is the only navigation aid in a file this size, and it had drifted to
-// ten entries while the file held eighteen sections: two entries named banners
-// that do not exist ("Forwarding panel", "Directory flow / persistent
-// sessions"), the rest were renamed, and six real sections were missing. A
-// stale map is worse than no map — it sends a reader to a section that is not
-// there and hides the one they wanted.
-//
-// Nothing caught it because a comment cannot fail. This does: parse the real
-// banners, parse the map, and require the two lists to agree in content and in
-// order. Order matters because the map's whole claim is "a jump-to-next-banner
-// walk visits them in order".
+// The rule itself lives in `scripts/client-map.mjs` so `npm run check` can
+// enforce it on every run, and so it still means something once the bundle has
+// more than one part. This suite reports it as assertions.
 {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
-  const borderRe = /^ {4}\/\/ =+\s*$/u
-  const lines = client.split('\n')
-  const banners = []
-  for (let i = 1; i < lines.length - 1; i += 1) {
-    if (!borderRe.test(lines[i - 1]) || !borderRe.test(lines[i + 1])) continue
-    if (borderRe.test(lines[i])) continue
-    const title = lines[i].trim().replace(/^\/\/ ?/u, '')
-    if (title === '') continue
-    banners.push(title)
+  const verdict = compareClientMap()
+  const described = verdict.parts.filter(part => part.entries.length > 0)
+  check('the map lists at least one section', described.length > 0 && described.every(part => part.sections.length > 0),
+    JSON.stringify(verdict.parts.map(part => ({ name: part.name, sections: part.sections.length }))))
+  for (const part of verdict.parts) {
+    if (part.entries.length === 0) continue
+    check(`${part.name}: the map numbers its entries consecutively from 1`, part.numbersOk)
+    check(`${part.name}: every section banner appears in the map`, part.missingFromMap.length === 0,
+      `missing ${JSON.stringify(part.missingFromMap)}`)
+    check(`${part.name}: the map names no section that does not exist`, part.phantomInMap.length === 0,
+      `phantom ${JSON.stringify(part.phantomInMap)}`)
+    check(`${part.name}: the map lists the sections in file order`, part.orderOk,
+      JSON.stringify({ map: part.entries, actual: part.sections }))
   }
-  // The map's own banner is not a section of the file it describes.
-  const sections = banners.slice(1)
-
-  // Map entries look like `//   7. Directory browser dialog` — a number, a dot,
-  // then the title. The trailing parenthetical is a gloss, not part of the
-  // title, so it is stripped before the comparison.
-  const mapEntries = [...client.matchAll(/^ {4}\/\/ +(\d+)\. (.+)$/gmu)]
-    .map(match => ({ number: Number(match[1]), title: match[2].trim() }))
-
-  check('the map lists at least one section', mapEntries.length > 0, String(mapEntries.length))
-  check('the map numbers its entries consecutively from 1',
-    mapEntries.every((entry, index) => entry.number === index + 1),
-    JSON.stringify(mapEntries.map(e => e.number)))
-
-  /** Strip the map's parenthetical gloss and normalise whitespace. */
-  const plain = (title) => title.replace(/\s*\([^)]*\)\s*$/u, '').trim()
-  /** Compare two titles, allowing an extra parenthetical on either side. */
-  const sameSection = (a, b) => {
-    const left = plain(a).toLowerCase()
-    const right = plain(b).toLowerCase()
-    if (left === right) return true
-    // A map entry may gloss a banner that itself carries a parenthetical; in
-    // that case one is a prefix of the other. Prefixes only — "Host card" and
-    // "Host editor dialog" must never be treated as the same section.
-    return left.startsWith(right) || right.startsWith(left)
-  }
-
-  const missingFromMap = sections.filter(title => !mapEntries.some(entry => sameSection(entry.title, title)))
-  check('every section banner appears in the map', missingFromMap.length === 0,
-    `missing ${JSON.stringify(missingFromMap)}`)
-
-  const phantomInMap = mapEntries.filter(entry => !sections.some(title => sameSection(entry.title, title)))
-  check('the map names no section that does not exist', phantomInMap.length === 0,
-    `phantom ${JSON.stringify(phantomInMap.map(e => e.title))}`)
-
-  check('the map lists the sections in file order',
-    mapEntries.length === sections.length &&
-      mapEntries.every((entry, index) => sameSection(entry.title, sections[index])),
-    JSON.stringify({ map: mapEntries.map(e => e.title), actual: sections }))
 }
 
 if (failures.length > 0) {
