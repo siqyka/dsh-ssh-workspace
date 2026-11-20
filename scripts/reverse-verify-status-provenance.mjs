@@ -56,7 +56,7 @@ const MUTATIONS = [
   },
   {
     name: 'the status route stops shipping provenance',
-    file: 'lib/routes.js',
+    file: 'lib/routes/workspaces.js',
     find: '          provenance: statusProvenance({',
     replace: '          provenanceDisabled: statusProvenance({',
     suites: ['tests/routes-smoke.mjs'],

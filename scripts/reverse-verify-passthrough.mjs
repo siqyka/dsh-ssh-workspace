@@ -300,7 +300,7 @@ const MUTATIONS = [
   },
   {
     name: 'the status route stops publishing the degraded-value warning',
-    file: 'lib/routes.js',
+    file: 'lib/routes/workspaces.js',
     find: '                  schemeWarning: passthroughSettings.warning?.() ?? null,',
     replace: '                  schemeWarning: null,',
   },

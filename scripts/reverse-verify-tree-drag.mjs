@@ -146,21 +146,21 @@ const MUTATIONS = [
   },
   {
     name: 'the local mkdir branch reads its root from the request',
-    file: 'lib/routes.js',
+    file: 'lib/routes/entries.js',
     find: '  const root = localRootOf(owner)',
     replace: '  const root = body.root ?? localRootOf(owner)',
     suite: 'mutations',
   },
   {
     name: 'the local mkdir branch skips the realpath parent check',
-    file: 'lib/routes.js',
+    file: 'lib/routes/entries.js',
     find: '  if (!isWithinLocalRoot(realRoot, realParent)) {',
     replace: '  if (false) {',
     suite: 'mutations',
   },
   {
     name: 'the local mkdir branch adopts a remote session workspace',
-    file: 'lib/routes.js',
+    file: 'lib/routes/entries.js',
     find: "  if (isRemotePath(root)) {\n    throw codedError('the session workspace is remote; a local path cannot belong to it', 'FS_PERMISSION_DENIED')\n  }",
     replace: '  if (false) { /* mutated */ }',
     suite: 'mutations',
@@ -219,9 +219,10 @@ const MUTATIONS = [
     file: 'lib/client.js',
     find: [
       '        hideDropCaret()',
+      '        clearOsDropHighlight()',
       '        clearTreeTextSelection()',
     ].join('\n'),
-    replace: '        clearTreeTextSelection()',
+    replace: '        clearOsDropHighlight()\n        clearTreeTextSelection()',
     suite: 'composer-drop-point',
   },
 ]

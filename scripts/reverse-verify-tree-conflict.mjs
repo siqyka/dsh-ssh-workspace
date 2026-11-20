@@ -57,7 +57,7 @@ const MUTATIONS = [
   {
     name: 'the refuse pre-pass stops at the top directory',
     file: 'lib/transfer.js',
-    find: '          await scan(path.join(from, entry.name), target)',
+    find: '          await scan(source, target)',
     replace: '          /* mutated: do not descend */',
   },
   {
@@ -68,31 +68,31 @@ const MUTATIONS = [
   },
   {
     name: 'routes.js hard-codes its own copy of the limit',
-    file: 'lib/routes.js',
-    find: "import { DEFAULT_MAX_BYTES, fenceUploadTarget, oversizeMessage, remoteParentOf, sftpUnlink, stagingNameOf, transferFile, uploadTree } from './transfer.js'",
-    replace: "import { fenceUploadTarget, oversizeMessage, remoteParentOf, sftpUnlink, stagingNameOf, transferFile, uploadTree } from './transfer.js'\nconst DEFAULT_MAX_BYTES = 1024 * 1024 * 1024",
+    file: 'lib/routes/transfer-bytes.js',
+    find: "import { DEFAULT_MAX_BYTES, fenceUploadTarget, oversizeMessage, remoteParentOf, sftpUnlink, stagingNameOf } from '../transfer.js'",
+    replace: "import { fenceUploadTarget, oversizeMessage, remoteParentOf, sftpUnlink, stagingNameOf } from '../transfer.js'\nconst DEFAULT_MAX_BYTES = 1024 * 1024 * 1024",
   },
   {
     name: 'the browser upload stops bounding the running total',
-    file: 'lib/routes.js',
+    file: 'lib/routes/transfer-bytes.js',
     find: '        if (written > DEFAULT_MAX_BYTES) throw codedError(oversizeMessage(\'upload\', written), \'FS_TOO_LARGE\')',
     replace: '        /* mutated: no running-total check */',
   },
   {
     name: 'the browser upload drops the declared-length pre-check',
-    file: 'lib/routes.js',
+    file: 'lib/routes/transfer-bytes.js',
     find: '  if (Number.isFinite(declared) && declared > DEFAULT_MAX_BYTES) {',
     replace: '  if (false) {',
   },
   {
     name: 'the browser download stops bounding the file size',
-    file: 'lib/routes.js',
+    file: 'lib/routes/transfers.js',
     find: '          if (size > DEFAULT_MAX_BYTES) {',
     replace: '          if (false) {',
   },
   {
     name: 'the oversize refusal answers 500 instead of 413',
-    file: 'lib/routes.js',
+    file: 'lib/routes/kit.js',
     find: "    case 'FS_TOO_LARGE': return 413",
     replace: "    case 'FS_TOO_LARGE': return 500",
   },
