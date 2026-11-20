@@ -50,6 +50,15 @@ console.log('\n[1] the counters read the source')
   check('adding a tool increases the count',
     numbers.countTools(withOneMoreTool) === toolBaseline + 1,
     `${numbers.countTools(withOneMoreTool)} vs ${toolBaseline}`)
+
+  // The route handlers are moving into `lib/routes/`. The figure has to follow
+  // them, or it would drop the moment a handler left `lib/routes.js` — and a
+  // number that changes because of a refactor stops being trusted.
+  const sources = numbers.routeSources()
+  check('the route sources are found', sources.length > 0, String(sources.length))
+  check('they include the composition point', sources.some(source => source.includes('export function makeRoutes')))
+  const across = sources.reduce((total, source) => total + numbers.countRoutes(source), 0)
+  check('the count is the sum over every source', across === baseline, `${across} vs ${baseline}`)
 }
 
 console.log('\n[2] the suite list comes from the runner, not the directory')

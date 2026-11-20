@@ -111,6 +111,32 @@ export function suiteNames () {
 }
 
 /**
+ * The route module sources, wherever they live.
+ *
+ * `lib/routes.js` keeps the descriptor table and the composition point; the
+ * handlers themselves are being split into `lib/routes/`. Both places have to
+ * be read, or the count would silently drop as handlers moved — a figure that
+ * changes because of a refactor is a figure nobody trusts afterwards.
+ *
+ * @returns {string[]} the route module sources.
+ */
+export function routeSources () {
+  const sources = [readOrEmpty(path.join(root, 'lib', 'routes.js'))]
+  const directory = path.join(root, 'lib', 'routes')
+  let entries
+  try {
+    entries = fs.readdirSync(directory)
+  } catch {
+    return sources
+  }
+  for (const name of entries.sort()) {
+    if (!name.endsWith('.js')) continue
+    sources.push(readOrEmpty(path.join(directory, name)))
+  }
+  return sources
+}
+
+/**
  * Count the modules under `lib/`.
  *
  * @returns {number} module count.
@@ -126,7 +152,7 @@ export function countModules () {
  * @returns {string} the marked region, markers included.
  */
 export function renderNumbers (options = {}) {
-  const routes = countRoutes(readOrEmpty(path.join(root, 'lib', 'routes.js')))
+  const routes = routeSources().reduce((total, source) => total + countRoutes(source), 0)
   const tools = countTools(readOrEmpty(path.join(root, 'lib', 'tools.js')))
   const patches = countPatches()
   const modules = countModules()
