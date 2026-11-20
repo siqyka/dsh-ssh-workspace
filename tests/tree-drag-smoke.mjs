@@ -13,9 +13,11 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const source = readFileSync(path.join(here, '..', 'lib', 'client.js'), 'utf8')
+const pluginRoot = path.resolve(here, '..')
+const source = clientSource(pluginRoot)
 
 let passed = 0
 const failures = []

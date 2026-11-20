@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 // two different implementations.
 import { makeToastDom } from './support/toast-dom.mjs'
 import { routeSource } from './support/route-source.mjs'
+import { clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -1358,7 +1359,7 @@ if (failures.length > 0) {
 // ---------------------------------------------------------------- provenance
 console.log('\n[provenance] the panel admits how old the cached sections are')
 {
-  const source = readFileSync(path.join(packageRoot, 'lib', 'client.js'), 'utf8')
+  const source = clientSource(packageRoot)
   // The renderer must exist and be USED: a helper with no call site renders
   // nothing while reading as implemented.
   check('a provenance renderer exists', /function provenanceText/u.test(source))

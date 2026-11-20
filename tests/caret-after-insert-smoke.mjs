@@ -30,6 +30,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -48,7 +49,7 @@ function check (name, condition, detail) {
 
 console.log('\n=== caret after insert smoke ===\n')
 
-const source = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+const source = clientSource(pluginRoot)
 
 /** Pull one top-level function out of the client source by brace matching. */
 function extractFunction (name) {

@@ -18,6 +18,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { clientSource as clientBundleSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -36,7 +37,7 @@ function check (name, condition, detail) {
 
 console.log('\n=== tree transfer smoke ===\n')
 
-const clientSource = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+const clientSource = clientBundleSource(pluginRoot)
 
 /**
  * Pull one top-level `function name (...) { ... }` out of the client source by

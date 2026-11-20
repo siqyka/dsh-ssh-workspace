@@ -45,6 +45,7 @@ import {
   readGitHistory,
 } from '../lib/git-history.js'
 import { installPeerStubs } from './peer-stubs.mjs'
+import { clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -479,7 +480,7 @@ if (routesModule !== null) {
 // ---------------------------------------------------------------------------
 console.log('\n[client structure]')
 {
-  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
   check('the API map exposes the read route',
     /gitHistory: '\/api\/dsh-ssh-workspace\/git-history'/u.test(client))
   check('the shadow uses the official forge TAB_ID as its cell key',
@@ -550,7 +551,7 @@ console.log('\n[client structure]')
 // a minimal React stand-in so the call shape itself is executed here.
 console.log('\n[hook shape]')
 {
-  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
   const start = client.indexOf('function splitForgeFace (face)')
   const end = client.indexOf('    /**\n     * The official change-request body', start)
   const block = start < 0 || end < 0 ? '' : client.slice(start, end)
@@ -638,7 +639,7 @@ console.log('\n[hook shape]')
 // the official namespace, so a for-looped fallback cannot hide.
 console.log('\n[official copy seat]')
 {
-  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
   const start = client.indexOf('function officialTranslateSeat (')
   const end = client.indexOf('const forgeHookCache', start)
   const block = start < 0 || end < 0 ? '' : client.slice(start, end)
@@ -688,7 +689,7 @@ console.log('\n[official copy seat]')
 // ---------------------------------------------------------------------------
 console.log('\n[fold control]')
 {
-  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
   check('the heading carries a real button, not a click handler on the h3',
     client.includes("className: 'sshwsp-cr-history-toggle'") &&
       client.includes("'aria-expanded': collapsed !== true") &&
@@ -747,7 +748,7 @@ console.log('\n[fold control]')
 // code writes; everything else must open the strip.
 console.log('\n[fold persistence]')
 {
-  const client = readFileSync(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
   const start = client.indexOf('const HISTORY_FOLD_KEY')
   const end = client.indexOf('function historyChrome (', start)
   const block = start < 0 || end < 0 ? '' : client.slice(start, end)

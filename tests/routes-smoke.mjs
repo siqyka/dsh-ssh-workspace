@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createHost } from './support/plugin-host.mjs'
 import { fakeUploadEngine } from './support/fake-upload-sftp.mjs'
+import { clientSource } from './support/client-source.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -102,7 +103,7 @@ console.log('\n=== routes smoke ===\n')
     /oldestProbe\(engine\)/u.test(source), 'no oldestProbe call')
   // The panel reads `status.provenance.capabilities`; a renamed field would make
   // it render nothing while every other assertion here still passed.
-  const client = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
   check('...under the name the panel reads',
     /status\.provenance\?\.capabilities/u.test(client), 'panel reads a different field')
 }
