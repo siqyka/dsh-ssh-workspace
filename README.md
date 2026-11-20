@@ -295,7 +295,7 @@ localPassthrough:
 | 拖拽 / 右键把文件加入任务 | 文件树的文件与文件夹可**直接拖到聊天输入框**（悬停显示虚线高亮，松开插入引用 chip），或**右键「添加到任务」**——与 `@` 补全选中效果完全一致 |
 | 系统文件拖入远端文件树 | 从系统文件管理器把文件拖到**远端**「文件」树即可上传；落点决定目标目录（目录行自身、文件行父目录、展开目录内的空白归该目录、树体空白归根），文件夹与本地工作区会被明确拒绝，树外仍走 DSH 原有附件行为。详见 [ui.md](docs/ui.md#从系统拖入文件上传) |
 | 「添加工作区」远程入口 | 「添加工作区」按钮替换为锚定菜单，两步完成：「新建本地工作区」/「新建远程工作区」二选一，再走各自流程。本地直接渲染**已安装的 browse 面板本身**（同一个组件、同一套 locale 与列目录调用；没有应用内浏览器的部署回落到 `pickDirectory()`）；远程是「选主机 → 逐级浏览远端目录 → 确认挂载」（目录不可写时警告并拒绝创建） |
-| 「变更请求」tab 的最近提交历史 | 官方 Forge 面板的下半部分追加一条只读的最近提交条（同一个 tab，不新增页签）：插件按官方 tab 的 key 遮蔽该槽位，上半仍渲染官方组件、下半渲染自建历史区块；宿主新增只读路由 `GET /api/dsh-ssh-workspace/git-history`，只接受会话自己的工作目录，用固定 argv 的 `git log` 取数。**点标题行即整体折叠**，收起时只剩「最近提交历史」一行，折叠状态记在页面 `localStorage` 里（重开 tab / 刷新 / 重启宿主后保持）；官方面板的文案座位取自官方条目自己的命名空间（此前误绑包 id，上半会显示 i18n key）。**面板自身的 git 测量在远端工作区也可用**：`workspace-write` / `read-only` 下 `ctx.sandbox.confine()` 的 windows-acl 包装以桌面可执行文件为前置（不是 `node`），远端桥现在按与 `process.execPath` 同身份识别并剥掉它，否则整块会报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`。详见 [commit-history.md](docs/commit-history.md) |
+| 「变更请求」tab 的最近提交历史 | 官方 Forge 面板的下半部分追加一条只读的最近提交条（同一个 tab，不新增页签）：插件按官方 tab 的 key 遮蔽该槽位，上半仍渲染官方组件、下半渲染自建历史区块；宿主新增只读路由 `GET /api/dsh-ssh-workspace/git-history`，只接受会话自己的工作目录，用固定 argv 的 `git log` 取数。**点标题行即整体折叠**，收起时只剩「最近提交历史」一行，折叠状态记在页面 `localStorage` 里（重开 tab / 刷新 / 重启宿主后保持）；官方面板的文案座位取自官方条目自己的命名空间（此前误绑包 id，上半会显示 i18n key）。**面板自身的 git 测量在远端工作区也可用**：`workspace-write` / `read-only` 下 `ctx.sandbox.confine()` 的 windows-acl 包装以桌面可执行文件为前置（不是 `node`），远端桥现在按与 `process.execPath` 同身份识别并剥掉它，否则整块会报 `cannot run "…DeepSeek Harness.exe" with a remote cwd`。详见 [ui.md](docs/ui.md) |
 | 远程工作区专用标记 | 本插件创建的远程工作区在侧栏行、工作区选择器与会话页工作区按钮处显示远端标记图标，而不是普通文件夹图标 |
 | 主机管理面板 | 添加 / 编辑 / 删除主机（私钥路径、认证方式、备注等），改动立即生效并丢弃该别名旧连接；`~/.ssh/config` 主机只读展示；「测试连接」只探测可达性（连上即释放，不会留下连接），结果以顶部 toast 弹出，7 秒自动消失（点击 / Esc 可提前关闭，悬停暂停）；错误可就地展开诊断码与原始错误、复制整段诊断，测试连接可安全重放所以带「重试」；「已连接」状态内联在主机名后，断开时连带拆除该主机的端口转发 |
 | 浏览目录对话框 | 主机卡片的「浏览目录」逐级浏览远端目录，并可就地「挂载此目录」；**只浏览 / 挂载**，不提供上传、下载或内联队列（传输入口在文件树行菜单与文件面板头部） |
@@ -391,7 +391,6 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 | [hosts.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/hosts.md) | 主机配置与认证：存储格式、`~/.ssh/config` 回退、面板管理 |
 | [tools.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/tools.md) | Agent 工具参考：11 个 `ssh_workspace_*` 工具（含 `reverse_forward`） |
 | [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md) | 界面指南：面板、添加工作区双入口、远程工作区标记、端口转发与持久会话区、文件引用设置 |
-| [forward-persistence.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/forward-persistence.md) | 端口转发持久化：意图与事实的分离、两条断开路径的一致性、自动开启 |
 | [development.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/development.md) | 开发、调试与发布：源码结构、依赖解析、打包流程 |
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 |
 | [upstream-workaround-pattern.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、反模式与成本边界 |

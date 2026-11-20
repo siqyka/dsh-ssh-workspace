@@ -9,7 +9,9 @@
  * naive `String(undefined)` becomes the literal `undefined`. Remote git then
  * reads `GIT_DIR=undefined` as "./undefined", exits 128 with
  * "fatal: not a git repository", and the panel reports the checkout as non-Git
- * ("当前目录不是 Git 仓库"). See docs/remote-git-diagnosis.md.
+ * ("当前目录不是 Git 仓库"). The regression suite below pins the bridge's
+ * behaviour; the design rationale lives in the source comments of
+ * lib/patch-subprocess.js.
  *
  * Runs without DSH_CORE_ROOT: the bridge only needs a subprocess service
  * double and an engine double, because nothing here opens a real SSH channel.

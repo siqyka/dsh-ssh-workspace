@@ -833,7 +833,7 @@ process.exit(failures === 0 ? 0 : 1)
 
 /**
  * The live half: drive the real bridge against the configured host and run the
- * exact git call shapes documented in docs/remote-git-diagnosis.md.
+ * exact git call shapes the plain-path routing rule admits.
  *
  * Everything created is under the suite's own remote scratch directory and is
  * removed in a `finally`; the real repository is only ever READ.

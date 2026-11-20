@@ -33,7 +33,7 @@
 | `description` / `tags` | 备注与标签（`ssh_workspace_hosts` 可搜索） |
 | `agentForward` | 布尔。在远端**命令通道**（exec / shell / 终端 / 持久 shell）上转发本机 ssh-agent，使远端命令（如远端 `git push`）能用本机密钥认证，私钥不落到远端；SFTP（浏览 / 传输）不受影响，认证方式也不因此改变 |
 | `compress` | 布尔。传输压缩，以 CPU 换带宽，慢链路（跨国 / 移动网络）下明显更快 |
-| `proxyJump` | 非空时解析明确拒绝（见下） |
+| `proxyJump` | 跳板机链，字符串（`a,b`）或数组。按 `ssh -J` 的形状**逐跳建独立连接**，最多 8 跳；`none` 表示强制直连（见下） |
 | `createdAt` / `updatedAt` | 时间戳 |
 
 `agentForward` / `compress` 都是**可选布尔**：缺省等于 ssh2 默认（关闭），
@@ -53,8 +53,11 @@ agent 认证自带的 `agentPath`）：key / password 认证的主机勾选后�
 `user` / `identityfile`（`%d` 展开为家目录）/ `password` / `identityagent` /
 `forwardagent` / `compression`，同键按 OpenSSH 的 first-wins 规则。
 `ForwardAgent` / `Compression` 按 OpenSSH 的 yes/no 语义归一为布尔（只有显式
-`yes` 才算开启，其余一律关闭）。`Include` / `Match` / 通配符块会被跳过而不是
-猜着解析——目标是「够用的回退」，不是完整解析器。
+`yes` 才算开启，其余一律关闭）。`Include` 会被**跟随**（`lib/include-chain.js`，相对
+`~/.ssh` 解析、支持 `*` / `?` / `[...]` 通配，并防环），`Match` 会被**求值**
+（`lib/match-eval.js` 的 `matchSelects`，支持 `host` / `originalhost` / `all`）。
+仍被跳过的是**通配符 `Host` 块**——它只用于代理扫描，不贡献身份字段；目标是
+「够用的回退」，不是完整解析器。
 
 ## 认证与凭据
 
@@ -101,11 +104,13 @@ agent 认证自带的 `agentPath`）：key / password 认证的主机勾选后�
 而无法访问。每张卡片另有「忘记主机密钥」（见上节），只清主机密钥记录，
 不动主机条目。
 
-## 不支持的连接方式
+## 连接方式支持面
 
-`proxyJump` / `ProxyCommand`（存储字段或 `~/.ssh/config` 里的
-`ProxyJump` / `ProxyCommand`）：解析时**明确拒绝**并说明原因，而不是静默
-按直连去试。需要跳板时请改用别的工具连接。
+| 方式 | 状态 |
+| --- | --- |
+| 直连 | 支持 |
+| `ProxyJump`（存储字段或 `~/.ssh/config` 的 `ProxyJump`） | **支持**：字符串与数组都接受，`a,b` 多跳按顺序逐跳建独立连接（最多 8 跳），`[::1]:22` 方括号 IPv6、`user@host:port`、`none`（任意大小写）表示强制直连；每跳各自认证并固定自己的主机密钥，目标只看到直接邻居。自引用与重复跳在解析时拒绝 |
+| `ProxyCommand` | **拒绝**：它是任意本地命令执行，而配置文件是数据，不能变成「读配置 = 执行程序」。带 `ProxyCommand` 的主机会在解析时**明确拒绝**并说明原因，而不是静默按直连去试 |
 
 ## 相关
 

@@ -398,10 +398,10 @@ exporter，`debug` 又被默认级别丢弃），见 [development.md](./developm
 按以下顺序排查：
 
 1. **面板「测试连接」**：先在「远程工作区」面板对目标主机实测一次，成功/失败会以顶部 toast 明示，是成本最低的定位手段。
-2. **unknown SSH host**：别名既不在 `$DSH_HOME/dsh-ssh.json` 存储中，也没有对应的具体 `Host` 块——检查拼写；`~/.ssh/config` 的 `Include`、`Match`、通配块**不被解析**，请显式写出具体 `Host` 别名，或在面板中添加主机（见 [hosts.md](./hosts.md)）。
+2. **unknown SSH host**：别名既不在 `$DSH_HOME/dsh-ssh.json` 存储中，也没有对应的具体 `Host` 块——检查拼写。`~/.ssh/config` 的 `Include` 会被跟随、`Match` 会被求值，**通配符 `Host` 块**不贡献身份字段；请显式写出具体 `Host` 别名，或在面板中添加主机（见 [hosts.md](./hosts.md)）。
 3. **认证失败**：key 认证先看主机行的「密钥未就绪」（`check-key`）标识——`keyPath` 在本机不存在或不可读；密码认证确认存储中的密码；agent 认证确认 `SSH_AUTH_SOCK`（或 `agentPath`）可用。密码与口令便于排查时可以临时改用本地 `ssh` 对照验证连通性。存储中的密码/口令是加密的，若报 `cannot read the stored secret for host …`，说明 `$DSH_HOME/dsh-ssh.key` 缺失或被更换——在面板重新保存该主机（见 [hosts.md](./hosts.md)）。
 4. **主机密钥不匹配**：连接被拒，错误信息为「the server presented a different host key than the one recorded on first connect」并列出 `recorded` / `presented` 两个指纹。含义：该主机本次出示的密钥与首次连接时记录的（`dsh-ssh.json` 的 `knownHosts` 段）不一致——可能是主机重装系统或合法轮换了密钥，也可能是中间人。**先与管理员核对新指纹**；确认可信后，在「远程工作区」面板对该主机执行「忘记主机密钥」，再重连（重新 TOFU 记录）。若没有预期的密钥变更，不要继续连接。
-5. **jump host / ProxyCommand 被拒**：插件不支持跳板，`resolve` 会直接报错说明。改用无跳板的主机条目，或换用其它工具连接该主机。
+5. **`ProxyJump` 链建不起来**：`ProxyJump` 是**支持**的，报错会点名是哪一跳、哪条链（`ProxyJump hop "bastion" (via bastion → target): …`）。常见原因：跳板机别名本身没解析出来（见第 2 条）、某一跳的凭据或主机密钥不匹配（见第 3、4 条）、跳板机拒绝 `direct-tcpip` 转发（sshd 的 `AllowTcpForwarding`）、链里出现自引用或重复跳（解析期就拒绝）。`ProxyCommand` 仍然被拒——它是任意本地命令执行，改用 `ProxyJump` 或去掉该项。
 6. **端口 / 网络**：确认 `host` 与 `port` 可达；本地 `ssh -p <port> user@host` 能连通的话，插件侧再查凭据与配置来源（store 覆盖 `~/.ssh/config`，同别名以 store 为准）。
 7. **面板接口 403 / 请求被拒**：宿主路由只服务本机（回环地址且 `Host` 头为本机监听的 `localhost`/`127.0.0.1`/`[::1]` 拼写）。如果你通过反向代理或自定义域名访问 DSH 界面，这些请求会被拒——属预期行为（防 DNS rebinding），不是故障。
 
@@ -412,7 +412,7 @@ exporter，`debug` 又被默认级别丢弃），见 [development.md](./developm
 - **远端搜索与变更追踪依赖远端工具**：glob / grep 在远端工作区调用远端主机的 ripgrep——远端未安装 `rg` 时命令以退出码 127 失败，stderr 带安装提示（如 `sudo apt install ripgrep` / `brew install ripgrep`）。「变更」（deliverables）面板使用远端 git——远端未安装 `git` 时该能力按「无仓库」降级（每回合一条带安装提示的 warn），不阻断会话；远端目录不是 git 仓库时与本地行为一致（只列文件工具改动）。
 - **shell 命令落点由 `workdir` 决定**：`pwsh` / `bash` 工具的 `workdir` 为 `ssh://` 时命令在远端主机执行，按 POSIX shell 语义、不受本机文件沙箱约束（以远端登录用户权限运行）；本地 `workdir` 的命令仍在本机、仍受沙箱围栏。要跑到未挂载的路径上，或需要确认某条命令到底在哪台机器执行，用 `ssh_workspace_exec`。
 - **变更监视：优先事件推送，否则轮询**：远端有 `inotifywait` 时，监视走 `inotifywait -m` 的事件流，变更即时上报，也不受元数据精度限制。没有该工具（或该路径无法被监视）时回落到轮询——SFTP 没有可移植的变更通知，文件树 / 预览的自动刷新靠 stat / readdir 快照比对，基础间隔约 2 秒，空闲目录会自适应退避到 5–10 秒，任一变更立即回到 2 秒（见 [architecture.md](./architecture.md) 的「远端变更监视」）；读路径另有 1.5 秒的元数据缓存，但变更检测直读服务器、不吃缓存。轮询模式下 SFTP 元数据没有亚秒时间戳——同一秒内等长的连续改写可能**不触发**刷新（增、删、改名总能感知）；需要立即看到最新内容时重新打开或重新读取即可。推送通道意外中断时会自动重新挂上轮询，不会静默失效；无法继续的监视故障会以一次 Error 回调上报（界面按既有的失效路径处理），不会静默挂死。
-- **不支持 jump host / ProxyCommand**：见上节。
+- **`ProxyCommand` 不支持（`ProxyJump` 支持）**：见上节第 5 条。
 - **后台重连有上限，且需要「有人在用」**：重试间隔从 1 秒指数增长到 60 秒封顶，默认不限次数，
   但只在还有消费者时进行（已挂载工作区、已保存且开启的转发）。进程退出后没有后台循环，重启 DSH
   才会重新连接。策略可用插件配置 `engine.reconnect` 调整（见根 README 的配置表），
