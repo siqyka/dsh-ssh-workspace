@@ -317,21 +317,24 @@ const ITEMS = [
 // ---- the server side: a folder download is now a folder -------------------
 {
   const routes = readFileSync(path.join(here, '..', 'lib', 'routes.js'), 'utf8')
+  const kit = readFileSync(path.join(here, '..', 'lib', 'routes', 'kit.js'), 'utf8')
   check('the transfer route walks a remote tree down when recursive is set',
     /recursive && direction === 'download'/u.test(routes) && /await downloadTree\(engine, \{/u.test(routes),
     'a recursive download still falls through to the single-file branch')
   check('...and a cancelled request aborts the walk instead of finishing it',
     /abortOnClientGone/u.test(routes) && /signal,\s*\n\s*onConflict/u.test(routes),
     'closing the panel no longer stops the copy')
+  // The helper itself lives in routes/kit.js; the route that uses it is still
+  // checked above, so the pair still proves "the walk is wired to a signal".
   check('the abort listener is on the RESPONSE, not the request',
-    /res\.once\?\.\('close', onClose\)/u.test(routes) &&
+    /res\.once\?\.\('close', onClose\)/u.test(kit) &&
       // The OTHER two `req.once('close')` listeners belong to the streaming
       // download routes, which check `res.writableEnded` and are unrelated to
       // this helper. What must not exist is one inside `abortOnClientGone`.
-      !/function abortOnClientGone[\s\S]{0,400}req\.once\?\.\('close'/u.test(routes),
+      !/function abortOnClientGone[\s\S]{0,400}req\.once\?\.\('close'/u.test(kit),
     'the signal fires as soon as the request body is read, aborting every transfer')
   check('a normal completion is not mistaken for an abandonment',
-    /res\.writableFinished !== true/u.test(routes),
+    /res\.writableFinished !== true/u.test(kit),
     'a finished transfer would abort its own final write')
 }
 

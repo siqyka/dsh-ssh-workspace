@@ -1175,10 +1175,16 @@ try {
   // BOTH status mappers need the case, and counting occurrences is what makes
   // this assertion able to fail: one shared regex over the whole file matches
   // either occurrence, so mutating one mapper to 500 left the other one green.
-  const tooLarge413 = (routesSource.match(/case 'FS_TOO_LARGE': return 413/gu) ?? []).length
+  //
+  // Both mappers now live in routes/kit.js, next to each other. Reading them
+  // from one file is the point: the bug this guards against was the two of them
+  // drifting apart, and keeping them in one module makes that harder rather than
+  // easier. The count is still 2 because there are still two mappers.
+  const kitSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'kit.js'), 'utf8')
+  const tooLarge413 = (kitSource.match(/case 'FS_TOO_LARGE': return 413/gu) ?? []).length
   check('an oversize transfer maps to 413 in BOTH status mappers', tooLarge413 === 2, `${tooLarge413} mapping(s)`)
   check('no status mapper answers an oversize transfer with 500',
-    !/case 'FS_TOO_LARGE': return 500/u.test(routesSource), 'a mapper sends 500')
+    !/case 'FS_TOO_LARGE': return 500/u.test(kitSource), 'a mapper sends 500')
 }
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
