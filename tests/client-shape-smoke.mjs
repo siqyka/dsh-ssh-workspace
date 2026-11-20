@@ -108,6 +108,12 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   check('the first line uses the __ModuleLoader__ convention', client.split('\n', 1)[0].includes('__ModuleLoader__'),
     client.split('\n', 1)[0].slice(0, 100))
   check('the bundle exports apply()', client.includes('exports.apply'), '(marker not found)')
+  // The module id is how the Host looks this bundle up, and it is the PACKAGE
+  // NAME — not a free label. A rename that misses this line leaves a plugin
+  // that installs, activates on the host, and paints nothing, with no error
+  // anywhere: the Host asks for a module id that never registered.
+  check('the module id is the package name',
+    client.includes(`id: '${pkg.name}'`), `expected id: '${pkg.name}'`)
 } else {
   check('the client bundle is non-empty', false, 'bundle missing')
   check('the first line uses the __ModuleLoader__ convention', false, 'bundle missing')
@@ -997,19 +1003,27 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   // static `div`, a directory a `button` — and the file branch was a row the
   // picker could neither enter nor do anything else with, so it is gone along
   // with the `rowClassName` / `rowChildren` pair that only existed to feed it.
-  check('every listing row is a real button control',
-    liveIn('DirectoryBrowser', /entries\?\.map\(\(entry\) =>[\s\S]{0,2000}?return jsx\('button'/u) &&
+  // A directory row is the control; a file row is inert context for the
+  // folder being mounted. Both are pinned here — a file rendered as a button
+  // is a half-control, and a file branch that disappeared would take the
+  // user's view of the folder with it.
+  check('a directory row is a real button control',
+    liveIn('DirectoryBrowser', /if \(entry\.type !== 'directory'\) \{[\s\S]{0,900}?\}\s*return jsx\('button'/u) &&
       !/rowcheck|type: 'checkbox'/u.test(bodyOf('DirectoryBrowser')),
-    'a listing row is no longer a button, or a checkbox column came back')
-  check('...with no file-row branch and no selection contract left behind',
-    !/entry\.type === 'directory'/u.test(bodyOf('DirectoryBrowser')) &&
-      !/rowClassName|rowChildren/u.test(bodyOf('DirectoryBrowser')) &&
+    'a directory row is no longer a button, or a checkbox column came back')
+  check('...and a file row is inert, not a second control',
+    liveIn('DirectoryBrowser', /className: 'sshwsp-entry sshwsp-entry-file'[\s\S]{0,400}?FileIcon/u) &&
+      !/onClick: \(event\) => \{ if \(event\.detail === 0\) handleEntry\(entry\) \},[\s\S]{0,200}?sshwsp-entry-file/u.test(bodyOf('DirectoryBrowser')),
+    'a file row is clickable, or the file row lost its own class')
+  check('...with no selection contract left behind',
+    !/rowClassName|rowChildren/u.test(bodyOf('DirectoryBrowser')) &&
       !/'aria-selected'|setSelection|selectReduce/u.test(bodyOf('DirectoryBrowser')) &&
       !/\.sshwsp-entry-selected \{/u.test(source),
-    'a file row survived as a second kind of row, or the selection paint came back')
-  check('...and both pickers ask the server for directories only',
-    (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []).length === 2,
-    'a picker filters in the browser again, so its total counts files it does not show')
+    'the selection paint came back')
+  check('...and both pickers ask for the whole listing',
+    (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&all=1/gu) ?? []).length === 2 &&
+      (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []).length === 0,
+    'a picker still filters to directories, so files never reach its rows')
 
   // A directory row is entered by DOUBLE click. A single click used to enter
   // too, which made the listing impossible to read: every attempt to inspect a

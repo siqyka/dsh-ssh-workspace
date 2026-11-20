@@ -534,6 +534,50 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 文件本来就可能远大于此。因为它不回答 JSON，所以不复用共享的 `guard()`，而是自己
 重新施加回环来源 + `Host` 头双重校验，并只接受 GET。
 
+## 目录选择器：一轮往返的列表与跟随输入的路径栏
+
+两个 picker（`DirectoryBrowser` 与 `RemoteWorkspaceDialog`）以前各要一份列表：
+`sftp.readdir` 每条都带 attrs，服务器要逐条 `lstat`。小目录是两三个往返，共享 `/tmp`
+这种几万条的地方就变成几千次 stat 加几十个 READDIR 包——在 300 ms 链路上 25 000 条
+30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字**，于是列表改走
+`engine.exec` 的一次命令（`lib/routes.js` 的 `dirsListingCommand` /
+`entriesListingCommand`）：`ls -1ap` 过一层 `awk`，**上限在远端就生效**（大目录最多
+只传 `limit` 个名字），同一轮里 `pwd -P` 解析登录目录、`test -w` 报可写性。
+
+三条设计约束：
+
+- **stdout 只走名字，stderr 只走一行标记**（`__dsh_ssh_ws_dirs__ <total> <w> <dir>` /
+  `__dsh_ssh_ws_all__ <total> <dirs> <w> <dir>`）。目录名可以和状态行一模一样，所以两者
+  不能共用流；`ls` 的报错被命令丢弃，标记行是解析器唯一接受的东西。
+- **任何形状不符都回退 SFTP**：非 POSIX 登录 shell、缺 `awk`、目录不可读、退出码非 0、
+  名字数 ≠ `min(total, limit)`、目录数 > 总数、回显路径非绝对、脚本自己打的 `fallback`
+  行——全部 `null`。这是优化，不是第二套实现；解析器一旦开始猜，两种列法就会悄悄分叉。
+- **all 变体的类型按位置判**：目录先流式输出、文件缓冲到最后，`room = lim - dirs`，所以
+  文件再多也挤不掉一个目录；响应里不传逐名的 type 列，`dirCount` 就是分界线。
+
+`/ls` 因此多两个开关：`dirs=1`（只要目录）与 `all=1`（全都要），互斥、非 `1` 一律 400。
+成功就走快路径返回（`entries` 只有 `name` / `type`，`size` 与 `mtime` 填 0——选择器从来
+没显示过目录行的大小），失败落回原来的 SFTP 分支。`uploadable` 提成 `isUploadable`
+供两条路径复用，仍与上传路由用同一份 `writeFenceRoots`。
+
+**审计**：这条 exec 带 `audit: false`。它是一次界面读取，和 `sftp.readdir` 同性质，而
+后者从来不在审计环里；记进去会让面板每敲一个键多出一条多行脚本，把用户真正跑过的
+命令冲走。
+
+客户端半边（`lib/client.js`）把这套东西交给一个 hook 和一个纯函数：
+
+- `draftDirectoryTarget(draft, currentDir)` 把输入读成「列哪个目录、按什么收窄、要不要问」：
+  同目录内的前缀 `refresh: false`（只本地收窄，零往返）；带尾斜杠的路径 `refresh: true`
+  （停顿后列它）；非绝对路径 `null`（什么都不做，半删掉前导 `/` 不会把对话框清空）。
+- **尾斜杠就是「在目录里」**：导航后草稿写成 `/raid/`，删掉斜杠意味着回父目录并按 `raid`
+  过滤。没有这条约定，`/raid/` 与 `/raid` 是同一个字符串，输入框分不清「我在里面」与
+  「我在拼它」。
+- `usePathDraftPreview` 只在 `refresh` 时 `setTimeout(PATH_PREVIEW_DEBOUNCE_MS = 200)` 后
+  发一次 `loadDir(dir, { preview: true })`，卸载/草稿变化时 `clearTimeout`。预览分支不写
+  输入框、不先清空列表（失败时旧行还在），并且**只在主机答完后**才 publish `path`——
+  所以「挂载此目录」永远指向一个真实存在的目录，而不是还在拼写的字符串。
+- 输入框**删掉了 `onBlur` 复位**：这个 picker 用双击进入，第一下点击已经让输入框失焦，
+  在那里取消过滤会让行在两次点击之间移位。
 ## 能力探测与推送式变更监视
 
 `engine.probeCapabilities(alias)` 用一次 `command -v` 往返探测 `rg` / `git` /

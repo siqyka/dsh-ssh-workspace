@@ -15,15 +15,17 @@
  * A grep for `jsx('button'` is green on the broken build; the missing token is
  * a six-letter `return` in a long body. So this suite lifts the SHIPPED
  * callback out of `lib/client.js` by brace matching, binds its free
- * identifiers to recording stubs, and calls it for two different entries.
+ * identifiers to recording stubs, and calls it for both kinds of entry.
  *
- * ## One kind of row
+ * ## Two kinds of row, one control
  *
- * The dialog used to render a file as a static row and a directory as a button.
- * It now asks the server for directories only (`dirs=1`) and renders every row
- * the same way, so the assertions below do not branch on `entry.type`: a file
- * row coming back would be a second kind of row in a dialog whose only question
- * is "which directory am I mounting?".
+ * The picker shows a directory's whole contents: directories are the rows it
+ * exists to navigate (a button; double-click enters, keyboard activation
+ * enters), and files are context for the directory about to be mounted (a plain
+ * div with no handlers — not a disabled button, which would announce itself as
+ * something the user ought to be able to operate). This suite pins that
+ * split, because "a file row is a button that does nothing" is exactly the kind
+ * of half-control that makes a picker feel broken.
  *
  * Run: node tests/browser-rows-smoke.mjs
  */
@@ -66,13 +68,10 @@ const callbackSource = source.slice(arrowAt, bodyEnd)
 if (source[bodyEnd] !== ')') throw new Error('the lifted listing callback does not end where the map call does')
 
 const FolderIcon = function FolderIcon () {}
+const FileIcon = function FileIcon () {}
 
 /**
  * Render one row through the shipped callback with recording stubs.
- *
- * `FileIcon` and `formatSize` are deliberately NOT injected: the dialog no
- * longer renders files or sizes, and a callback that still reached for either
- * would throw here instead of passing a grep.
  *
  * @param {object} entry - listing entry from `/ls`.
  * @returns {{row: object|undefined, navigated: string[]}} the element, and the
@@ -87,10 +86,10 @@ function renderRow (entry) {
 
   // eslint-disable-next-line no-new-func
   const factory = new Function(
-    'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
+    'jsxs', 'jsx', 'React', 'FolderIcon', 'FileIcon', 'handleEntry',
     `return (${callbackSource})`,
   )
-  const callback = factory(jsxs, jsx, React, FolderIcon, handleEntry)
+  const callback = factory(jsxs, jsx, React, FolderIcon, FileIcon, handleEntry)
   return { row: callback(entry), navigated }
 }
 
@@ -102,31 +101,42 @@ function partsOf (row) {
 }
 
 const logs = { name: 'logs', type: 'directory', size: 0 }
-// A file cannot reach this callback any more — the server drops it — but a
-// listing from an older server, or a filter someone removes, must still render
-// a row rather than `undefined`.
-const stray = { name: 'alpha.txt', type: 'file', size: 1234 }
+const readme = { name: 'README.md', type: 'file', size: 120 }
 
-// ---- a row is an element, not undefined -------------------------------------
+// ---- both rows are elements, not undefined ----------------------------------
 
 const dirRow = renderRow(logs)
-const fileRow = renderRow(stray)
+const fileRow = renderRow(readme)
 check('a directory entry renders an element at all', dirRow.row !== undefined,
   'the listing map returned undefined — the dialog renders an empty list')
-check('...and so does a file entry, should one ever arrive', fileRow.row !== undefined,
-  'a non-directory entry maps to undefined, which renders as a blank list')
-check('every row is a button control',
-  dirRow.row?.type === 'button' && dirRow.row.props.type === 'button' &&
-    fileRow.row?.type === 'button' && fileRow.row.props.type === 'button',
-  'a row is no longer an actionable control')
-check('the row is keyed by the entry name', dirRow.row?.props.key === 'logs')
-check('...and carries the directory-row class',
+check('...and so does a file entry', fileRow.row !== undefined,
+  'a file row is missing — the picker cannot show what the directory contains')
+
+// ---- a directory row is the control ----------------------------------------
+
+check('a directory row is a button control',
+  dirRow.row?.type === 'button' && dirRow.row.props.type === 'button',
+  'the directory row is no longer an actionable control')
+check('...keyed by the entry name', dirRow.row?.props.key === 'logs')
+check('...and carrying the directory-row class',
   dirRow.row?.props.className.includes('sshwsp-entry-dir'),
   'the row lost the class that gives it a pointer cursor')
-check('a row keeps no selection or focus semantics',
+check('...with no selection or focus semantics',
   dirRow.row?.props.role === undefined &&
     dirRow.row?.props['aria-selected'] === undefined &&
     dirRow.row?.props.tabIndex === undefined)
+
+// ---- a file row is inert context -------------------------------------------
+
+check('a file row is NOT a button (nothing it could do)',
+  fileRow.row?.type === 'div' && fileRow.row?.props.type === undefined,
+  'a file row is a button that does nothing — a half-control the user will try')
+check('...with no click handlers at all',
+  fileRow.row?.props.onClick === undefined && fileRow.row?.props.onDoubleClick === undefined)
+check('...carrying the file-row class',
+  fileRow.row?.props.className.includes('sshwsp-entry-file'),
+  'the file row has no class of its own')
+check('...keyed by the entry name', fileRow.row?.props.key === 'README.md')
 
 // ---- entering a directory is a double click ---------------------------------
 
@@ -148,25 +158,33 @@ check('...while a keyboard activation still enters it', dirRow.navigated.length 
 // ---- row anatomy -------------------------------------------------------------
 
 const dirParts = partsOf(dirRow.row)
-check('a row is an icon and a name, with no size line',
+const fileParts = partsOf(fileRow.row)
+check('a directory row is an icon and a name, with no size line',
   dirParts.length === 2, `${dirParts.length} parts`)
-check('the icon span names the folder glyph',
+check('...the icon being the folder glyph',
   dirParts[0].props.className === 'sshwsp-entry-icon' &&
     dirParts[0].props.children.type === FolderIcon)
-check('the name span prints the entry name',
+check('...and the name span printing the entry name',
   dirParts[1].props.className === 'sshwsp-entry-name' &&
     dirParts[1].props.children === 'logs')
-check('a file entry gets the same two-part row, not a size column',
-  partsOf(fileRow.row).length === 2, `${partsOf(fileRow.row).length} parts`)
+check('a file row has the same anatomy with the file glyph',
+  fileParts.length === 2 &&
+    fileParts[0].props.className === 'sshwsp-entry-icon' &&
+    fileParts[0].props.children.type === FileIcon &&
+    fileParts[1].props.className === 'sshwsp-entry-name' &&
+    fileParts[1].props.children === 'README.md',
+  `${fileParts.length} parts`)
 
-// ---- both dialogs ask the server for directories only -----------------------
+// ---- both dialogs ask for the whole listing ---------------------------------
 
-// The client-side filter is the wrong place for this: the cap runs on the
-// server, so a listing filtered in the browser announces "2000 of 4213" about
-// the three directories it actually shows.
+// `all=1` keeps the one-round-trip path (and its remote-side cap) while also
+// returning files, which `dirs=1` filtered out before the cap.
+const allQueries = source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&all=1/gu) ?? []
+check('both directory pickers request the whole listing', allQueries.length === 2,
+  `${allQueries.length} of 2 listings ask for all=1`)
 const dirsQueries = source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []
-check('both directory pickers request directories only', dirsQueries.length === 2,
-  `${dirsQueries.length} of 2 listings ask for dirs=1`)
+check('...and neither still asks for directories only', dirsQueries.length === 0,
+  `${dirsQueries.length} listing(s) still send dirs=1`)
 
 // ---- the dialog is browse-only ---------------------------------------------
 
@@ -183,12 +201,12 @@ check('the listing exposes no selection contract',
 const withoutReturn = callbackSource.replace(/\breturn\s+jsx\(/gu, 'jsx(')
 check('the stripped slice is a different program', withoutReturn !== callbackSource)
 const stripped = new Function(
-  'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
+  'jsxs', 'jsx', 'React', 'FolderIcon', 'FileIcon', 'handleEntry',
   `return (${withoutReturn})`,
 )((type, props) => ({ type, props }), (type, props) => ({ type, props }),
-  { createElement: () => ({}) }, FolderIcon, () => {})
-check('without the return the same callback yields undefined',
-  stripped(logs) === undefined && stripped(stray) === undefined,
+  { createElement: () => ({}) }, FolderIcon, FileIcon, () => {})
+check('without the returns the same callback yields undefined',
+  stripped(logs) === undefined && stripped(readme) === undefined,
   'the regression assertion above would not have caught the shipped bug')
 
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)

@@ -2093,6 +2093,189 @@ async function postChunk (route, body, chunks = []) {
     check('a non-numeric dirs is refused', state.status === 400, String(state.status))
   }
 
+  // The pickers' listing is ONE exec, not an SFTP readdir. That is not a
+  // micro-optimisation: the protocol's `readdir` ships every entry's attributes
+  // (a per-entry stat on the server), so a 25 000-entry `/tmp` does not finish
+  // in 30 s, while one `ls` piped through the remote cap answers in a single
+  // round trip. The fast path is only taken when the answer has exactly the
+  // shape it expects; anything else falls back to the SFTP route.
+  {
+    const runListing = async (query, outcome, sftpEntries) => {
+      const calls = { sftp: 0, exec: [] }
+      const listingEngine = {
+        async withSftp (_alias, work) {
+          calls.sftp += 1
+          return await work({
+            readdir (target, callback) {
+              callback(null, (sftpEntries ?? []).map(entry => ({
+                filename: entry.name,
+                attrs: {
+                  size: 0,
+                  mtime: 1,
+                  isDirectory: () => entry.type === 'directory',
+                  isSymbolicLink: () => entry.type === 'symlink',
+                },
+              })))
+            },
+            realpath (_target, callback) { callback(null, '/home/dev') },
+          })
+        },
+        async exec (_alias, command, options) {
+          // The fallback's own `test -w` probe is a different command.
+          if (command.startsWith('test -w ')) return { exitCode: 0, stdout: '', stderr: '' }
+          calls.exec.push({ command, options })
+          return outcome
+        },
+      }
+      const routes = makeRoutes({
+        engine: listingEngine,
+        router: {},
+        forwards: { list: () => [], open: async () => ({}), close: () => false },
+        shells,
+        ctx: { get: () => undefined },
+      })
+      const { res, state } = fakeRes()
+      await routes.find(route => route.path === ROUTES.ls).handler(
+        fakeReq({ url: `${ROUTES.ls}?alias=a${query}`, headers: { host: 'localhost:4074' } }), res)
+      return { state, body: JSON.parse(state.body), calls }
+    }
+
+    const meta = (total, writable, path) => `__dsh_ssh_ws_dirs__ ${total} ${writable} ${path}\n`
+
+    {
+      const { body, calls } = await runListing(
+        '&path=%2Fhome%2Fdev%2Fproject&dirs=1&limit=2',
+        { exitCode: 0, stdout: 'alpha\nbeta\n', stderr: meta(2, 1, '/home/dev/project') },
+      )
+      check('a dirs=1 listing uses one exec and no SFTP channel',
+        calls.exec.length === 1 && calls.sftp === 0, `exec=${calls.exec.length} sftp=${calls.sftp}`)
+      check('...the command carries the quoted path and the cap',
+        calls.exec[0].command.includes("dir='/home/dev/project'") && calls.exec[0].command.includes('lim=2'),
+        calls.exec[0].command.slice(0, 120))
+      check('...and is read-only, replayable and kept out of the audit',
+        calls.exec[0].options.replay === 'safe' && calls.exec[0].options.audit === false,
+        JSON.stringify(calls.exec[0].options))
+      check('...the names arrive as directory rows',
+        body.entries.length === 2 && body.entries.every(entry => entry.type === 'directory') &&
+          body.entries.map(entry => entry.name).join() === 'alpha,beta',
+        JSON.stringify(body.entries))
+      check('...with the totals and writability the remote reported',
+        body.path === '/home/dev/project' && body.total === 2 && body.truncated === false && body.writable === true,
+        JSON.stringify({ path: body.path, total: body.total, truncated: body.truncated, writable: body.writable }))
+    }
+
+    {
+      const { body } = await runListing(
+        '&path=%2Ftmp&dirs=1&limit=2',
+        { exitCode: 0, stdout: 'a\nb\n', stderr: meta(3508, 1, '/tmp') },
+      )
+      check('the cap is applied remotely and truncation is announced',
+        body.entries.length === 2 && body.total === 3508 && body.truncated === true,
+        JSON.stringify({ entries: body.entries.length, total: body.total, truncated: body.truncated }))
+    }
+
+    {
+      const { body, calls } = await runListing(
+        '&dirs=1&limit=2',
+        { exitCode: 0, stdout: '\n', stderr: meta(0, 1, '/home/dev') },
+      )
+      check('the login directory is resolved by the same round trip',
+        body.path === '/home/dev' && calls.exec[0].command.includes('pwd -P'),
+        `${body.path} / ${calls.exec[0].command.slice(0, 60)}`)
+    }
+
+    {
+      // A non-POSIX login shell, a missing `awk`, a failed `ls`: all the same
+      // answer to the caller, "use SFTP".
+      const { body, calls } = await runListing(
+        '&path=%2Fhome%2Fdev%2Fproject&dirs=1',
+        { exitCode: 127, stdout: '', stderr: 'sh: awk: not found\n' },
+        [{ name: 'from-sftp', type: 'directory' }],
+      )
+      check('a failed fast path falls back to the SFTP listing',
+        calls.sftp === 1 && body.entries.length === 1 && body.entries[0].name === 'from-sftp',
+        JSON.stringify(body.entries))
+    }
+
+    {
+      const { body, calls } = await runListing(
+        '&path=%2Fhome%2Fdev%2Fnoread&dirs=1',
+        { exitCode: 0, stdout: '', stderr: '__dsh_ssh_ws_dirs__ fallback\n' },
+        [{ name: 'still-listed', type: 'directory' }],
+      )
+      check('...and so does the script\'s own fallback for an unlistable directory',
+        calls.sftp === 1 && body.entries[0].name === 'still-listed', JSON.stringify(body.entries))
+    }
+
+    {
+      // More names than the directory holds is not a shape this parser accepts
+      // (a name with a newline would look like two); SFTP answers instead.
+      const { calls } = await runListing(
+        '&path=%2Fhome%2Fdev%2Fproject&dirs=1&limit=5',
+        { exitCode: 0, stdout: 'a\nb\nc\n', stderr: meta(2, 1, '/home/dev/project') },
+        [{ name: 'sftp-wins', type: 'directory' }],
+      )
+      check('a listing whose counts do not add up is not trusted',
+        calls.sftp === 1, `sftp=${calls.sftp}`)
+    }
+
+    // `all=1` is the pickers' listing: directories AND files, directories
+    // first, still one exec, and the cap still protects the directories.
+    {
+      const allMeta = (total, dirs, writable, path) => `__dsh_ssh_ws_all__ ${total} ${dirs} ${writable} ${path}\n`
+      const { body, calls } = await runListing(
+        '&path=%2Fhome%2Fdev%2Fproject&all=1&limit=4',
+        { exitCode: 0, stdout: 'src\ndocs\nREADME.md\npackage.json\n', stderr: allMeta(4, 2, 1, '/home/dev/project') },
+      )
+      check('an all=1 listing is also one exec and no SFTP',
+        calls.exec.length === 1 && calls.sftp === 0, `exec=${calls.exec.length} sftp=${calls.sftp}`)
+      check('...the command lists the whole directory, not just subdirectories',
+        calls.exec[0].command.includes("dir='/home/dev/project'") && calls.exec[0].command.includes('__dsh_ssh_ws_all__') &&
+          !calls.exec[0].command.includes('__dsh_ssh_ws_dirs__'),
+        calls.exec[0].command.slice(0, 140))
+      check('...and the response types the names positionally',
+        body.entries.map(entry => `${entry.name}:${entry.type}`).join() === 'src:directory,docs:directory,README.md:file,package.json:file',
+        JSON.stringify(body.entries))
+      check('...with the total and writability the remote reported',
+        body.total === 4 && body.truncated === false && body.writable === true,
+        JSON.stringify({ total: body.total, truncated: body.truncated, writable: body.writable }))
+    }
+
+    {
+      const allMeta = (total, dirs, writable, path) => `__dsh_ssh_ws_all__ ${total} ${dirs} ${writable} ${path}\n`
+      const { body } = await runListing(
+        '&path=%2Ftmp&all=1&limit=2',
+        { exitCode: 0, stdout: 'a\nb\n', stderr: allMeta(500, 40, 1, '/tmp') },
+      )
+      check('the all=1 cap still spends on directories first',
+        body.entries.map(entry => entry.type).join() === 'directory,directory' &&
+          body.total === 500 && body.truncated === true,
+        JSON.stringify({ entries: body.entries, total: body.total, truncated: body.truncated }))
+    }
+
+    {
+      const { body, calls } = await runListing(
+        '&path=%2Fhome%2Fdev%2Fproject&all=1',
+        { exitCode: 127, stdout: '', stderr: 'sh: awk: not found\n' },
+        [{ name: 'from-sftp', type: 'file' }],
+      )
+      check('a failed all=1 fast path falls back to SFTP with files intact',
+        calls.sftp === 1 && body.entries.length === 1 && body.entries[0].name === 'from-sftp',
+        JSON.stringify(body.entries))
+    }
+
+    {
+      const { state } = await runListing('&path=%2Fx&all=2', { exitCode: 0, stdout: '', stderr: '' })
+      check('all=2 is refused rather than read as true', state.status === 400, String(state.status))
+    }
+
+    {
+      const { state } = await runListing('&path=%2Fx&dirs=1&all=1', { exitCode: 0, stdout: '', stderr: '' })
+      check('dirs=1 and all=1 together are refused, not silently prioritised',
+        state.status === 400, String(state.status))
+    }
+  }
+
   {
     // A small directory must NOT be reported as truncated: a panel that warned
     // on every listing would train the user to ignore the warning.

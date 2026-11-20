@@ -165,6 +165,10 @@ durationMs / exitCode / timedOut`，以及可选的 `outcomeUnknown`、`refused`
 `refused: true` 是唯一确定「没跑」的条目。渲染时只列失败、超时、结果未知与被拒绝的，因为
 一条成功的 `ls` 不是新闻。
 
+目录选择器的一轮往返列表**不进这个环**（`engine.exec` 的 `audit: false`）：它是一次界面读取，
+和 `sftp.readdir` 同性质，而后者从来也不在环里。若记进去，面板每敲一个键就会多出一条多行
+脚本，把用户真正跑过的命令冲走。
+
 `auditText`：同一份记录的可粘贴文本。`supportBundle`：完整诊断报告（面板与文档里叫「诊断
 报告」，字段名沿用 `supportBundle` 不变）——开头是 `## diagnosis` 判定，然后是版本、补丁
 判定、主机密钥、主机配置（含 `~/.ssh/config` 里未被采用的条目与被跳过的条目）、工作区、
