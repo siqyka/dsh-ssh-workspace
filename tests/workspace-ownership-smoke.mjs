@@ -29,6 +29,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { routeSource } from './support/route-source.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const load = file => import(pathToFileURL(path.join(pluginRoot, 'lib', file)).href)
@@ -750,7 +751,7 @@ console.log('\n[the wiring keeps the two phases in order]')
   check('...and emits it only when measured', tools.split('engine.ownership === undefined ? {} : {').length - 1 >= 2)
   check('the bundle input carries the snapshot', tools.includes('ownershipSnapshotCopy(engine.ownership)'))
 
-  const routes = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  const routes = routeSource(pluginRoot)
   const diagnosisInput = routes.slice(routes.indexOf('const diagnosisInput = () => {'))
   check(
     'the panel\'s diagnosis reads the same snapshot',
@@ -831,7 +832,7 @@ console.log('\n[the returned copy cannot drift from the declared schema]')
   // result (`missing required property value.ownership.updatedAt`, then
   // `...stage`) and every status surface, panel included, read it as null.
   const tools = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8').replace(/\r\n/gu, '\n')
-  const routes = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8').replace(/\r\n/gu, '\n')
+  const routes = routeSource(pluginRoot).replace(/\r\n/gu, '\n')
   const schemaSource = readFileSync(path.join(pluginRoot, 'lib', 'status-schema.js'), 'utf8').replace(/\r\n/gu, '\n')
 
   const toolSites = tools.split('ownershipSnapshotCopy(engine.ownership)').length - 1

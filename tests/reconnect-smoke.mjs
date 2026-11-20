@@ -27,6 +27,7 @@
 
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { routeSource } from './support/route-source.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { ReconnectScheduler, RECONNECT_DEFAULTS } = await import(
@@ -416,7 +417,7 @@ console.log('\n[engine wiring]')
 
 {
   const { readFileSync } = await import('node:fs')
-  const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  const routesSource = routeSource(pluginRoot)
   check('status ships the reconnecting rows', /reconnecting,/u.test(routesSource))
   check('a manual reconnect route exists', /hostReconnect/u.test(routesSource))
   const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')

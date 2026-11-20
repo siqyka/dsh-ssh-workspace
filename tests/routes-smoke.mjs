@@ -14,6 +14,7 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { routeSource } from './support/route-source.mjs'
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { createServer } from 'node:net'
 import os from 'node:os'
@@ -49,7 +50,7 @@ console.log('\n=== routes smoke ===\n')
 // transfer routes call is imported or declared in the module.
 // ---------------------------------------------------------------------------
 {
-  const source = readFileSync(path.join(pluginRoot, 'lib/routes.js'), 'utf8')
+  const source = routeSource(pluginRoot)
   const declared = new Set()
   const imported = new Set()
   for (const m of source.matchAll(/\bimport\s*\{([^}]+)\}\s*from/g)) {
@@ -90,7 +91,7 @@ console.log('\n=== routes smoke ===\n')
 // exactly where "the payload stopped carrying its ages" would go unnoticed. A
 // source check runs everywhere.
 {
-  const source = readFileSync(path.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  const source = routeSource(pluginRoot)
   // Anchored on the exact property name AND the call, because a renamed field
   // (`provenanceDisabled: statusProvenance(...)`) satisfies "a statusProvenance
   // call exists" while the panel reads `status.provenance` and renders nothing.

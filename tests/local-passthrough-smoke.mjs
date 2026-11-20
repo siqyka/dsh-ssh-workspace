@@ -17,6 +17,7 @@ import nodePath from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createHost } from './support/plugin-host.mjs'
+import { routeSource } from './support/route-source.mjs'
 
 const pluginRoot = nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -1340,7 +1341,7 @@ console.log('\n[11] the scheme rules')
   // ---- the status route publishes them (source, so it runs everywhere) -----
   // routes.js cannot be imported without the assembled tree; a skip there is
   // where "the panel stopped receiving its rules" would ship unnoticed.
-  const routesSource = readFileSync(nodePath.join(pluginRoot, 'lib', 'routes.js'), 'utf8')
+  const routesSource = routeSource(pluginRoot)
   check('the status route builds the rules from the module that enforces them',
     /schemeRules: schemeRules\(\)/u.test(routesSource),
     'the route no longer publishes schemeRules from passthrough.js')

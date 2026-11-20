@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 // the harness is shared with `archive-smoke` so the two suites cannot describe
 // two different implementations.
 import { makeToastDom } from './support/toast-dom.mjs'
+import { routeSource } from './support/route-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -706,7 +707,7 @@ console.log('\n[a11y: the menu contract]')
     /\(diagnosis\.notes \?\? \[\]\)\.length > 0 && jsxs\('details'/u.test(source),
     'the section was the only place these rows were visible')
   check('the on-demand route is still served',
-    /path: ROUTES\.selfCheck/u.test(readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')),
+    /path: ROUTES\.selfCheck/u.test(routeSource(packageRoot)),
     'the route behind the button was removed along with the button')
   check('the status tool still reports self-check rows',
     /selfCheck: probedAliases\(engine\)/u.test(readFileSync(path.join(packageRoot, 'lib', 'tools.js'), 'utf8')),
@@ -728,7 +729,7 @@ console.log('\n[a11y: the menu contract]')
   // status payload has dropped them — which is the exact regression this line
   // exists to catch.
   {
-    const routesSource = readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')
+    const routesSource = routeSource(packageRoot)
     const statusStart = routesSource.indexOf('path: ROUTES.status')
     const statusEnd = routesSource.indexOf('path: ROUTES.selfCheck', statusStart)
     const statusRoute = statusStart >= 0 && statusEnd > statusStart
@@ -1398,7 +1399,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
 // sentence is chosen by how long the request lasted.
 {
   const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
-  const routes = readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')
+  const routes = routeSource(packageRoot)
   check('the chunked sender retries a transport death once',
     client.includes('for (let attempt = 1; attempt <= maxAttempts; attempt += 1)'), 'no retry loop')
   check('the retry is gated on a network-level failure, never on a JSON verdict',
@@ -1438,7 +1439,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
 // and it is the one that also crosses the packaged shell's `dsh-app://` origin.
 {
   const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
-  const routes = readFileSync(path.join(packageRoot, 'lib', 'routes.js'), 'utf8')
+  const routes = routeSource(packageRoot)
   check('the browser no longer chooses an upload transport by page origin',
     !/canCarryBinaryBody|postFileAsBody/u.test(client),
     'a raw-body path is still branchable, so progress and cancel depend on the origin')
