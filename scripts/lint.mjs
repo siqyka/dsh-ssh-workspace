@@ -31,25 +31,40 @@ const DIRECTORIES = ['lib', 'scripts', 'tests']
 /**
  * Every module file under the given directories, in a stable order.
  *
+ * Recursive on purpose: `lib/routes/` holds route modules and `tests/support/`
+ * holds the shared doubles, and a top-level-only walk silently skipped eleven
+ * of the latter. A syntax error in a file this never looked at turns into a
+ * crash at runtime, or into a suite that fails for a reason that looks like
+ * anything but a typo.
+ *
  * @returns {string[]} paths relative to the repository root.
  */
 function moduleFiles () {
   const files = []
-  for (const directory of DIRECTORIES) {
+  /** @param {string} directory - relative to the root. */
+  const walk = (directory) => {
     let entries
     try {
       entries = readdirSync(path.join(root, directory), { withFileTypes: true })
     } catch {
       // A missing directory is not a failure: a published tarball ships `lib/`
       // only, and `npm run lint` there should still pass rather than explode.
-      continue
+      return
     }
     for (const entry of entries) {
+      const relative = `${directory}/${entry.name}`
+      // `node_modules` can appear under `tests/` when a fixture installs a
+      // package; its files are not ours to check.
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(relative)
+        continue
+      }
       if (!entry.isFile()) continue
       if (!/\.(?:js|mjs)$/u.test(entry.name)) continue
-      files.push(`${directory}/${entry.name}`)
+      files.push(relative)
     }
   }
+  for (const directory of DIRECTORIES) walk(directory)
   return files.sort()
 }
 
