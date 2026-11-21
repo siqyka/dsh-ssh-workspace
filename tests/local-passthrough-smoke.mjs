@@ -46,7 +46,7 @@ const {
   normalizeScheme, parseLocalScheme, SCHEMES_IN_USE, schemeRefusal, schemeRules,
 } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/passthrough.js')).href)
 const { HostConfigStore, passthroughOf } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/store.js')).href)
-const { PassthroughSettings } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/passthrough-settings.js')).href)
+const { PassthroughSettings } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/passthrough.js')).href)
 const { RemoteFileSystem } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/remote-fs.js')).href)
 const { installBuiltinBridge, uninstallBuiltinBridge } =
   await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/fs-shim.js')).href)

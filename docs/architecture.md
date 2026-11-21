@@ -83,7 +83,7 @@ Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔
 **显式 scheme 是第三类输入，而回退是唯一的存在性判定。** `<scheme>:<abs>` 在 `resolve` /
 `lstat` 里先被 `parseLocalScheme` 剥成裸绝对路径，再走同一套前缀与引用表判定——它不新增
 分类器，只是把“这条拼写属于本机”从推断变成声明。前缀名与回退开关的唯一真相在 `dsh-ssh.json`
-的 `passthrough.<field>`，`lib/passthrough-settings.js` 是唯一写入者，`lib/index.js` 在装缝之前
+的 `passthrough.<field>`，`lib/passthrough.js` 底部的 `PassthroughSettings` 是唯一写入者，`lib/index.js` 在装缝之前
 `activate()` 一次把它 `configure` 进 live matcher，之后面板改动直接写穿、无需重启。
 
 回退之所以特殊：它是全仓库唯一一处**先问远端存不存在、再决定去哪个世界**的判定，与上面

@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 65 | recursive listing |
+| modules under `lib/` | 64 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
@@ -39,8 +39,8 @@
 | `lib/hosts.js` | 主机解析：存储优先、`~/.ssh/config` 回退、行渲染 |
 | `lib/ssh-config.js` | `~/.ssh/config` 的**唯一** section 切分：`Host` / `Match` 行起新段，`Match` 段体不归任何主机（但仍作为自己的段返回，好让消费者报出来而不是静默吸收）。文件底部是 `Match` 求值那一半（`EVALUABLE_CRITERIA` / `REFUSED_CRITERIA` / `DEFERRED_CRITERIA` 三态不许合并，未知道条件选中无人）——它以前是 `lib/match-eval.js`，两个文件互相 import，是 `lib/` 里唯一的功能环；现在合成一个文件，环随之消失 |
 | `lib/mode-gate.js` | 远端写入的统一门禁：`read-only` / `workspace-write` / `danger-full-access` 三态，加上「未挂载」「超出会话工作区」两类范围拒绝，被六条可写路径共用（工具 / shell / subprocess / 终端 / 传输路由）；判定失败时 fail-closed 且文案不谎称“仅可查看”；嵌套的链接不归它管 |
-| `lib/passthrough.js` | 本机路径直通的唯一实现：配置前缀展开、词法归一化与边界匹配、`$DSH_HOME` 整目录拒绝、`@` 引用表（`hostReferencePathsInText` 提取、`addHostReference` 登记、先进先出上限 256）、显式 scheme（`parseLocalScheme` / `normalizeScheme`，默认 `local`，一至三个斜杠，不做 percent-decoding）与远端未命中回退的开关。引用条目多带一位 `viaScheme`：用 scheme 点名过的路径不会因此让它的**裸拼写**变成本机读。`matches`（直通门）、`isNamed`（回退的唯一闸门）、`localSpelling`（交给本机后端的剥前缀值）是三张不同的问句，不合并；不 `stat`、不 `realpath`、不调用被补丁的 `path.isAbsolute` |
-| `lib/passthrough-settings.js` | 直通设置的唯一写入点：store 是运行时真相，插件配置（`localPassthroughScheme` / `localPassthroughFallback`）只是首次默认；`apply` 先校验后落盘再 `configure` 活 matcher，顺序保证三条消费缝看不到半套设置 |
+| `lib/passthrough.js` | 本机路径直通的唯一实现**加它的唯一写入点**（文件底部 `PassthroughSettings`：store 是运行时真相，插件配置 `localPassthroughScheme` / `localPassthroughFallback` 只是首次默认，`apply` 先校验后落盘再 `configure` 活 matcher——顺序保证三条消费缝看不到半套设置；`scheme: undefined` 必须留在 store 里，「用户选了默认」与「用户从没选过」不能塌成一个）：配置前缀展开、词法归一化与边界匹配、`$DSH_HOME` 整目录拒绝、`@` 引用表（`hostReferencePathsInText` 提取、`addHostReference` 登记、先进先出上限 256）、显式 scheme（`parseLocalScheme` / `normalizeScheme`，默认 `local`，一至三个斜杠，不做 percent-decoding）与远端未命中回退的开关。引用条目多带一位 `viaScheme`：用 scheme 点名过的路径不会因此让它的**裸拼写**变成本机读。`matches`（直通门）、`isNamed`（回退的唯一闸门）、`localSpelling`（交给本机后端的剥前缀值）是三张不同的问句，不合并；不 `stat`、不 `realpath`、不调用被补丁的 `path.isAbsolute` |
+
 | `lib/capabilities.js` | 远端环境自检：7 项工具与 4 项环境事实一次往返问完，三态 `present` / `absent` / `unknown` 不能合并——`unknown` 不带安装提示 |
 | `lib/config-audit.js` | `~/.ssh/config` 审计：本插件读了什么、故意不支持什么，`ignored` / `lost` / `refused` 三种判定不合并，挂在 `HostStore.listing()` 每行的 `unsupported` 上 |
 | `lib/audit.js` | 远端命令审计：容量 200 的有界环，脱敏**在写入时**发生而不是导出时补第二次。它不是沙箱：远端命令以登录用户权限运行，这里只能记录 |

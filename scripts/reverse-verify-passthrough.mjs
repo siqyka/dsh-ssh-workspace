@@ -248,7 +248,7 @@ const MUTATIONS = [
   },
   {
     name: 'the resolved settings skip validation before they reach the store',
-    file: 'lib/passthrough-settings.js',
+    file: 'lib/passthrough.js',
     // Re-anchored: the controller now asks `schemeRefusal` for a verdict instead
     // of calling `normalizeScheme` inline.
     find: '      const refusal = schemeRefusal(patch.scheme)',
@@ -294,7 +294,7 @@ const MUTATIONS = [
   },
   {
     name: 'a degraded stored value reports itself as effective',
-    file: 'lib/passthrough-settings.js',
+    file: 'lib/passthrough.js',
     find: '      effective: this.matcher?.scheme ?? this.defaults.scheme',
     replace: '      effective: name',
   },
