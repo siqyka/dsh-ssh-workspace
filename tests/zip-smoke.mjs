@@ -1,7 +1,7 @@
 /**
  * Verify the zip writer against a REAL reader.
  *
- * The lesson from `tar.js` is repeated here because it applies twice over: a
+ * The lesson from the tar writer is repeated here because it applies twice over: a
  * hand-written writer whose verification is another hand-written parser proves
  * only that the two agree. The first tar writer wrote its size field in decimal,
  * every byte-level assertion passed, and every real archiver rejected the
@@ -9,7 +9,7 @@
  * CRC-32 that readers check before they will show any content, the data
  * descriptor that only matters because we stream.
  *
- * So this script builds archives with `lib/zip.js` and then opens them with
+ * So this script builds archives with `lib/archive.js` and then opens them with
  * Python's `zipfile`, which is an independent implementation that verifies CRCs
  * on read. If Python is unavailable the script still checks structure, and says
  * loudly that the real-reader half did not run.
@@ -27,7 +27,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { crc32Update, dosDateTime, zipStream, localHeader, centralHeader } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib', 'zip.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib', 'archive.js')).href
 )
 
 let passed = 0

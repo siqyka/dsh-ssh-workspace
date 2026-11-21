@@ -44,28 +44,28 @@ if (!path.isAbsolute(coreRoot)) {
 const MUTATIONS = [
   {
     name: 'the tar size field is written in DECIMAL (the bug a real reader caught)',
-    file: 'lib/tar.js',
+    file: 'lib/archive.js',
     find: '  const digits = Math.max(0, Math.trunc(value)).toString(8)',
     replace: '  const digits = String(Math.max(0, Math.trunc(value)))',
     suite: 'archive',
   },
   {
     name: 'the tar mtime is written in decimal',
-    file: 'lib/tar.js',
+    file: 'lib/archive.js',
     find: '  writeOctal(header, 136, 12, Math.max(0, Math.trunc(entry.mtime ?? 0)))',
     replace: "  header.write(String(Math.max(0, Math.trunc(entry.mtime ?? 0))).padStart(11, '0') + '\\0', 136, 12, 'ascii')",
     suite: 'archive',
   },
   {
     name: 'a short entry is emitted instead of refused',
-    file: 'lib/tar.js',
+    file: 'lib/archive.js',
     find: '    if (written !== size) {',
     replace: '    if (false) {',
     suite: 'archive',
   },
   {
     name: 'a file past 100 bytes is silently truncated instead of split',
-    file: 'lib/tar.js',
+    file: 'lib/archive.js',
     find: "  if (name <= 100) return { prefix: '', name: path }",
     replace: "  return { prefix: '', name: path.slice(0, 100) }",
     suite: 'archive',
@@ -251,7 +251,7 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const after = ['lib/tar.js', 'lib/tree-filter.js', 'lib/transfer.js', 'lib/client/client.js']
+const after = ['lib/archive.js', 'lib/tree-filter.js', 'lib/transfer.js', 'lib/client/client.js']
   .map(name => [name, damagedCount(readFileSync(path.join(root, name), 'utf8'))])
   .filter(([, count]) => count > 0)
 if (after.length > 0) {

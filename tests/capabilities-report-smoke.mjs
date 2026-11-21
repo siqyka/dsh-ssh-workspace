@@ -111,19 +111,24 @@ console.log('\n[every promised capability is actually wired]')
   const { readFileSync } = await import('node:fs')
   const { modulePaths } = await import('./support/lib-modules.mjs')
   const libDir = path.join(pluginRoot, 'lib')
-  // `tar.js` is excluded from BOTH scans, and the reason is the same one that
-  // makes its `tar` row honest: it WRITES the archive format itself, so the host
-  // needs no `tar` binary. Its file name and its error messages ("a tar entry")
-  // are about the format, not about a command anything runs.
+  // Two files cannot be scanned straight, and they are not the same case:
+  //
+  //  - `capabilities.js` OWNS the vocabulary this section checks. Scanning it
+  //    would let every row vouch for itself, so it is out of both scans.
+  //  - `archive.js` WRITES the archive formats itself, which is what makes its
+  //    `tar` row honest: the host needs no `tar` binary. Its file name and its
+  //    error messages ("a tar entry") are about the format, not about a command
+  //    anything runs — so it is out of the unprobed scan only, and stays in the
+  //    capability scan where it names nobody's tool.
   //
   // The walk is recursive on purpose: `lib/routes/` and `lib/client/` hold real
   // modules, and a top-level listing would silently stop covering them the
   // moment a file moved into one — the same drift that made `doc-numbers` count
   // 79 modules instead of 63 after the browser half moved into its own folder.
-  const sources = modulePaths(libDir)
-    .filter(name => !/^(?:capabilities|tar)\.js$/u.test(name))
-    .map(name => readFileSync(path.join(libDir, name), 'utf8'))
-    .join('\n')
+  const readable = modulePaths(libDir)
+    .filter(name => !/^capabilities\.js$/u.test(name))
+    .map(name => ({ name, text: readFileSync(path.join(libDir, name), 'utf8') }))
+  const sources = readable.map(entry => entry.text).join('\n')
   for (const spec of TOOL_CAPABILITIES) {
     // `tput` is only ever named in a comment, so a plain substring test is not
     // enough — this looks for the tool as a command, in a template string or
@@ -136,16 +141,20 @@ console.log('\n[every promised capability is actually wired]')
   // table. What counts as a dependency is an invocation, not the spelling of a
   // filename:
   //
-  //  - `lib/tar.js` is a module this plugin OWNS (it writes the archive format
-  //    itself, so the host needs no `tar` binary at all);
+  //  - `lib/archive.js` is a module this plugin OWNS (it writes the archive
+  //    format itself, so the host needs no `tar` binary at all) — that is why it
+  //    is left out of THIS scan entirely rather than patched up afterwards;
   //  - `x.tar` is an output filename;
-  //  - `import … from './tar.js'` is a module specifier.
+  //  - `import … from './archive.js'` is a module specifier.
   //
   // All three are removed before the search. Leaving them in would demand a
   // probe for a tool nothing runs, which is the same category error in the
   // opposite direction as the four fictional rows this table already had
   // corrected.
-  const code = sources
+  const code = readable
+    .filter(entry => !/^archive\.js$/u.test(entry.name))
+    .map(entry => entry.text)
+    .join('\n')
     .replace(/\/\*[\s\S]*?\*\//gu, '')
     .replace(/^\s*\/\/.*$/gmu, '')
     .replace(/(?:from|import|require\()\s*(['"])[^'"\n]*\1/gu, '')

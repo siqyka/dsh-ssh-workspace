@@ -14,7 +14,7 @@
  * A hand-written tar writer whose verification is another hand-written parser
  * proves only that the two agree. The assertions below therefore ALSO decode with
  * `python -m tarfile` when a Python interpreter is available, and say so when it
- * is not. That is not decoration: the first version of `tar.js` wrote the size
+ * is not. That is not decoration: the first version of the tar writer wrote the size
  * field in DECIMAL, every byte-level assertion here passed, and the archive was
  * unreadable — `tar -tvf` said "Unrecognized archive format".
  *
@@ -33,7 +33,7 @@ import { clientSource } from './support/client-source.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 
-const { BLOCK, splitTarName, tarHeader, tarPadding, tarStream } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tar.js')).href)
+const { BLOCK, splitTarName, tarHeader, tarPadding, tarStream } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'archive.js')).href)
 const { globToRegExp, relativeForRule, treeFilter } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tree-filter.js')).href)
 // The toast helpers are lifted from the shipped bundle by a shared harness so
 // this suite and `client-shape-smoke` drive the SAME code rather than two

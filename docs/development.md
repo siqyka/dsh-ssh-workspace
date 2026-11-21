@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 77 | recursive listing |
+| modules under `lib/` | 76 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
@@ -51,6 +51,7 @@
 | `lib/forward.js` | 端口转发引擎：listener 与 `forwardOut` 隧道的建立 / 拆除、按主机拆除（`closeForAlias`）、`holds` 引用计数 |
 | `lib/forward-persist.js` | 已存映射：**意图**（`enabled`）与**事实**（`live`）分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径（后者逐条走前者） |
 | `lib/transfer.js` | 文件传输：本机 ↔ 远端的流式 SFTP 拷贝与目录树上传（原子发布） |
+| `lib/archive.js` | 两种归档格式的手写写出器（tar 在前、zip 在后），一次产出一块 Buffer：tar 走 ustar 头 + 512 字节分块，zip 走储 / 压缩条目 + data descriptor + 中央目录；都**不支持符号链接 / 硬链接 / 归属**（调用方跳过并上报，一个指向 `/` 的条目会把「下载这个文件夹」变成别人机器上的覆盖）。浏览器只能收到一个文件，而 ZIP 是每个桌面系统都原生能开的格式，所以它是默认，tar 是回退——见 `transfer.js` |
 | `lib/store.js` | `$DSH_HOME/dsh-ssh.json` 存储：校验、合并（保留未知字段）、原子写 |
 | `lib/routes/` | 浏览器半边的 33 条 HTTP 路由，按资源域分开：`routes.js`（组合点 + `ROUTES` 表）负责把五个数组拼成一张表，`hosts` / `workspaces` / `forwards` / `transfers` / `entries` 五个模块各放自己那族 handler，`kit.js` 是围栏与流式响应工具，`transfer-bytes.js` 是浏览器直传 / 直下的字节搬运。入口仍是 `lib/index.js` 里的一次 `makeRoutes()`：hosts / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / mutation-policy / self-check / support-bundle / passthrough-settings |
 | `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
