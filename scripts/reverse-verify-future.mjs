@@ -182,7 +182,7 @@ const CASES = [
   // reporting an intact shape that renders nothing.
   {
     label: 'self-check gate: the heading is moved into a comment',
-    file: 'lib/client.js',
+    file: 'lib/client.panel.js',
     from: "          jsx('h3', { children: t('check.title') }),",
     to: "          // jsx('h3', { children: t('check.title') }),",
     suite: 'client-shape-smoke.mjs',
@@ -191,7 +191,7 @@ const CASES = [
   },
   {
     label: 'self-check gate: the card disclosure is moved into a comment',
-    file: 'lib/client.js',
+    file: 'lib/client.panel.js',
     from: "                      className: 'sshwsp-check-head',",
     to: "                      // className: 'sshwsp-check-head',",
     suite: 'client-shape-smoke.mjs',
@@ -200,7 +200,7 @@ const CASES = [
   },
   {
     label: 'self-check gate: the switch is flipped on',
-    file: 'lib/client.js',
+    file: 'lib/client.panel.js',
     from: 'const SHOW_SELF_CHECK_SECTION = false',
     to: 'const SHOW_SELF_CHECK_SECTION = true',
     suite: 'client-shape-smoke.mjs',
@@ -209,7 +209,7 @@ const CASES = [
   },
   {
     label: 'self-check gate: only one of the two elements is guarded',
-    file: 'lib/client.js',
+    file: 'lib/client.panel.js',
     from: "        SHOW_SELF_CHECK_SECTION && jsxs('div', { className: 'sshwsp-section-head', children: [",
     to: "        jsxs('div', { className: 'sshwsp-section-head', children: [",
     suite: 'client-shape-smoke.mjs',
@@ -218,7 +218,7 @@ const CASES = [
   },
   {
     label: 'self-check gate: the derivation ignores the switch',
-    file: 'lib/client.js',
+    file: 'lib/client.panel.js',
     from: 'const selfCheckRows = !SHOW_SELF_CHECK_SECTION ? []',
     to: 'const selfCheckRows = true ? []',
     suite: 'client-shape-smoke.mjs',
