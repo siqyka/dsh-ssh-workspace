@@ -41,7 +41,7 @@ console.log('\n=== routes smoke ===\n')
 // ---------------------------------------------------------------------------
 // Bare-identifier audit (runs even when the DSH tree is absent)
 //
-// routes.js cannot be imported without @deepseek-ai/dsh-fs, so this suite
+// The route family cannot be imported without @deepseek-ai/dsh-fs, so this suite
 // skips on a plain checkout. That skip is exactly how a real bug shipped: the
 // upload handler called `remoteParentOf`/`sftpUnlink`, which live in
 // transfer.js and were never imported — the suite was green because it only
@@ -74,14 +74,14 @@ console.log('\n=== routes smoke ===\n')
     return !(declared.has(helper) || imported.has(helper))
   })
   for (const helper of missing) {
-    check(`routes.js can resolve ${helper}()`, false, 'called but neither declared nor imported')
+    check(`the route family can resolve ${helper}()`, false, 'called but neither declared nor imported')
   }
   if (missing.length === 0) {
     check('every SFTP helper the transfer routes call is imported', true)
   }
 }
 
-// routes.js pulls the SFTP primitives from remote-fs.js, which resolves the DSH
+// The route family pulls the SFTP primitives from remote-fs.js, which resolves the DSH
 // peer packages; the suite needs the assembled tree even though it never opens
 // a connection.
 // ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ if (!coreRoot) {
 }
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
-const { makeRoutes, ROUTES } = await import(pathToFileURL(path.join(pluginRoot, 'lib/routes.js')).href)
+const { makeRoutes, ROUTES } = await import(pathToFileURL(path.join(pluginRoot, 'lib/routes/routes.js')).href)
 
 /** A response double that records what the handler wrote. */
 function fakeRes () {
@@ -2262,12 +2262,12 @@ async function postChunk (route, body, chunks = []) {
 // Every route answers with a fully composed plugin.
 //
 // This is the regression test for a bug the rest of this file could not see:
-// `/status` called `schemeRules()`, which lived in `routes.js`'s import list
-// and was not imported by the module the handler moved into. Every other check
-// here drives routes whose deps are undefined or absent, so the branch that
-// called it never ran, and 276 green assertions coexisted with a route that
-// threw `ReferenceError` on every real request — the Host turns that into a
-// bare 400, which is what a user sees as "the panel reads nothing".
+// `/status` called `schemeRules()`, which was listed in the composition
+// point's imports and not imported by the module the handler had moved into.
+// Every other check here drives routes whose deps are undefined or absent, so
+// the branch that called it never ran, and 276 green assertions coexisted with
+// a route that threw `ReferenceError` on every real request — the Host turns
+// that into a bare 400, which is what a user sees as "the panel reads nothing".
 //
 // The fix is the shape of this check: give EVERY route a fully populated deps
 // object and call it. A missing import cannot hide behind an undefined

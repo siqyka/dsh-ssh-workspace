@@ -1,26 +1,29 @@
 /**
  * The route family's source text, wherever the modules currently live.
  *
- * `lib/routes.js` used to hold the whole family: the fence, the helpers and all
- * 33 descriptors in one 3,765-line file. It is now the composition point plus
- * the helpers that belong to one route, with the descriptors grouped by subject
- * under `lib/routes/`. A suite that asserts "the status route publishes
- * `provenance`" is asking about the family, not about a file — and hard-coding
- * the file is what made the split look like a regression in five suites at once.
+ * The whole family used to be one 3,765-line `lib/routes.js`. It is now a folder:
+ * `lib/routes/routes.js` is the composition point plus the descriptor table, and
+ * the handlers are grouped by subject beside it. A suite that asserts "the status
+ * route publishes `provenance`" is asking about the family, not about a file —
+ * and hard-coding the file is what made the split look like a regression in five
+ * suites at once.
  *
  * Reading the concatenation keeps the question intact. It is deliberately NOT a
  * per-file lookup: a suite that needs to know WHICH module holds something
  * should import that module, and the few that genuinely do (the ownership
  * schema, the kit's mappers) read the specific file on purpose.
  *
- * The order is stable — the composition point first, then the submodules sorted
- * by name — so a byte offset into the result is reproducible within a run.
+ * The order is stable — the composition point first, then the other modules
+ * sorted by name — so a byte offset into the result is reproducible within a run.
  *
  * @module tests/support/route-source
  */
 
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
+
+/** The module holding the descriptor table and the composition point. */
+const COMPOSITION_POINT = 'routes.js'
 
 /**
  * Every route module's source, joined.
@@ -29,15 +32,17 @@ import path from 'node:path'
  * @returns {string} the concatenated source, with CRLF normalized to LF.
  */
 export function routeSource (pluginRoot) {
-  const files = [path.join(pluginRoot, 'lib', 'routes.js')]
+  const directory = path.join(pluginRoot, 'lib', 'routes')
+  const first = COMPOSITION_POINT
+  const files = [path.join(directory, first)]
   let entries = []
   try {
-    entries = readdirSync(path.join(pluginRoot, 'lib', 'routes'))
+    entries = readdirSync(directory)
   } catch {
-    // No route directory yet: the family is still in one file.
+    // No route directory: the family is not where this helper expects it.
   }
   for (const name of entries.sort()) {
-    if (name.endsWith('.js')) files.push(path.join(pluginRoot, 'lib', 'routes', name))
+    if (name.endsWith('.js') && name !== first) files.push(path.join(directory, name))
   }
   // Normalized for the same reason the ownership suite normalizes: a checkout
   // with CRLF would otherwise make an `indexOf` return -1 and read as a missing
@@ -54,12 +59,10 @@ export function routeSource (pluginRoot) {
  *
  * @param {string} pluginRoot - the repository root.
  * @param {string} name - the module name without the `.js` suffix, or `''` for
- *   the composition point `lib/routes.js`.
+ *   the composition point `lib/routes/routes.js`.
  * @returns {string} the module source, with CRLF normalized to LF.
  */
 export function routeModuleSource (pluginRoot, name) {
-  const file = name === ''
-    ? path.join(pluginRoot, 'lib', 'routes.js')
-    : path.join(pluginRoot, 'lib', 'routes', `${name}.js`)
+  const file = path.join(pluginRoot, 'lib', 'routes', name === '' ? COMPOSITION_POINT : `${name}.js`)
   return readFileSync(file, 'utf8').replace(/\r\n/gu, '\n')
 }

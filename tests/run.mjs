@@ -163,7 +163,7 @@ if (names.length === 0) {
 }
 
 // A checkout without an assembled DSH tree used to skip every suite that imports
-// routes.js or remote-fs.js. Skipping is not passing: this run generates a
+// the route family or remote-fs.js. Skipping is not passing: this run generates a
 // minimal stub root unless the caller supplied a real one (or opted out), so the
 // plugin's own logic is exercised on a bare checkout too. Suites that need a LIVE
 // host still skip on DSH_WS_TEST_ALIAS — a stub cannot fake an SSH server.

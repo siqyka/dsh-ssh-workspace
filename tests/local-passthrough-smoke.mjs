@@ -1339,7 +1339,7 @@ console.log('\n[11] the scheme rules')
     'the published pattern and normalizeScheme disagree')
 
   // ---- the status route publishes them (source, so it runs everywhere) -----
-  // routes.js cannot be imported without the assembled tree; a skip there is
+  // The route family cannot be imported without the assembled tree; a skip there is
   // where "the panel stopped receiving its rules" would ship unnoticed.
   const routesSource = routeSource(pluginRoot)
   check('the status route builds the rules from the module that enforces them',

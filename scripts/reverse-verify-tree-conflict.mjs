@@ -67,7 +67,7 @@ const MUTATIONS = [
     replace: 'export const DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024',
   },
   {
-    name: 'routes.js hard-codes its own copy of the limit',
+    name: 'the route family hard-codes its own copy of the limit',
     file: 'lib/routes/transfer-bytes.js',
     find: "import { DEFAULT_MAX_BYTES, fenceUploadTarget, oversizeMessage, remoteParentOf, sftpUnlink, stagingNameOf } from '../transfer.js'",
     replace: "import { fenceUploadTarget, oversizeMessage, remoteParentOf, sftpUnlink, stagingNameOf } from '../transfer.js'\nconst DEFAULT_MAX_BYTES = 1024 * 1024 * 1024",

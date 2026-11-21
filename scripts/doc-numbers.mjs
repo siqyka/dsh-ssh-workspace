@@ -113,22 +113,25 @@ export function suiteNames () {
 /**
  * The route module sources, wherever they live.
  *
- * `lib/routes.js` keeps the descriptor table and the composition point; the
- * handlers themselves are being split into `lib/routes/`. Both places have to
- * be read, or the count would silently drop as handlers moved — a figure that
- * changes because of a refactor is a figure nobody trusts afterwards.
+ * The family is a folder: `lib/routes/` holds the composition point, the
+ * descriptor table and every handler module. Reading only one of them would
+ * make the count silently drop as a handler moved — a figure that changes
+ * because of a refactor is a figure nobody trusts afterwards.
+ *
+ * Every `.js` under the directory is read, in sorted order, so a new module is
+ * counted without anyone updating a list here.
  *
  * @returns {string[]} the route module sources.
  */
 export function routeSources () {
-  const sources = [readOrEmpty(path.join(root, 'lib', 'routes.js'))]
   const directory = path.join(root, 'lib', 'routes')
   let entries
   try {
     entries = fs.readdirSync(directory)
   } catch {
-    return sources
+    return []
   }
+  const sources = []
   for (const name of entries.sort()) {
     if (!name.endsWith('.js')) continue
     sources.push(readOrEmpty(path.join(directory, name)))
@@ -182,7 +185,7 @@ export function renderNumbers (options = {}) {
     '',
     '| figure | value | source |',
     '| --- | --- | --- |',
-    `| HTTP routes | ${routes} | \`lib/routes.js\` + \`lib/routes/\` |`,
+    `| HTTP routes | ${routes} | \`lib/routes/\` |`,
     `| model-facing tools | ${tools} | \`lib/tools.js\` |`,
     `| upstream patch modules | ${patches} | \`lib/patch-*.js\` |`,
     `| modules under \`lib/\` | ${modules} | recursive listing |`,

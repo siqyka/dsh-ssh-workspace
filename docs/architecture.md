@@ -596,7 +596,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 
 单文件上限 1 GiB（`DEFAULT_MAX_BYTES`），超限直接拒绝而不是尝试分配。
 
-浏览器端另有一条 `GET /download` 流式路由（`lib/routes.js`），把字节直接写进响应
+浏览器端另有一条 `GET /download` 流式路由（`lib/routes/transfers.js`），把字节直接写进响应
 而不是编码成 JSON：base64 会放大三分之一、且受 4 MiB 请求体上限约束，而下载的
 文件本来就可能远大于此。因为它不回答 JSON，所以不复用共享的 `guard()`，而是自己
 重新施加回环来源 + `Host` 头双重校验，并只接受 GET。
@@ -607,7 +607,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 `sftp.readdir` 每条都带 attrs，服务器要逐条 `lstat`。小目录是两三个往返，共享 `/tmp`
 这种几万条的地方就变成几千次 stat 加几十个 READDIR 包——在 300 ms 链路上 25 000 条
 30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字，而且只要目录**，于是列表改走
-`engine.exec` 的一次命令（`lib/routes.js` 的 `dirsListingCommand`）：`ls -1ap` 过一层
+`engine.exec` 的一次命令（`lib/routes/entries.js` 的 `dirsListingCommand`）：`ls -1ap` 过一层
 `awk`，**上限在远端就生效**（大目录最多只传 `limit` 个名字），同一轮里 `pwd -P` 解析
 登录目录、`test -w` 报可写性。
 

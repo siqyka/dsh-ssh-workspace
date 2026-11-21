@@ -11,12 +11,12 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 33 | `lib/routes.js` + `lib/routes/` |
+| HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
 | modules under `lib/` | 83 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
-| passing assertions (sampled) | 5032 | measured 2026-11-20 |
+| passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
 <!-- doc-numbers:end -->
 
@@ -52,7 +52,7 @@
 | `lib/forward-persist.js` | 已存映射：**意图**（`enabled`）与**事实**（`live`）分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径（后者逐条走前者） |
 | `lib/transfer.js` | 文件传输：本机 ↔ 远端的流式 SFTP 拷贝与目录树上传（原子发布） |
 | `lib/store.js` | `$DSH_HOME/dsh-ssh.json` 存储：校验、合并（保留未知字段）、原子写 |
-| `lib/routes.js` | 浏览器半边的 33 条 HTTP 路由（hosts / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / mutation-policy / self-check / support-bundle / passthrough-settings） |
+| `lib/routes/` | 浏览器半边的 33 条 HTTP 路由，按资源域分开：`routes.js`（组合点 + `ROUTES` 表）负责把五个数组拼成一张表，`hosts` / `workspaces` / `forwards` / `transfers` / `entries` 五个模块各放自己那族 handler，`kit.js` 是围栏与流式响应工具，`transfer-bytes.js` 是浏览器直传 / 直下的字节搬运。入口仍是 `lib/index.js` 里的一次 `makeRoutes()`：hosts / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / mutation-policy / self-check / support-bundle / passthrough-settings |
 | `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
 | `lib/tools.js` | 11 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
 | `lib/remote-skills.js` | 远端技能发现：`ctx.skills` 上注册 `ssh-workspace-remote-skills`（rank 250），扫会话工作区下的 `.dsh/skills` 与 `.agents/skills`。路径全程 `normalizeRemotePath` / `formatRemotePath`——宿主的 `discoverRoot` 用 `node:path.join`，在 Windows 上会把 `ssh://` 拼成 `.\ssh:\...` 而让候选静默消失；frontmatter 自写子集解析（不引入 YAML）；非法候选在返回前滤掉（宿主 `validateCandidate` 是 `throw`，会带走整个会话的技能目录）；`get()` 每次加载正文前重做 `assertFencedRealpath`（`remote-fs.js` 的围栏只挂写路径）。默认关闭，按主机白名单开启，有界，`complete: false` 不缓存 |
@@ -163,25 +163,25 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **98 个套件里 89 个通过、6 个整体 SKIP**（`projection-real` / `lifecycle` /
-`boot` / `tool-schemas` 缺真实装配树，`live` / `acceptance` 缺真实主机），另有
+于是 **99 个套件里 89 个通过、7 个整体 SKIP**（`projection-real` / `lifecycle` /
+`boot` / `tool-schemas` / `client-chunk` 缺真实装配树，`live` / `acceptance` 缺真实主机），另有
 3 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段、
 `dirs-listing` 在 Windows 上造不出「不可读 / 不可写」两种状态）；
-裸检出实测 **5032 项通过断言**（runner 汇总 98 条收尾行相加）。生成表那一行就是这次
-**裸检出采样值**（2026-11-20：5032 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
+裸检出实测 **5037 项通过断言**（runner 汇总 99 条收尾行相加）。生成表那一行就是这次
+**裸检出采样值**（2026-11-21：5037 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
 装配树上的数字更大，但换机器就会变，所以不写进表。
 带 `DSH_CORE_ROOT=<含 @deepseek-ai/dsh-fs 的 node_modules>` 时，`projection-real` / `lifecycle` /
-`tool-schemas` 三个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
-**93 个套件通过、3 个部分运行（`boot`、`local-changes-remote` 的 live 段与 `dirs-listing` 的权限段）、2 个 SKIP**
-（`live` / `acceptance`）。这一形态下实测 **5282 项通过断言**（本轮 2026-11-20 采样），但这不写进表：
+`tool-schemas` / `client-chunk` 四个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
+**94 个套件通过、3 个部分运行（`boot`、`local-changes-remote` 的 live 段与 `dirs-listing` 的权限段）、2 个 SKIP**
+（`live` / `acceptance`）。这一形态下实测 **5348 项通过断言**（本轮 2026-11-21 采样），但这不写进表：
 装配树因机器与宿主版本而异，表里只保留裸检出那一行采样值。
 
 **两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
 
-- `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` 三个再跑起来，
-  通过套件数 89 → 93；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
+- `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` / `client-chunk`
+  四个再跑起来，通过套件数 89 → 94；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
   断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，98 个套件全部运行、
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，99 个套件全部运行、
   零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
@@ -189,8 +189,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `cannot resolve the DSH peer package "@deepseek-ai/dsh-fs"` 退出——看起来像代码坏了，实际是根指错了。
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
-**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 98 条
-收尾行就是断言总数（本轮采样：裸检出 5032 项 / 98 个套件）。逐行数 `PASS` 会少算 87 项——
+**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 99 条
+收尾行就是断言总数（本轮采样：裸检出 5037 项 / 99 个套件）。逐行数 `PASS` 会少算 87 项——
 `toast-smoke` 用的是 `ok` 而不是 `PASS`，两种记法都算通过，所以**按收尾行加总，不要按 token 数行**。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
@@ -319,12 +319,13 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 - `DSH_WS_TEST_ALIAS`：存储 / `~/.ssh/config` 里可用的主机别名（不内置任何真实主机）。
 - `DSH_WS_TEST_DIR`：远端暂存父目录（默认 `/tmp/dsh-ssh-workspace-test`）。
 
-裸检出（无任何环境变量）`node tests/run.mjs` 会跑**依赖 `routes.js` / `remote-fs.js`
+裸检出（无任何环境变量）`node tests/run.mjs` 会跑**依赖路由族 / `remote-fs.js`
 的那些套件**——`tests/peer-stubs.mjs` 自动生成最小 peer stub 根，让它们真正运行而不是
 跳过（跳过的套件无法失败，正是这样一次跳过让一个调用了未导入函数的 upload 处理器
-绿着发了出去）。只有需要**真实框架**的四个套件（`lifecycle` / `boot` / `tool-schemas` /
-`projection-real`）与需要真实主机的两个（`live` / `acceptance`）仍 SKIP 并给出原因。
-这正是 CI 的形态：裸检出 88 个通过 / 3 个 partial / 6 个 SKIP，装配树下 92 个通过 /
+绿着发了出去）。只有需要**真实框架**的五个套件（`lifecycle` / `boot` / `tool-schemas` /
+`projection-real` / `client-chunk`，最后一个要 `@deepseek-ai/dsh-client-modules` 才敢断言
+chunk 真能按名字取回）与需要真实主机的两个（`live` / `acceptance`）仍 SKIP 并给出原因。
+这正是 CI 的形态：裸检出 89 个通过 / 3 个 partial / 7 个 SKIP，装配树下 94 个通过 /
 3 个 partial / 2 个 SKIP，两种形态都是零失败。
 
 这些套件靠 `tests/support/peer-mode.mjs` 判断手上这棵树能不能证明它们要证明的事。

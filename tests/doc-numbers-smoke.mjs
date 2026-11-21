@@ -34,10 +34,10 @@ const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8
 
 console.log('\n[1] the counters read the source')
 {
-  // The route family now spans `lib/routes.js` plus `lib/routes/`, so the
-  // counter is exercised against the sum of every source: the composition
-  // point alone holds no descriptors any more, and asserting a positive
-  // single-file count would fail for a reason that is not a defect.
+  // The route family is a folder: `lib/routes/` holds the composition point and
+  // every handler module, so the counter is exercised against the sum of every
+  // source. Asserting a positive count for any ONE file would fail for a reason
+  // that is not a defect.
   const sources = numbers.routeSources()
   const routesSource = sources.join('\n')
   const baseline = numbers.countRoutes(routesSource)
@@ -56,9 +56,10 @@ console.log('\n[1] the counters read the source')
     numbers.countTools(withOneMoreTool) === toolBaseline + 1,
     `${numbers.countTools(withOneMoreTool)} vs ${toolBaseline}`)
 
-  // The route handlers are moving into `lib/routes/`. The figure has to follow
-  // them, or it would drop the moment a handler left `lib/routes.js` — and a
-  // number that changes because of a refactor stops being trusted.
+  // The route handlers live in `lib/routes/` beside the composition point. The
+  // figure has to follow them, or it would drop the moment a handler moved out
+  // of the file it used to share — and a number that changes because of a
+  // refactor stops being trusted.
   check('the route sources are found', sources.length > 0, String(sources.length))
   check('they include the composition point', sources.some(source => source.includes('export function makeRoutes')))
   // The figure the document reports is the SUM over every source, so a route

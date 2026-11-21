@@ -55,7 +55,7 @@ const EXPECTED_TOOLS = [
   'ssh_workspace_reverse_forward',
 ]
 // Route paths the browser half must expose. Kept in step with ROUTES in
-// lib/routes.js: hosts, host save/delete/forget-key/disconnect/reconnect,
+// lib/routes/routes.js: hosts, host save/delete/forget-key/disconnect/reconnect,
 // test, ls, git-history, status, self-check, passthrough settings,
 // support-bundle, mount, unmount, enable, forward, unforward, the six
 // saved-forward routes (save/toggle/delete/remember/probe/settings), transfer,
@@ -75,7 +75,7 @@ const EXPECTED_ROUTES = 33
 // dropping it from the table, renaming its path or registering it twice is a
 // failure with a readable label rather than an off-by-one in a count.
 const GIT_HISTORY_PATH = '/api/dsh-ssh-workspace/git-history'
-const ROUTES_MODULE = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes.js')).href)
+const ROUTES_MODULE = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes', 'routes.js')).href)
 
 let failures = 0
 let passes = 0

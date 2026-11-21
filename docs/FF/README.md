@@ -11,7 +11,7 @@
 | 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | — | — | **已实施**（`lib/remote-skills.js`，`tests/remote-skills-smoke.mjs` 55 项；说明见 `docs/features.md` 五之三 与 `docs/architecture.md` 的「远端技能发现」一节） |
 | 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | [03-remote-file-editing.md](./03-remote-file-editing.md) | [prompt](./03-remote-file-editing-prompt.md) | 方案 |
 | 04 | 代码拆分（去重 + `tools` / `routes` / `remote-fs` 的 watch 集群 + `client.js` 的懒渲染边界） | [04-code-splitting.md](./04-code-splitting.md) | [prompt](./04-code-splitting-prompt.md) | 完成 |
-| 05 | 同功能模块合并（16 组：`lib/` 79 → 53 个模块，含 `tar`+`zip` → `archive`、`match-eval` 并回 `ssh-config` 消环；不碰 `lib/routes/` 与 `lib/client/`） | [05-module-merges.md](./05-module-merges.md) | — | 方案（16 组已定；轨道 A 的 A1–A4 已提交，合并本体未开工） |
+| 05 | 同功能模块合并（16 组：`lib/` 83 → 57 个模块，含 `tar`+`zip` → `archive`、`match-eval` 并回 `ssh-config` 消环；不碰 `lib/routes/` 与 `lib/client/`） | [05-module-merges.md](./05-module-merges.md) | — | 方案（16 组已定；轨道 A 的 A1–A4 已提交，合并本体未开工） |
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
 
@@ -31,9 +31,9 @@
 - **05 是 04 的延续**：04 的轨道 A 建了 `lib/text.js` / `lib/options.js` /
   `lib/forward-common.js` / `lib/shell-quote.js` 四个「给一行逻辑开一个文件」的模块，
   05 的第 1 组再把它们并成一个 `lib/shared.js`，然后按「其实是一件事」给出 16 组
-  合文件方案（`lib/` 79 → 53 个模块，删 26 个文件）。两者都只搬代码、不改语义，
+  合文件方案（`lib/` 83 → 57 个模块，删 26 个文件）。两者都只搬代码、不改语义，
   但**都会动 `lib/` 的顶层文件名**，所以 05 与 04 的轨道 C/D 必须串行，
-  且每一步都要重跑 `scripts/doc-numbers.mjs`（`modules under lib/` 会从 69 一路降到 43）。
+  且每一步都要重跑 `scripts/doc-numbers.mjs`（`modules under lib/` 会从 83 一路降到 57）。
   05 明确不碰 `lib/routes/` 与 `lib/client/`——那两块是用户特意拆的。
 - 各份方案共有一条底线：**替身不得比真宿主宽松**、**远端内容按不可信处理**、
   **默认关闭而不是默认开启**；04 与 05 额外一条：**移动不改语义**。

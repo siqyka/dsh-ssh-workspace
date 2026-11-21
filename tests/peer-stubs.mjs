@@ -3,7 +3,7 @@
  *
  * The plugin is a Cordis plugin, so `@deepseek-ai/dsh-fs`, `@deepseek-ai/dsh-tools`
  * and `ssh2` are supplied by the running host. A bare source checkout has none of
- * them, which used to mean every suite that imports `routes.js` or `remote-fs.js`
+ * them, which used to mean every suite that imports the route family or `remote-fs.js`
  * SKIPPED — and a skipped suite cannot fail, so route-level regressions shipped
  * green once already.
  *

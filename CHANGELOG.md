@@ -6,6 +6,8 @@
 
 ### 新增
 
+- **HTTP 路由族搬进 `lib/routes/`（`lib/` 顶层再少一个 550 行的文件）**：`lib/routes.js` 是路由族的组合点与 `ROUTES` 表，本来就该和它拼装的那七个模块放在一起。它现在是 `lib/routes/routes.js`，五个子模块对 `ROUTES` 的引用从 `../routes.js` 变成 `./routes.js`，`lib/index.js` 的入口从 `./routes.js` 变成 `./routes/routes.js`。**33 条路由、`modules under lib/` 的 83、五个环一个都没变**——这是一次纯搬家：文件的行数不变、`ROUTES` 仍在同一行（`:86`）、`makeRoutes` 仍在同一行（`:317`），所以文档与套件里按行号的引用继续有效。`scripts/doc-numbers.mjs` 的 `routeSources()` 不再单独读组合点，改成整目录排序读（新加一个 handler 模块会被自动数到）；`tests/support/route-source.mjs` 同样改成整目录读，组合点排在最前以保证字节偏移可复现。
+
 - **浏览器半边按需加载（五个 chunk）**：`lib/client/client.js` 从 12,604 行降到 9,938 行（−21%），五个只在交互后才需要的部分搬进同目录的 `client.<name>.js`，由 `require.async` 首次用到时才取——主机编辑 / 目录选择 / 诊断报告三个对话框（`client.dialogs.js`）、主面板（`client.panel.js`）、添加工作区流程（`client.add-workspace.js`）、转移队列浮层（`client.transfer-queue.js`）、更改请求页脚的提交历史（`client.history.js`）。五条边界都是实测踩出来的，写进了文件头注释：**渲染期要调用的纯函数留在主包**（目录选择器的 `directoryPath` / `usePathDraftPreview` 等被面板与「
 - **修复：远端工作区标记的 svg 画歪了**：client.marks.js 在自己的 factory 执行期间就解构 REMOTE_MARK_VIEWBOX，而它和 client.icons.js 原本在同一个 Promise.all 里——并发取回意味着谁先到不确定，mark 于是可能拿到模块求值时发布的空字符串占位，setAttribute('viewBox', '') 让每条 path 都落在可见框外。症状只是侧栏一个被压扁的小图标，**没有任何报错**——这正是「按值发布的占位」这一类问题最坏的地方。修法是把图标单独提前取回（kernel → 图标 → 其余并发），并把 REMOTE_MARK_VIEWBOX 也加进 epublishBootNames()——顺序解决「读得到」，重发布解决「后来还有人读」。
   承上：Object.assign(exports, …) 在模块求值时发布的是占位值，而**解构拿到本地变量不等于发布**。第一批修复只做对了顺序，epublishBootNames() 仍排在 Promise.all 之后——而 marks 正是在那个 Promise.all 里执行 factory 的，所以它读到的还是空字符串，重启也没好。图标那一批名字现在一到手就 Object.assign 到 module.exports，epublishBootNames() 留作收尾（热重载 、启动之后的读者）。测试的漏洞比代码的更难看见：旧断言在 pply 返回**之后**读 REMOTE_MARK_VIEWBOX，那时已经修好了，于是侧栏明显画歪、套件却是绿的。chunk 保留的是 factory 执行那一刻解构到的值，所以现在在 loadBundle 里、marks 脚本执行前采样一次，断言它当时就拿到了真的四项 viewBox、真的 API 表和真的 row selector。

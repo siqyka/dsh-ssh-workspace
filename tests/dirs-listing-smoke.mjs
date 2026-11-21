@@ -99,8 +99,8 @@ function samePath (echoed, native) {
   return echoed === native || echoed === shellPath(native)
 }
 
-// routes.js imports the fence helpers from remote-fs.js, which needs the Host
-// peers at load time. A bare checkout has none, so build the same stub root
+// The route family imports the fence helpers from remote-fs.js, which needs the
+// Host peers at load time. A bare checkout has none, so build the same stub root
 // tests/run.mjs builds and point the resolver at it BEFORE the import —
 // otherwise this suite would skip in CI and prove nothing.
 if (!process.env.DSH_CORE_ROOT && process.env.DSH_NO_PEER_STUBS !== '1') {
@@ -115,7 +115,7 @@ if (process.env.DSH_CORE_ROOT) {
 }
 
 const { dirsListingCommand, parseDirsListing } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib', 'routes.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib', 'routes', 'entries.js')).href
 )
 
 /**

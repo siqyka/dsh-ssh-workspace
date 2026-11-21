@@ -146,7 +146,7 @@ DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS=1   # 重启 DSH
 5. 更新 `docs/architecture.md` 的「一处补丁打不到的地方：按值捕获的 schema」一节——
    该节描述的是缺陷本身，删掉补丁后可以整节移除，或改成「宿主已修复」的一行说明；
 6. `lib/engine.js`：删掉 `upstreamWorkarounds` 字段与 `noteUpstreamWorkaround()`；
-   `lib/tools.js` 的 status 输出与 `lib/routes.js` 的 status 路由去掉 `upstreamWorkarounds`，
+   `lib/tools.js` 的 status 输出与 `lib/routes/workspaces.js` 的 status 路由去掉 `upstreamWorkarounds`，
    `lib/diagnostics.js` 去掉 `KINDS.upstream`（连同 `tests/diagnostics-smoke.mjs` 里对应的断言）；
 7. [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) 的「本仓库的现状」
    一节改成「当前没有登记在案的补丁」——**那一页不要删**，它讲的是方法，不是这个实例；

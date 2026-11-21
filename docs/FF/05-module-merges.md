@@ -1,6 +1,6 @@
 # FF-05 同功能模块合并：把「其实是一件事」的几个文件并成一个
 
-> 状态：**方案**（2026-11-21 在 `refactor/code-splitting` 分支、HEAD `b698ea4` 上实测）。
+> 状态：**方案**（2026-11-21 在 `refactor/code-splitting` 分支、HEAD `ac720fa` 上实测）。
 > 轨道 A（四组重复函数收进共享模块）已全部提交（`b6f2e2d` / `f2f8554` / `75aaaa7` / `d217f5c`），
 > 本辑把它们**再并一层**，并按用户指定的边界（不碰 `lib/routes/`、不碰 `lib/client/`）
 > 给出 16 组可合并的模块。
@@ -18,30 +18,37 @@
 
 | 项 | 实测值 | 取法 |
 | --- | --- | --- |
-| 模块总数 | **79** | `git ls-tree -r HEAD lib/ --name-only \| grep -c '\.js$'` |
-| 顶层 `lib/*.js` | 72 | 同上，`^lib/[^/]*\.js$` |
-| `lib/routes/*.js` | 7 | `entries` / `forwards` / `hosts` / `kit` / `transfer-bytes` / `transfers` / `workspaces` |
-| 代码行数 | **44,019** | 逐文件 `git show HEAD:<f> \| wc -l` 求和（顶层 40,477 + routes 3,542） |
-| import 图的环 | **6** | 对 79 个模块的出边做 DFS |
-| 门禁模块数 | 72（与 HEAD 一致）| `node scripts/doc-numbers.mjs --check` |
+| 模块总数 | **83** | `git ls-tree -r HEAD lib/ --name-only \| grep -c '\.js$'` |
+| 其中 `lib/*.js`（顶层）| 63 | 同上，`^lib/[^/]*\.js$` |
+| 其中 `lib/client/*.js` | 13 | 1 个主包 + 12 个 chunk；**本方案不动** |
+| 其中 `lib/routes/*.js` | 8 | `routes`（组合点 + `ROUTES` 表）/ `entries` / `forwards` / `hosts` / `kit` / `transfer-bytes` / `transfers` / `workspaces`；**本方案不动** |
+| 代码行数 | **44,691** | 逐文件 `git show HEAD:<f> \| wc -l` 求和（顶层 27,280 + client 13,869 + routes 3,542） |
+| import 图的环 | **6** | 对 83 个模块的出边做 DFS |
+| 门禁模块数 | 83（与 HEAD 一致，`countModules` 已改成递归）| `node scripts/doc-numbers.mjs --check` |
 
-6 个环里 **只有 1 个是功能环**，另外 5 个都是 `lib/routes.js` 与它的子模块互相 `import`：
+6 个环里 **只有 1 个是功能环**，另外 5 个都是 `lib/routes/routes.js`（路由族的组合点）与它的子模块互相 `import`：
 
 ```
 lib/ssh-config.js -> lib/match-eval.js -> lib/ssh-config.js      ← 功能环，本方案第 3 组消掉
-lib/routes.js -> lib/routes/hosts.js -> lib/routes.js            ┐
-lib/routes.js -> lib/routes/entries.js -> lib/routes.js          │ 用户指定拆分的
-lib/routes.js -> lib/routes/transfers.js -> lib/routes.js        │ 5 个环，本方案不动
-lib/routes.js -> lib/routes/workspaces.js -> lib/routes.js       │
-lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
+lib/routes/routes.js -> lib/routes/hosts.js -> lib/routes/routes.js          ┐
+lib/routes/routes.js -> lib/routes/entries.js -> lib/routes/routes.js        │ 用户指定拆分的
+lib/routes/routes.js -> lib/routes/transfers.js -> lib/routes/routes.js      │ 5 个环，本方案不动
+lib/routes/routes.js -> lib/routes/workspaces.js -> lib/routes/routes.js     │
+lib/routes/routes.js -> lib/routes/forwards.js -> lib/routes/routes.js       ┘
 ```
 
-> **起点提示**：写这份方案时，`lib/client/client.js` 的拆分刚好完成并提交（`2b330aa` / `c9d0058` /
-> `b698ea4`），HEAD 上是 **1 个主包 + 8 个 chunk**（`panel` / `dialogs` / `add-workspace` /
-> `transfer-queue` / `history` / `locale` / `styles` / `icons`）。所以本文所有数字都是
-> `HEAD` 上的实测值（`git ls-tree -r HEAD lib/`），不依赖工作树状态。
-> **`lib/client/` 九个文件整块排除在本方案之外**——那是用户特意拆的，且刚拆完，
-> 动它会让 `tests/client-shape-smoke.mjs` / `tests/client-chunk-smoke.mjs` 两套断言同时失效。
+> **起点提示**：写这份方案时，浏览器半边刚好拆完并**搬进了自己的目录**（`0c3dc23` /
+> `5e3c768` / `3ee03eb` / `7d2536e` / `630588f` / `14a8508` / `ac720fa`），HEAD 上是
+> `lib/client/` 下 **1 个主包 + 12 个 chunk**。所以本文所有数字都是 `HEAD` 上的实测值
+> （`git ls-tree -r HEAD lib/`），不依赖工作树状态。
+> **`lib/client/` 整块排除在本方案之外**——那是用户特意拆的、且刚拆完，
+> 动它会让 `tests/client-shape-smoke.mjs` / `tests/client-chunk-smoke.mjs` 两套断言同时失效，
+> 而且 chunk 文件名与目录都被宿主正则与 `scripts/client-map.mjs` 钉住。
+>
+> 两个计数口径同一次改动一起变了，开工前先认下来：`scripts/doc-numbers.mjs` 的
+> `countModules()` 已改成**递归**（`lib/client/` 与 `lib/routes/` 都算），
+> `tests/support/lib-modules.mjs` 的 `modulePaths()` 同理。所以「顶层 63」不再是门禁数字，
+> **83 才是**；本方案的 16 组只动顶层文件，合并后应为 **83 − 26 = 57**。
 
 ### 1.1 轨道 A 已经做完的部分（不要再做一遍）
 
@@ -79,10 +86,13 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
    `'lib/match-eval.js'`，`scripts/reverse-verify-*.mjs` 的 `file:` 字段属于这一类。
    这类**不会因为改 import 而报错**：脚本会安静地变异一个已经不存在的文件，
    然后报告「变异没有生效」。
-3. **源码扫描的排除名**——`tests/capabilities-report-smoke.mjs:118` 的
-   `.filter(name => … name !== 'tar.js')`、`tests/diagnostics-smoke.mjs:160` 的
+3. **源码扫描的排除名**——`tests/capabilities-report-smoke.mjs:124` 的
+   `.filter(name => !/^(?:capabilities|tar)\.js$/u.test(name))`、`tests/diagnostics-smoke.mjs:159` 的
    `['engine.js', 'remote-fs.js', 'forward.js', 'ownership.js', 'remote-skills.js']`。
    这类最危险：**改名之后断言仍然会跑，只是结论反了**。
+   注意这两处的读取方式不同：前者用 `modulePaths()` 递归走 `lib/`（`lib/client/` 与
+   `lib/routes/` 都在范围内），后者是**按顶层文件名逐个 `readFileSync`**——
+   后者对「文件被搬进子目录」是静默失明的，动顶层文件时才需要看它。
 
 ## 2. 方案：16 组
 
@@ -118,7 +128,7 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
 | 15 | `patch-projection.js` | `patch-projection`(558) + `path-binding`(151) | 709 | 1 | 2 / 2 | 0 | 3 / 0 |
 | 16 | `diagnostics.js` | `diagnostics`(228) + `redact`(119) | 347 | 1 | 12 / 11 | 2 | 6 / 1 |
 
-合计：**79 → 53 个模块**（`lib/*.js` 72 → 46，`lib/routes/` 保持 7），删掉 **26** 个文件，
+合计：**83 → 57 个模块**（顶层 63 → 37，`lib/client/` 13 与 `lib/routes/` 8 不动），删掉 **26** 个文件，
 16 个合并文件共 **14,845 行**。全部做完后 import 图的环从 **6 降到 5**——剩下的正好是
 用户指定不动的 5 个 `routes` 环，功能环消失。
 
@@ -151,20 +161,28 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
 | 相互依赖 | 没有。`tar.js` 零依赖；`zip.js` 只用 `node:zlib` 的 `createDeflateRaw` |
 | 外引 | `lib/transfer.js:29`（tar）、`:30`（zip）→ 合成一行 |
 | 变异 | `scripts/reverse-verify-archive.mjs`：`lib/tar.js` **4 条**（`:47` 十进制 size、`:54` 十进制 mtime、`:61` 短条目不拒、`:68` 超 100 字节静默截断）+ `:254` 的 `after = ['lib/tar.js', 'lib/tree-filter.js', 'lib/transfer.js', 'lib/client/client.js']` |
-| 套件 | `tests/archive-smoke.mjs:36`（从 `tar.js` 取 5 个导出）、`tests/zip-smoke.mjs:30`（从 `zip.js` 取 6 个）、`tests/capabilities-report-smoke.mjs` |
+| 套件 | `tests/archive-smoke.mjs:36`（从 `tar.js` 取 5 个导出）、`tests/zip-smoke.mjs:30`（从 `zip.js` 取 5 个导出）、`tests/capabilities-report-smoke.mjs` |
 | 文档 | `docs/FF/05-module-merges.md`（本文件） |
 
-**这一组有一个必须当场处理的陷阱**：`tests/capabilities-report-smoke.mjs:118`
+**这一组有一个必须当场处理的陷阱**：`tests/capabilities-report-smoke.mjs:123-124`
 
 ```js
-.filter(name => name.endsWith('.js') && name !== 'capabilities.js' && name !== 'tar.js')
+const sources = modulePaths(libDir)
+  .filter(name => !/^(?:capabilities|tar)\.js$/u.test(name))
 ```
 
-排除 `tar.js` 的理由写在 `:108-112`：它**自己写**归档格式，所以「源码里出现 `tar`」
-不等于「插件在跑 `tar` 命令」。合并成 `archive.js` 之后排除名必须同步改成 `'archive.js'`，
-否则 `:133` 那条 `unprobed tool 'tar' is never invoked in lib/` 会以
+排除 `tar.js` 的理由写在 `:114-117`：它**自己写**归档格式，所以「源码里出现 `tar`」
+不等于「插件在跑 `tar` 命令」。合并成 `archive.js` 之后排除名必须同步改成 `archive`
+（即 `!/^(?:capabilities|archive)\.js$/u`），否则 `:165` 那条
+`unprobed tool 'tar' is never invoked in lib/` 会以
 `` `path too long for a tar entry (ustar allows 155+100 bytes)` ``（`lib/tar.js:64`）为第一条命中而失败，
-错误信息完全指错方向。**已实测**：把两份源码拼起来跑同一段判定，`tar` 判为「被调用」。
+错误信息完全指错方向。**本机已实测**：把 `tar.js` 与 `zip.js` 的源码拼成 `archive.js`
+放进递归模块表后跑同一段判定，`tar` 判为「被调用」，`rsync` / `tput` 仍是「未调用」——
+即失败点唯一，指的就是这一组。
+
+同一段扫描现在用 `modulePaths()`（`tests/support/lib-modules.mjs`）**递归**遍历 `lib/`，
+所以 `lib/client/` 与 `lib/routes/` 也在扫描范围内；这也意味着 `archive.js` 必须继续被排除，
+否则它会以「源码里出现了 tar」的形式污染整个判定。
 
 `tests/run.mjs` 里的套件名（`'archive'`、`'zip'`）**不改**——套件名与文件名是两件事。
 
@@ -190,7 +208,7 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
 | 项 | 事实 |
 | --- | --- |
 | 内部边 | `lib/status-render.js:16` → `tool-result.js` |
-| 外引（5 条 / 3 文件） | `lib/tools.js:27`（schema）、`:28`（render）、`:29`（text）；`lib/routes.js:33`（provenance）；`lib/routes/workspaces.js:16`（provenance） |
+| 外引（5 条 / 3 文件） | `lib/tools.js:27`（schema）、`:28`（render）、`:29`（text）；`lib/routes/routes.js:33`（provenance）；`lib/routes/workspaces.js:16`（provenance） |
 | 套件 | `tests/workspace-ownership-smoke.mjs:749/804/836`（`status-schema.js`）、`tests/diagnostics-smoke.mjs:217/287`（`status-render.js`）、`tests/status-provenance-smoke.mjs:17` |
 | 变异 | `scripts/reverse-verify-status-provenance.mjs:17/24/31/38/45`（5 条） |
 | 文档 | 无（`docs/` 里没有引用这四个文件名的地方） |
@@ -234,7 +252,7 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
 | 项 | 事实 |
 | --- | --- |
 | 内部边 | `lib/passthrough-settings.js:23` → `passthrough.js` |
-| 外引 | `lib/index.js:27` + `:28`（两条并一条）、`lib/routes.js:32`、`lib/routes/workspaces.js:20` |
+| 外引 | `lib/index.js:27` + `:28`（两条并一条）、`lib/routes/routes.js:32`、`lib/routes/workspaces.js:20` |
 | 套件 | `tests/local-passthrough-smoke.mjs:46` + `:48`（后者是 settings） |
 | **变异最密的一组** | `scripts/reverse-verify-passthrough.mjs`：`passthrough.js` **17 条**（`:38`–`:92`）+ `passthrough-settings.js` **2 条**（`:251`、`:297`），另有完整性清单 `:158/166/173/270/276/285/291` |
 | 文档 | `docs/architecture.md`、`docs/development.md`、`docs/features.md`、`docs/optimization-and-future03.md`、`docs/protocol.md`、`CHANGELOG.md` |
@@ -246,11 +264,11 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
 
 `verify`（哈希校验）+ `resume`（续传判定）+ `conflict-policy`（冲突怎么算）+ `tree-filter`（排除规则）
 + `mutations`（变更集）。共同点很硬：**五个都不碰 sftp、不碰 engine，全是纯函数**，
-消费者只有 `lib/routes.js`、`lib/transfer.js` 与 `lib/routes/` 的 4 个文件。
+消费者只有 `lib/routes/routes.js`、`lib/transfer.js` 与 `lib/routes/` 的 4 个文件。
 
 | 项 | 事实 |
 | --- | --- |
-| 外引（13 条 / 4 文件） | `lib/routes.js:54`(conflict)/`:55`(resume)/`:56`(verify)/`:65`(mutations)；`lib/transfer.js:27`/`:28`/`:31`/`:32` + `:509`（JSDoc `@link import('./tree-filter.js')` 类型引用）；`lib/routes/transfer-bytes.js:16`(mutations)/`:17`(verify)/`:18`(conflict)/`:19`(resume)；`lib/routes/entries.js:19`(mutations) |
+| 外引（13 条 / 4 文件） | `lib/routes/routes.js:54`(conflict)/`:55`(resume)/`:56`(verify)/`:65`(mutations)；`lib/transfer.js:27`/`:28`/`:31`/`:32` + `:509`（JSDoc `@link import('./tree-filter.js')` 类型引用）；`lib/routes/transfer-bytes.js:16`(mutations)/`:17`(verify)/`:18`(conflict)/`:19`(resume)；`lib/routes/entries.js:19`(mutations) |
 | 套件（7 个） | `verify-smoke:16`、`resume-smoke:20`、`transfer-smoke:494/539/595`、`conflict-policy-smoke:18`、`archive-smoke:37`（`tree-filter.js`）、`mutations-smoke:21`、`capabilities-report-smoke:83`（注释里提到 `lib/verify.js`） |
 | 变异（16 条 / 3 脚本） | `reverse-verify-transfer-integrity`（`verify` 4 + `conflict-policy` 4）、`reverse-verify-resume`（5）、`reverse-verify-archive`（`tree-filter` 3 + `:254` 清单） |
 | 文档 | `docs/features.md`（`tree-filter.js`）、`docs/optimization-and-future03.md`（`resume.js`） |
@@ -280,7 +298,7 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
 | 项 | 事实 |
 | --- | --- |
 | 内部边 | `support-bundle.js:51` → `config-audit.js`、`:52` → `diagnosis.js`；`diagnosis.js:69` → `capabilities.js`（留在组外） |
-| 外引（7 条 / 4 文件） | `lib/routes.js:58/59`、`lib/tools.js:16/17`、`lib/routes/workspaces.js:18/19`、`lib/hosts.js:17`（另有 `hosts.js:522` 是 JSDoc `import('./config-audit.js')` 类型引用）。`capabilities.js` 留在组外，所以它那三条不是本组的外引 |
+| 外引（7 条 / 4 文件） | `lib/routes/routes.js:58/59`、`lib/tools.js:16/17`、`lib/routes/workspaces.js:18/19`、`lib/hosts.js:17`（另有 `hosts.js:522` 是 JSDoc `import('./config-audit.js')` 类型引用）。`capabilities.js` 留在组外，所以它那三条不是本组的外引 |
 | **导出重名** | `summarizeAudit`：`config-audit.js:273` 定义、`support-bundle.js:368` re-export（零外部引用）→ 合并后只留定义，删 re-export |
 | 套件（7 个） | `diagnosis-smoke:5/6/29/32`、`diagnostics-smoke:246/289`、`redact-smoke:33`、`support-bundle-smoke:35`、`config-audit-smoke:32`、`ssh-config-smoke:34`、`workspace-ownership-smoke:38`（`capabilities-report-smoke:38` 读的是留在组外的 `capabilities.js`，不算本组） |
 | 变异（4 条 / 1 脚本） | `scripts/reverse-verify-future.mjs`：`config-audit` 3（`:75/84/93`）、`support-bundle` 1（`:140`）。同脚本里 `capabilities` 那 2 条（`:38/47`）**不在本组**——`capabilities.js` 留在组外，它的 `file:` 字段不用动 |
@@ -288,14 +306,14 @@ lib/routes.js -> lib/routes/forwards.js -> lib/routes.js         ┘
 **为什么 `capabilities.js` 留在组外**（本方案里唯一一处「看着该合、实际不能合」）：
 
 `tests/capabilities-report-smoke.mjs` 的两次源码扫描都**精确排除**拥有词汇表的那一个文件
-（`:118` 的 `name !== 'capabilities.js'`）。把 `capabilities.js` 并进 `report.js` 之后只有两条路：
+（`:124` 的 `!/^(?:capabilities|tar)\.js$/u`）。把 `capabilities.js` 并进 `report.js` 之后只有两条路：
 
 - 把排除名改成 `report.js`——**等于把 984 行的报告面从两次扫描里整体摘出去**，检查被削弱到没有意义；
 - 改写扫描——那是在改测试的语义，超出「移动不改语义」的范围。
 
 而且实测确认它会红：`capabilities.js:138` 的 `why: '… never from tput'` 是一个**包含** `tput`
 的长字符串（不是恰好等于 `'tput'` 的字面量），扫描器只剥「恰好是工具名」的字符串，
-所以合并后 `tput` 会被判成「被调用」。**已用合并后的源码跑过同一段判定，`tar` 与 `tput` 都为真。**
+所以合并后 `tput` 会被判成「被调用」。**已用合并后的源码跑过同一段判定**：把排除名从 `capabilities.js` 换成 `report.js` 后，`tput` 与 `tar` **两条**都判成「被调用」，断言必红——`tput` 来自 `capabilities.js:138` 那句 `why`，`tar` 来自同一张表的 `:136`（`no code path shells out to tar`）。
 
 ### 2.11 第 11 组：端口转发四件套 → `lib/forward.js`（1,182 行）
 
@@ -307,7 +325,7 @@ FF-04 时代这条被写成「不做」，理由是生命周期不同；本轮�
 | 项 | 事实 |
 | --- | --- |
 | 内部边 | `forward.js:17` 与 `reverse-forward.js:34` → `forward-common.js`；`forward-persist.js:23` → `forward.js` |
-| 外引（5 条 / 3 文件） | `lib/index.js:29/30/31`、`lib/routes.js:52`、`lib/routes/forwards.js:14`（另有 `lib/routes.js:290/291/292` 与 `lib/tools.js:278/1567` 是 JSDoc `import('./…')` 类型引用，改路径后要一起改） |
+| 外引（5 条 / 3 文件） | `lib/index.js:29/30/31`、`lib/routes/routes.js:52`、`lib/routes/forwards.js:14`（另有 `lib/routes/routes.js:290/291/292` 与 `lib/tools.js:278/1567` 是 JSDoc `import('./…')` 类型引用，改路径后要一起改） |
 | 套件（6 个） | `forward-smoke:26`、`forward-persist-smoke:31/32/33`、`routes-smoke:1098/1099/1477/1614`、`reverse-forward-smoke:47/78`、`diagnostics-smoke:159`（源码扫描名单里含 `forward.js`）、`reconnect-smoke:425` |
 | 变异 | `scripts/reverse-verify-reverse-forward.mjs:20/26/32/38/44/50`（6 条） |
 | 文档 | `docs/development.md`、`docs/optimization-and-future03.md` |
@@ -397,8 +415,8 @@ FF-04 时代这条被写成「不做」，理由是生命周期不同；本轮�
 
 | 不做 | 理由 |
 | --- | --- |
-| `lib/routes/` 七个文件 | 用户指定「特意拆分」，且 `ROUTES` 常量在 `lib/routes.js:86`、五个子模块反向 `import { ROUTES } from '../routes.js'` 造成 5 个环，处理它需要额外一次「把 `ROUTES` 搬进 `routes/kit.js`」——不在本方案范围内 |
-| `lib/client/` 九个文件（1 主包 + 8 chunk）| 用户指定「client.js 相关的」不动；且它刚拆完（`2b330aa` / `c9d0058` / `b698ea4`），两套 client 断言正钉在当前形状上（§1 起点提示） |
+| `lib/routes/` 八个文件 | 用户指定「特意拆分」，且 `ROUTES` 常量在 `lib/routes/routes.js:86`、五个子模块反向 `import { ROUTES } from './routes.js'` 造成 5 个环，处理它需要额外一次「把 `ROUTES` 搬进 `routes/kit.js`」——不在本方案范围内 |
+| `lib/client/` 13 个文件（1 主包 + 12 chunk）| 用户指定「client.js 相关的」不动；它刚从顶层搬进这个目录（`0c3dc23` 起 7 个提交），两套 client 断言、chunk 文件名正则与 `scripts/client-map.mjs` 都钉在当前形状上（§1 起点提示） |
 | 七个 `lib/patch-*.js` 互并 | `lib/upstream-contract.js` 按**文件**登记退役判据，`scripts/doc-numbers.mjs` 按 `lib/patch-*.js` 数补丁数（7）。合并会同时打乱退役信号与门禁数字 |
 | `lib/index.js` | `tests/upstream-contract-smoke.mjs:112-134` 用 `indexOf('installRemote…')` 钉安装顺序，而 `installRemoteShell` 会先命中 `lib/index.js:38` 的 import 行；动这个文件等于动那条顺序断言 |
 | `diagnostics` 与 `diagnosis` 互并 | 名字像、职责相反：前者只记事实（环形缓冲、`KINDS`），后者只下判断（`STATE`、`diagnose()`）。前者被 10 个模块引用、后者 3 个，合并会把判断逻辑拖进引擎/转发/重连全链路。本方案里它们分属第 16 组与第 10 组，各合各的 |
@@ -408,7 +426,7 @@ FF-04 时代这条被写成「不做」，理由是生命周期不同；本轮�
 
 ### 3.2 已实测会成新环的组合（别再试）
 
-用「把成员并成单一节点后重算 79 个模块的 import 图、与基线 6 环做差」逐条跑过：
+用「把成员并成单一节点后重算 83 个模块的 import 图、与基线 6 环做差」逐条跑过：
 
 | 组合 | 产生的环 |
 | --- | --- |
@@ -449,7 +467,7 @@ node scripts/check-doc-links.mjs
 | --- | --- |
 | 目标名优先沿用「被外部引用最多的成员」 | 外引站点是合并的主要成本。`engine` 9 条静态 import 加 15 个文件的 JSDoc 类型引用、`hosts` 只有 2 条但 14 个套件、`store` 只有 1 条但 13 个套件——沿用原名能把改动压到「删成员 + 改内部 import」 |
 | 没有枢纽才起新名，且必须是功能名 | `shared` / `archive` / `status` / `transfer-rules` / `report`。起 `utils.js` 会让下一个人往里丢任何东西 |
-| `capabilities.js` 不进第 10 组 | `tests/capabilities-report-smoke.mjs:118` 精确排除「拥有词汇表的那个文件」；并进 984 行的报告面等于把检查削弱到无意义，且实测 `tput` / `tar` 会误判为「被调用」（§2.10） |
+| `capabilities.js` 不进第 10 组 | `tests/capabilities-report-smoke.mjs:124` 精确排除「拥有词汇表的那个文件」；并进 984 行的报告面等于把检查削弱到无意义，且实测 `tput` / `tar` 会误判为「被调用」（§2.10） |
 | `patch-projection.js` 保留原名 | `lib/upstream-contract.js:50` 的 `file:` 字段 + `scripts/doc-numbers.mjs` 的补丁计数（7） |
 | `hosts` 三件套一起合，而不是只合两件 | include 展开与 Jump 链都以 `Host` 段为输入，只合两件会把第三件留成「既像解析器又像使用者」的中间态 |
 | 第 1 组先做 | 它 9 条外引里有 8 条落在本方案其他组的成员里（§2.1）；先做等于把后面 5 个组的内部 import 一次性理顺 |
@@ -490,7 +508,7 @@ node scripts/check-doc-links.mjs
 
 | 位置 | 现状 | 合并后 |
 | --- | --- | --- |
-| `tests/capabilities-report-smoke.mjs:118` | `name !== 'capabilities.js' && name !== 'tar.js'` | 加 `archive.js` 替换 `tar.js`；`capabilities.js` 仍在（§2.10） |
+| `tests/capabilities-report-smoke.mjs:124` | `modulePaths(libDir).filter(name => !/^(?:capabilities\|tar)\.js$/u.test(name))`（**已改成递归走 `lib/`**，`:123`） | 正则改成 `!/^(?:capabilities\|archive)\.js$/u`：把 `tar` 换成 `archive`。**不改必红**——`archive.js` 里的 `` `path too long for a tar entry (ustar allows 155+100 bytes)` `` 会让 `:165` 那条「unprobed tool 'tar' is never invoked」失败 |
 | `tests/diagnostics-smoke.mjs:159` | `['engine.js', 'remote-fs.js', 'forward.js', 'ownership.js', 'remote-skills.js']` | 名单不变（`reverse-forward` 并进 `forward.js` 后仍只列 `forward.js`） |
 | `tests/diagnostics-smoke.mjs:160` | 逐文件读源码找 `KINDS.<name>` | 同上 |
 
@@ -504,7 +522,7 @@ node scripts/check-doc-links.mjs
 
 | 数字 | 现在 | 全部合并后 | 说明 |
 | --- | --- | --- | --- |
-| `modules under lib/` | 72 | **46** | 唯一会因合并而变的数字，每合一组都要重跑 |
+| `modules under lib/` | 83 | **57** | 唯一会因合并而变的数字（递归计数，含 `lib/client/` 13 与 `lib/routes/` 8），每合一组都要重跑 |
 | `test suites` | 99 | **99** | 不变（套件没增删） |
 | `upstream patch modules` | 7 | **7** | 不变（`patch-projection.js` 保留原名） |
 | `HTTP routes` | 33 | **33** | 不变 |
@@ -514,7 +532,7 @@ node scripts/check-doc-links.mjs
 `N` 取自 `node tests/run.mjs` 的收尾行加总（口径见 `docs/development.md` 的统计一节，
 注意逐行数 `PASS` 会少算——两者差 87 项）。
 
-`docs/development.md` 的「源码结构」表现在有 **46 行**覆盖 72 个模块；
+`docs/development.md` 的「源码结构」表现在有 **47 行**覆盖 83 个模块（只覆盖一部分，且带子目录路径）；
 每合一组，被删掉的文件若有对应行，就要把内容并进目标名那一行，而不是删行。
 
 ## 7. 不做什么
@@ -539,19 +557,19 @@ node scripts/check-doc-links.mjs
 6. 全树 grep 只剩历史记录：
    `git grep -n "lib/tar.js\|lib/zip.js\|lib/match-eval.js\|lib/path-binding.js"` 除
    `CHANGELOG.md` 的历史条目与 `docs/FF/` 本文件外**零命中**。
-7. import 图的环从 6 降到 5，且剩下 5 个全部是 `lib/routes.js ↔ lib/routes/*.js`。
+7. import 图的环从 6 降到 5，且剩下 5 个全部是 `lib/routes/routes.js ↔ lib/routes/*.js`。
 
 ## 9. 起点状态（开工前自己核对，不要重新推导）
 
 | 项 | 值 |
 | --- | --- |
 | 分支 | `refactor/code-splitting` |
-| 基线提交 | `b698ea4 docs: the browser half is eight chunks, three of them loaded in apply` |
+| 基线提交 | `ac720fa fix(client): publish the icon names as they arrive, not at the end of boot` |
 | 已提交的轨道 A | `b6f2e2d`(quote) / `f2f8554`(requirePort) / `75aaaa7`(positive) / `d217f5c`(escapeRegExp) |
 | 工作树 | 写方案那一刻干净（client 拆分已全部提交）；此后仍有别的线在动 `lib/client/client.js`，与本方案无关，开工前自己 `git status --short` |
 | `package.json` 版本 | `0.3.6` |
 | 行尾 | `.gitattributes` 是 `* text=auto eol=lf`，**所有 `.js` 在 git 里都是 LF**；`docs/FF/*.md` 也是 LF。改动不要引入 CRLF |
-| 门禁现状 | `lint` 218 文件解析通过；`doc-numbers --check` 绿（表里 modules 72）；`suites` 99；`check-doc-links` 24 个 markdown 全过 |
+| 门禁现状 | `lint` 223 文件解析通过；`doc-numbers --check` 绿（表里 modules 83，`recursive listing`）；`suites` 99；`check-doc-links` 24 个 markdown 全过 |
 
 ## 相关
 

@@ -1140,7 +1140,7 @@ try {
 // Measured before this: the agent's tool enforced it and both browser routes did
 // not, so the same 2 GiB file was refused through one door and accepted through
 // the other. These checks pin the constant's VALUE and that every door reads the
-// same one — a duplicated `1024 ** 3` in routes.js would drift silently.
+// same one — a duplicated `1024 ** 3` in the route family would drift silently.
 {
   const { DEFAULT_MAX_BYTES, oversizeMessage } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
   // The byte-moving helpers moved into routes/transfer-bytes.js; the routes that

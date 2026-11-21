@@ -2,7 +2,7 @@
  * Rename / delete: the pure rules, the route fences, and the local authority.
  *
  * The pure half runs on a bare checkout. The route half needs the assembled DSH
- * tree (`DSH_CORE_ROOT`) because `routes.js` imports the host's peer packages,
+ * tree (`DSH_CORE_ROOT`) because the route family imports the host's peer packages,
  * and it is skipped without one — the same rule as `routes-smoke`.
  *
  * The load-bearing assertion is the local one: a request may NAME a root, but it
@@ -121,7 +121,7 @@ if (!coreRoot) {
   console.log('  SKIP  DSH_CORE_ROOT is not set (route behaviour needs @deepseek-ai/dsh-fs)')
 } else {
   process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
-  const { makeRoutes, ROUTES } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes.js')).href)
+  const { makeRoutes, ROUTES } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes', 'routes.js')).href)
 
   function fakeRes () {
     const state = { status: undefined, body: '', headers: {} }

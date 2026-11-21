@@ -1,7 +1,7 @@
 /**
  * Verify the upload/download SFTP mechanics against a real host, without DSH.
  *
- * `routes.js` imports the host's filesystem seam and cannot load outside DSH,
+ * The route family imports the host's filesystem seam and cannot load outside DSH,
  * but the write path it delegates to is plain ssh2 + the plugin's own
  * primitives. This reproduces that exact sequence — mkdirp the parent, write a
  * sibling staging file, rename onto the destination, clean up on failure — so

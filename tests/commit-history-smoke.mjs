@@ -7,11 +7,12 @@
  *  1. `lib/git-history.js` — the fixed argv, the record parser, the git failure
  *     classifier, the Session-directory resolution and the structured results.
  *     Pure Node, always runs.
- *  2. `lib/routes.js` — the HTTP door: the loopback/method fence it shares with
- *     every other route, the query validation, and the 200-vs-400 split. Driven
- *     with a fake `ctx` and a fake subprocess; no server, no SSH host. Importing
- *     routes.js needs the DSH peer packages, so this suite builds the same
- *     `tests/.peer-stubs` tree the runner does when DSH_CORE_ROOT is unset.
+ *  2. `lib/routes/routes.js` — the HTTP door: the loopback/method fence it
+ *     shares with every other route, the query validation, and the 200-vs-400
+ *     split. Driven with a fake `ctx` and a fake subprocess; no server, no SSH
+ *     host. Importing the route family needs the DSH peer packages, so this
+ *     suite builds the same `tests/.peer-stubs` tree the runner does when
+ *     DSH_CORE_ROOT is unset.
  *  3. `lib/client/client.js` — the slot registration and the strip's structure. There
  *     is no browser in this environment, so these are source assertions: the
  *     shadow uses the official tab's key and a lower priority, it registers no
@@ -349,7 +350,7 @@ process.env.DSH_PEER_ROOT = [process.env.DSH_CORE_ROOT, process.env.DSH_PEER_ROO
 
 let routesModule = null
 try {
-  routesModule = await import(pathToFileURL(path.join(pluginRoot, 'lib/routes.js')).href)
+  routesModule = await import(pathToFileURL(path.join(pluginRoot, 'lib/routes/routes.js')).href)
 } catch (error) {
   console.log(`  SKIP  the route checks need the DSH peer tree (${error instanceof Error ? error.message.split('\n')[0] : String(error)})`)
 }
