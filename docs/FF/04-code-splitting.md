@@ -298,7 +298,7 @@ CI 的 `npm run lint` 因此会「通过」而漏掉语法错误。
 
 本辑采用的边界因此不是「哪些段整体搬走」，而是**「哪些段可以被一个懒组件包住」**：
 chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 props 或
-`require('<本插件 id>')` 拿到。最初三个，实施中加到九个（四个启动期 + 五个按需）；
+`require('<本插件 id>')` 拿到。最初三个，实施中加到十个（五个启动期 + 五个按需）；
 最后加的 `client.queue.js` 不是组件 chunk，是纯规则 chunk——见它自己的行。
 
 | chunk | 导出的组件 | 搬走的渲染代码 | 必须拿到的（留主 bundle） |
@@ -307,6 +307,7 @@ chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 
 | `lib/client/client.styles.js` | `injectStyles`、`CSS_ID` | 546 行 | **无**（叶子） |
 | `lib/client/client.icons.js` | 十四个图标工厂加 `TRAY_BASE_PATH` / `TRAY_ARROW_PATHS` | 228 行 | **无**（叶子，只 `require('react')`） |
 | `lib/client/client.queue.js` | 队列的纯规则：两个并发上限、上传上限、`queueReduce` / `queueDrain` / `queueItemPercent` / `transferQueueProgress` / `truncateTransferName` / `splitOversizeFiles` | 583 行 | **无**（叶子：没有钟、没有 DOM、不 `fetch`、不读 `translate`） |
+| `lib/client/client.selection.js` | 唯一的翻选模型：`SELECTION_EMPTY` / `selectReduce` / `selectionRange` | 251 行 | **无**（叶子：同一个理由；用它的文件树接线留在主包） |
 | `lib/client/client.dialogs.js` | `HostEditor`、`DirectoryBrowser`、`ReportDialog` | 约 510 行 | `API`、`FolderIcon`、`CloseIcon`、`useDialogA11y`、`modalLayer`、`backdropDismiss`、`capabilityNotes`、目录选择器的纯 helper |
 | `lib/client/client.panel.js` | `RemoteWorkspacePanel`、`HostCard` | 1,780 行 | `API`、`fetchJson`、`fetchReportText`、`RemoteMarkIcon`、`relativeTimeText`、`provenanceText`、`DialogSlot` 与三个对话框、`notifyUser`、`toastError`、`useTransferActionsSlot`、`syncRemoteWorkspaceMarks`、`capabilityNotes` |
 | `lib/client/client.add-workspace.js` | `AddChooser`、`RemoteWorkspaceDialog`、`AddWorkspaceFlow` | 490 行 | `API`、`fetchJson`、`BROWSE_LIST_LIMIT`、`FLOW_MENU_WIDTH_ROOMY`、`flowMenuPosition`、四个图标、`backdropDismiss`、`modalLayer`、`useDialogA11y`、`useMenuKeyboard`、目录选择器的纯 helper、`refreshRemoteWorkspaceMarks` |

@@ -1,10 +1,12 @@
 /**
  * The shared selection reducer, driven as a pure state machine.
  *
- * `lib/client/client.js` is a single browser bundle with no build step, so the rules
- * live in a marked region of the shipped file and this suite slices them out and
- * runs them. That is the same rule `transfer-queue-smoke` follows: a retyped
- * copy would prove nothing about the code the browser actually gets.
+ * The rules live in `lib/client/client.selection.js`, a chunk the bundle loads in
+ * `apply`. This suite lifts them out of that shipped file and runs them — the
+ * same rule `transfer-queue-smoke` follows: a retyped copy would prove nothing
+ * about the code the browser actually gets. Reading the chunk rather than the
+ * concatenation is deliberate: after the split the bundle keeps only three
+ * placeholder bindings, and a splice over those would pass while testing nothing.
  *
  * The gestures this pins are the ones that separate a real multi-select from
  * "click a row": a plain click on a directory navigates, while a Ctrl/Shift
@@ -17,11 +19,16 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
+// Two readings, for two different questions. The reducer is driven from the chunk
+// that ships it; the wiring assertions at the bottom ask "does the tree still USE
+// the shared reducer and not a private one", which is a question about the whole
+// browser half, so they read the concatenation.
 const source = clientSource(pluginRoot)
+const selectionSource = clientPartSource(pluginRoot, 'client.selection.js')
 
 let passed = 0
 const failures = []
@@ -34,15 +41,17 @@ function check (name, condition, detail) {
 
 console.log('\n=== selection smoke ===\n')
 
-const START = '    // ---- selection state machine'
-const END = '    // ---- queue state machine'
+// The chunk IS the region: it opens with its own doc comment and closes at the
+// exports block, so there is nothing left to slice between markers.
+const START = '    /**\n     * The ONE selection model'
+const END = '    // The pure surface.'
 
 function liftSelection () {
-  const start = source.indexOf(START)
-  if (start < 0) throw new Error('client.js no longer marks the pure selection state machine')
-  const end = source.indexOf(END, start)
-  if (end < 0) throw new Error('client.js no longer marks the queue state machine boundary')
-  const body = source.slice(start, end)
+  const start = selectionSource.indexOf(START)
+  if (start < 0) throw new Error('client.selection.js no longer holds the selection model')
+  const end = selectionSource.indexOf(END, start)
+  if (end < 0) throw new Error('client.selection.js no longer separates the model from its exports')
+  const body = selectionSource.slice(start, end)
   const factory = new Function(`
     const translate = (key) => key
     ${body}

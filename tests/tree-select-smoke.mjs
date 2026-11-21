@@ -24,11 +24,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeTreeDom } from './support/tree-dom.mjs'
 import { endOfBlock } from './support/toast-dom.mjs'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
+// Two readings for two questions: the reducer is driven from the chunk that ships
+// it, the bridge from the bundle that installs it.
 const source = clientSource(pluginRoot)
+const selectionSource = clientPartSource(pluginRoot, 'client.selection.js')
 
 let passed = 0
 const failures = []
@@ -47,12 +50,12 @@ console.log('\n=== tree select smoke ===\n')
 // carry: the pure reducer, the tree bridge's helpers, and the bridge installer.
 // A reordering that breaks a slice throws here instead of producing a suite
 // that passes because it tested nothing.
-function slice (startMarker, endMarker, label) {
-  const start = source.indexOf(startMarker)
-  if (start < 0) throw new Error(`client.js no longer marks ${label} (start)`)
-  const end = source.indexOf(endMarker, start + startMarker.length)
-  if (end < 0) throw new Error(`client.js no longer marks ${label} (end)`)
-  return source.slice(start, end)
+function slice (startMarker, endMarker, label, text = source) {
+  const start = text.indexOf(startMarker)
+  if (start < 0) throw new Error(`the shipped source no longer marks ${label} (start)`)
+  const end = text.indexOf(endMarker, start + startMarker.length)
+  if (end < 0) throw new Error(`the shipped source no longer marks ${label} (end)`)
+  return text.slice(start, end)
 }
 
 /** The bridge's own source region, kept for the assertions about its shape. */
@@ -60,7 +63,7 @@ let bridgeSlice = ''
 
 let api
 try {
-  const reducer = slice('    // ---- selection state machine', '    // ---- queue state machine', 'the selection state machine')
+  const reducer = slice('    // ---- selection state machine', '    // The pure surface.', 'the selection state machine', selectionSource)
   const bridge = slice('    // =========================================================================\n    // Host file tree: Windows-style multi-select', '    let composerBridgesInstalled = false', 'the tree selection bridge')
   // Named once: the "no checkbox" assertion must look at THIS region, not at
   // "everything after the banner" — the panel's own checkbox inputs live later

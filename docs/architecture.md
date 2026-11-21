@@ -18,13 +18,14 @@
   用 `ctx.inject(['fs', 'workspaceRegistry'], …)` 恢复重启前登记的远端工作区；
   用 `ctx.inject(['fs', 'webServer'], …)` 注册浏览器半边的 HTTP 路由。
   这些注入都可以晚于本插件出现，安装顺序无关。
-- **客户端半边**（`lib/client/client.js` 加九个 chunk，四个启动期、五个按需）：由 DSH 客户端的模块加载器
+- **客户端半边**（`lib/client/client.js` 加十个 chunk，五个启动期、五个按需）：由 DSH 客户端的模块加载器
   （`window.__ModuleLoader__.load({ id, factory })`）直接执行，通过 `slots`
   服务挂载「远程工作区」面板与「添加工作区」菜单，并做工作区标记的 DOM 装饰。
   三份**数据**先搬走，`apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何
   slot：字典（`lib/client/client.locale.js`）、样式表（`lib/client/client.styles.js`）、图标
-  （`lib/client/client.icons.js`），以及队列的纯规则（`lib/client/client.queue.js`——没有钟、没有
-  DOM、不读 `translate`，所以可以是纯模块；队列状态与搬字节的 worker 仍在主包）。五份
+  （`lib/client/client.icons.js`），以及两份纯规则：队列（`lib/client/client.queue.js`——没有钟、
+  没有 DOM、不读 `translate`；队列状态与搬字节的 worker 仍在主包）与翻选模型
+  （`lib/client/client.selection.js`——同一个理由，而用它的文件树接线留在主包）。五份
   **交互界面**按需懒加载：三个对话框、主面板、添加工作区流程、转移队列浮层，分别是
   `lib/client/client.dialogs.js`、`lib/client/client.panel.js`、
   `lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`；更改请求页脚是
