@@ -30,7 +30,7 @@
 
 ## 浏览目录对话框
 
-点主机卡片的「浏览目录」打开 `DirectoryBrowser`（`lib/client.js`）。它与「新建远程工作区」里的目录选择**不是同一个组件**（后者是 `RemoteWorkspaceDialog`，只列目录、只为选路径），因此两者能力不同：
+点主机卡片的「浏览目录」打开 `DirectoryBrowser`（`lib/client.dialogs.js`）。它与「新建远程工作区」里的目录选择**不是同一个组件**（后者是 `RemoteWorkspaceDialog`，只列目录、只为选路径），因此两者能力不同：
 
 - 顶部：返回上级、当前绝对路径；这一条是 `position: sticky` 的，列表再长也不跟着滚走（`.sshwsp-browser` 用 `overflow: clip` 而不是 `hidden`：`hidden` 会让它成为一个从不滚动的滚动容器，sticky 子元素就黏在它身上，看起来完全没生效）；
 - 列表：**只有目录行，且目录行就是按钮**（请求带 `dirs=1`，服务端在施加上限**之前**就滤掉文件，所以 `total` 与 `truncated` 数的是选择器真正显示的行）。目录行**双击**进入下一级；键盘激活（`Enter` / `Space` 产生的 `detail === 0` 点击）同样进入，没有鼠标也能用。这里**不提供上传、下载或选择**：没有大小列、没有勾选框、批量条或行内传输按钮；
@@ -354,7 +354,7 @@ verdict):` 一节）、在工具返回值里（`diagnosis.notes`）。**看不�
 ### 自检分区默认关闭
 
 面板上原本有一节「远程环境自检」，每台探测过的主机一张卡片，外加一个「自检」按钮。
-**这一节现在不渲染了**，由 `lib/client.js` 里的 `SHOW_SELF_CHECK_SECTION = false` 控制。
+**这一节现在不渲染了**，由 `lib/client.panel.js` 里的 `SHOW_SELF_CHECK_SECTION = false` 控制。
 
 **是关掉的一棵活树，不是注释。** 两者的区别在于本仓库的测试方式：`client-shape-smoke`
 几乎全部断言都是对 bundle 文本做 grep，把 JSX 注释掉会让**所有**相关断言继续绿着，

@@ -12,7 +12,7 @@
 
 ### 1.1 客户端 chunk 拆分（C-02；原 O-12 的“不做”已被推翻）
 
-**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出三个按需 chunk：`lib/client.dialogs.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
+**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出五个按需 chunk：`lib/client.dialogs.js`、`lib/client.panel.js`、`lib/client.add-workspace.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
 
 宿主 `@deepseek-ai/dsh-client-modules`（`app.asar` 内）的真实能力：
 
@@ -33,15 +33,17 @@
 
 **拆分的运维约束**：chunk 的 URL rev 来自主入口 `lib/client.js` 的文件元数据（`artifactRevision`），chunk 自己的修改**不会**改变这个 rev；宿主又按精确 URL 缓存响应。因此运行中的进程里只改 chunk 文件不会生效——要么重启，要么触碰主入口改变 rev。发布包不受影响（新进程会读新文件），但本地开发必须记住这一点。
 
-**go/no-go**：通道 **GO**（无需构建、无需第二个 `dsh.client` 入口）。真实拆分已于 2026-11-21 落地：三个 chunk 合计 507 行离开主包（12,604 → 11,841 行），每个都包在 `Suspense fallback: null` 里，chunk 取不到只损失它自己。chunk 回连主包的通道（`require('<插件 id>')` 拿到主包 exports）由 `tests/client-chunk-smoke.mjs` 在真实 loader 上证明，不再靠推断。
+**go/no-go**：通道 **GO**（无需构建、无需第二个 `dsh.client` 入口）。真实拆分已于 2026-11-21 落地：五个 chunk 合计 3,097 行离开主包（12,604 → 9,938 行，−21%），每个都包在 `Suspense fallback: null` 里，chunk 取不到只损失它自己。chunk 回连主包的通道（`require('<插件 id>')` 拿到主包 exports）由 `tests/client-chunk-smoke.mjs` 在真实 loader 上证明，不再靠推断。
 
-**实测收益（别再夸大）**：`new Function(...)` 编译整个主包 3.60 ms，砍掉三个 chunk 候选后 3.24 ms——**每次页面加载省 0.36 ms**，且必须在全新进程里测（热进程命中 V8 编译缓存会报 0.00 ms）。所以这条线的理由是**编辑时的阅读上下文**，不是启动时间。
+**实测收益（别再夸大）**：`new Function(...)` 编译整个主包 3.60 ms，砍掉三个 chunk 候选后 3.24 ms——**每次页面加载省 0.36 ms**，且必须在全新进程里测（热进程命中 V8 编译缓存会报 0.00 ms）。五个 chunk 拆完后主包少 21% 的字节，量级上仍是**一两毫秒**。所以这条线的理由是**编辑时的阅读上下文**，不是启动时间。
 
-**拆分边界**：只拆交互后才渲染的部分；被多处同步引用的顶层工具函数不能拆——那会把“懒加载”变成“处处等待”。实测踩到的三条：
+**拆分边界**：只拆交互后才渲染的部分；被多处同步引用的顶层工具函数不能拆——那会把“懒加载”变成“处处等待”。实测踩到的四条：
 
 1. **渲染期就要调用的纯函数必须留在主包**。目录选择器的 `directoryPath` / `directoryDraft` / `narrowDirectoryEntries` / `childDirectoryPath` / `usePathDraftPreview` 被面板自己的路径预览与「添加工作区」流程在 render 里调用，只能由 chunk 反向 import。
 2. **失败隔离要自己给**。`React.lazy` 的 reject 抛给最近的 error boundary，而本包一个都没有；不包 `Suspense fallback: null` 的话 chunk 失败会连累整个面板。
 3. **遮蔽组件不能进 chunk**。更改请求页的 `ForgeTabWithHistory` 是“渲染官方面板”的遮蔽层，它失败就等于整个标签页空白——正是遮蔽要防的事。所以移走的是它下面的页脚，不是它。
+4. **apply 期安装的东西不能进 chunk**。文件树的拖拽 / 右键 / 多选桥在 `apply()` 里同步装在 `document` 上，它们的同步调用图横跨 `Transfers`、`Composer file bridge`、`Host file tree`、`File-panel header actions` 共 27 个函数——任何一个挪进 chunk，拖拽在 chunk 到达前就是坏的。同理 `flowMenuPosition` 虽然只有选择器调用，却读 `lastTriggerRect`（apply 期的 `mousedown` 监听器写的），复制进 chunk 会读到空的模块级绑定。
+5. **宿主无条件渲染的空洞要自己挡一层**。`directoryFlow` 由工作区选择器无条件渲染，而占用组件在关闭时返回 `null`——直接 `React.lazy` 会让页面一加载就取 427 行去渲染一个 `null`。主包留的 `FlowSlot` 先判 `open`，再挂懒组件。
 
 **触发条件**：`lib/client.js` 继续增长到影响启动、内存或编辑体验时；或下一次本来就要大改界面时顺手做。
 
