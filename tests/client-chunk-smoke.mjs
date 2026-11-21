@@ -30,7 +30,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
-import { bundleNames, exportedNames, seamNames, unboundBorrows, unexportedBorrows } from './support/free-names.mjs'
+import { bundleBorrows, bundleNames, exportedNames, seamNames, unboundBorrows, unexportedBorrows } from './support/free-names.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -295,8 +295,19 @@ console.log('\n[5] every chunk carries what it borrows')
 
   for (const file of chunkFiles) {
     const source = readFileSync(path.join(pluginRoot, 'lib', file), 'utf8')
+    // A chunk that borrows nothing is a leaf (`client.styles.js` is CSS text,
+    // `client.icons.js` is glyph factories, `client.locale.js` is tables). It
+    // has nothing to carry across, so demanding a seam of it would push an
+    // empty destructuring into a file that does not need one. The rule is
+    // about borrowers only.
+    const borrowed = bundleBorrows(source, available)
+    if (borrowed.size === 0) {
+      check(`${file}: is a leaf, so it needs no seam`, seamNames(source).size === 0,
+        `borrows nothing but destructures ${[...seamNames(source)].join(', ')}`)
+      continue
+    }
     check(`${file}: reaches the bundle through the documented seam`,
-      seamNames(source).size > 0, 'no destructuring from the package id')
+      seamNames(source).size > 0, `borrows ${borrowed.size} name(s) with no destructuring from the package id`)
     const unbound = unboundBorrows(source, available)
     check(`${file}: carries every bundle name it borrows`, unbound.length === 0,
       `used but neither destructured nor declared: ${unbound.join(', ')}`)

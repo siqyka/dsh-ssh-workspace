@@ -379,6 +379,32 @@ export function unexportedBorrows (chunkSource, exported) {
   return [...seamNames(chunkSource)].filter(name => !exported.has(name)).sort()
 }
 
+const SEAM_RE = /const \{[\s\S]*?\} = require\('@shiqyka\/dsh-ssh-workspace'\)/u
+
+/**
+ * The names a chunk uses from the main bundle OUTSIDE its own seam statement.
+ *
+ * The seam's own destructuring declares its names, so a plain mention walk
+ * cannot tell "borrowed across the seam" from "borrowed by accident". Removing
+ * the statement first leaves only the uses, which is the question that matters:
+ * a chunk with no such uses is a leaf and needs no seam at all.
+ *
+ * @param {string} chunkSource - the chunk's text.
+ * @param {Set<string>} available - from {@link bundleNames}.
+ * @returns {Set<string>} names used from the bundle outside the seam statement.
+ */
+export function bundleBorrows (chunkSource, available) {
+  const body = chunkSource.replace(SEAM_RE, '')
+  const mentioned = mentionedNames(body)
+  const local = localNames(body)
+  const borrowed = new Set()
+  for (const name of available) {
+    if (local.has(name) || GLOBALS.has(name)) continue
+    if (mentioned.has(name)) borrowed.add(name)
+  }
+  return borrowed
+}
+
 /**
  * The names a chunk uses from the bundle without carrying them across.
  *

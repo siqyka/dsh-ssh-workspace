@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes.js` + `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 69 | directory listing |
+| modules under `lib/` | 72 | directory listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5032 | measured 2026-11-20 |
 
@@ -59,9 +59,12 @@
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → `DSH_CORE_ROOT` → 各 profile → 部署自带树。`DSH_CORE_ROOT` 在列表里，是因为每个套件与 `tests/run.mjs` 都用它拼 stub 根：不认这个名字，套件就会先造出 stub 树、再被告知 peer 缺失 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现 |
 | `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。自检（缺工具、环境告警）**只进 `notes`，不参与判定**——它是主机的属性，不是这个会话的故障。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
-| `lib/client.js` | 浏览器半边的主包：样式、文案、图标、API 表，以及全部常驻行为——文件树拖拽 / 右键 / 多选、合成器 @ 引用桥、转移队列状态机、会话列表补齐。界面部分按需装在 chunk 里，四个 `React.lazy` 入口都留在这里 |
+| `lib/client.js` | 浏览器半边的主包：API 表，以及全部常驻行为——文件树拖拽 / 右键 / 多选、合成器 @ 引用桥、转移队列状态机、会话列表补齐。文档性数据（字典 / 样式 / 图标）与界面组件都在 chunk 里；`apply` 是 `async`，先 `await loadBootChunks()` 再注册任何 slot |
+| `lib/client.locale.js` | 浏览器半边的启动 chunk：zh / en 两张字典加三个纯函数（`applyParams` / `makeTranslate` / `relativeTimeText` / `provenanceText`）。`apply` 一进来就取，因为侧栏行的 label 要用它 |
+| `lib/client.styles.js` | 浏览器半边的启动 chunk：整张样式表（`CSS_ID` + `injectStyles`）。页面必须先有规则再画面板，所以 `apply` 直接 await，不做懒加载 |
+| `lib/client.icons.js` | 浏览器半边的启动 chunk：十四个 SVG 图标工厂加 `TRAY_ARROW_PATHS`。侧栏行字形、文件树 DOM 菜单、工作区标记都要它，`apply` await |
 | `lib/client.dialogs.js` | 浏览器半边的按需 chunk：主机编辑 / 目录选择 / 诊断报告三个对话框 |
-| `lib/client.panel.js` | 浏览器半边的按需 chunk：主面板（主机卡片、转发、挂载、自检、命令审计）。它是插件唯一**常驻可见**的界面，但仍然不是启动所需——侧栏行和文件树桥才是 |
+| `lib/client.panel.js` | 浏览器半边的按需 chunk：主面板（主机卡片、转发、挂载、自检、命令审计）**加 `HostCard`**——它只有面板一个读者，所以跟着面板走。它是插件唯一**常驻可见**的界面，但仍然不是启动所需——侧栏行和文件树桥才是 |
 | `lib/client.add-workspace.js` | 浏览器半边的按需 chunk：添加工作区流程（本地 / 远程选择器、远程目录选择、挂载）。宿主会无条件渲染 `directoryFlow` 空洞，所以主包留了个 `FlowSlot`：关闭时直接返回 `null`，只有 `open` 才去取 chunk |
 | `lib/client.transfer-queue.js` | 浏览器半边的按需 chunk：转移队列浮层（队列状态仍在主包，文件面板也在读它） |
 | `lib/client.history.js` | 浏览器半边的按需 chunk：更改请求标签页底部的提交历史页脚 |
@@ -122,7 +125,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 两个半边都无编译步骤，"改完即所测"：
 
 - **宿主半边**（`lib/*.js`，除 client）与浏览器半边的**样式/文案**：改动进入已安装位置后重启 DSH 生效。调试源码检出的宿主半边可用 DSH 自带的 Electron 运行时：以 `ELECTRON_RUN_AS_NODE=1` 运行宿主源码脚本，并设 `DSH_PEER_ROOT` 指向 DSH 安装目录的 `node_modules`（参考 [architecture.md](./architecture.md) 的「peer 解析」顺序）。
-- **浏览器半边**：`client.js` 与它的五个 chunk 由 DSH 前端加载，改动需重装进 profile 并重启 DSH，再重载页面；文件头注释里写明其加载协议，无独立构建管线。只改 chunk 不会自己生效——chunk 的 URL 带主入口的 revision，改完 chunk 还要碰一下 `lib/client.js` 或重启 DSH。
+- **浏览器半边**：`client.js` 与它的八个 chunk 由 DSH 前端加载，改动需重装进 profile 并重启 DSH，再重载页面；文件头注释里写明其加载协议，无独立构建管线。只改 chunk 不会自己生效——chunk 的 URL 带主入口的 revision，改完 chunk 还要碰一下 `lib/client.js` 或重启 DSH。三个启动 chunk 改了要重启；`apply` 里的 `Promise.all` 会让任何一块取不到都直接 reject，而不是画出半张面板。
 
 ### 日志与诊断
 

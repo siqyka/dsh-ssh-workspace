@@ -29,6 +29,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const source = clientSource(pluginRoot)
 const dialogsSource = clientPartSource(pluginRoot, 'client.dialogs.js')
+const iconsPart = clientPartSource(pluginRoot, 'client.icons.js')
 
 let passed = 0
 const failures = []
@@ -50,21 +51,31 @@ console.log('\n=== download icon smoke ===\n')
  * A missing marker throws instead of slicing an empty string: a suite that
  * asserts on `''` passes exactly the checks whose whole point was that the
  * shipped code contains something.
+ *
+ * @param {string} startMarker - text the region starts at.
+ * @param {string} endMarker - text that follows the region.
+ * @param {string} label - what the region is, for the error message.
+ * @param {string} [text] - the source to slice; defaults to the whole client half.
+ * @returns {string} the region.
  */
-function sliceBetween (startMarker, endMarker, label) {
-  const start = source.indexOf(startMarker)
-  if (start < 0) throw new Error(`client.js no longer marks ${label} (start)`)
-  const end = source.indexOf(endMarker, start + startMarker.length)
-  if (end < 0) throw new Error(`client.js no longer marks ${label} (end)`)
-  return source.slice(start, end)
+function sliceBetween (startMarker, endMarker, label, text = source) {
+  const start = text.indexOf(startMarker)
+  if (start < 0) throw new Error(`the client half no longer marks ${label} (start)`)
+  const end = text.indexOf(endMarker, start + startMarker.length)
+  if (end < 0) throw new Error(`the client half no longer marks ${label} (end)`)
+  return text.slice(start, end)
 }
 
 // ---- the shipped icon factory, driven for real ------------------------------
 
+// The glyphs live in their own chunk now (they are awaited in `apply`), so the
+// factory is lifted from there. Slicing the concatenation would run past the end
+// of that file into the next part and build an uncompilable string.
 const iconsSource = sliceBetween(
   '    const TRAY_BASE_PATH',
-  '    // =========================================================================\n    // Host card',
+  '    exports.REMOTE_MARK_VIEWBOX = REMOTE_MARK_VIEWBOX',
   'the tray mark icons',
+  iconsPart,
 )
 
 /** The smallest React that this factory touches: createElement and nothing else. */
