@@ -37,14 +37,15 @@
 
 **实测收益（别再夸大）**：`new Function(...)` 编译主包，8,290 行 / 386,314 B → **2.15 ms**（全新进程，三次同值）；拆前的 9,939 行 / 500,755 B 是 2.78 ms，最初的 12,604 行是 3.60 ms。**每次页面加载省约 1.4 ms**，热进程命中 V8 编译缓存会报 **0.00 ms**，所以每次都要新进程测。注意：这不是“少下载”，懒 chunk 只在用到时才取；量级仍是毫秒，所以这条线的理由是**编辑时的阅读上下文**，不是启动时间。
 
-**拆分边界**：只拆交互后才渲染的部分；被多处同步引用的顶层工具函数不能拆——那会把“懒加载”变成“处处等待”。实测踩到的四条：
+**拆分边界**：只拆交互后才渲染的部分；被多处同步引用的顶层工具函数不能拆——那会把“懒加载”变成“处处等待”。实测踩到的六条：
 
 1. **渲染期就要调用的纯函数必须留在主包**。目录选择器的 `directoryPath` / `directoryDraft` / `narrowDirectoryEntries` / `childDirectoryPath` / `usePathDraftPreview` 被面板自己的路径预览与「添加工作区」流程在 render 里调用，只能由 chunk 反向 import。
 2. **失败隔离要自己给**。`React.lazy` 的 reject 抛给最近的 error boundary，而本包一个都没有；不包 `Suspense fallback: null` 的话 chunk 失败会连累整个面板。
 3. **遮蔽组件不能进 chunk**。更改请求页的 `ForgeTabWithHistory` 是“渲染官方面板”的遮蔽层，它失败就等于整个标签页空白——正是遮蔽要防的事。所以移走的是它下面的页脚，不是它。
 4. **apply 期安装的东西不能进 chunk**。文件树的拖拽 / 右键 / 多选桥在 `apply()` 里同步装在 `document` 上，它们的同步调用图横跨 `Transfers`、`Composer file bridge`、`Host file tree`、`File-panel header actions` 共 27 个函数——任何一个挪进 chunk，拖拽在 chunk 到达前就是坏的。同理 `flowMenuPosition` 虽然只有选择器调用，却读 `lastTriggerRect`（apply 期的 `mousedown` 监听器写的），复制进 chunk 会读到空的模块级绑定。
 5. **`apply` 可以是 async，这就是数据能搬走的原因**。`cordis/lib/index.js` 的 `_execute` 里 `else if ("then" in effect) return effect.then(safeCollect)`——apply 返回 Promise 时被展开，解析出的值当 disposer 用，和返回函数一样。于是 `loadBootChunks()` 可以 `await Promise.all([localeModule(), stylesModule(), iconsModule()])`，**再做任何 slot 注册**。实测代价：主包 2.15 ms，三份 chunk 合计 0.72 ms（0.32 + 0.31 + 0.09），都在首屏注册前串行付出——换来的是主包里少 830 行字典 + 529 行 CSS + 199 行图标。反面的坑要记住：`await` 之后一切都可能还没到，本包已经因为这个坑被用户抓到四次（`schemeRules`、`fetchJson`、`BROWSE_LIST_LIMIT`、`refreshRemoteWorkspaceMarks`）。
-5. **宿主无条件渲染的空洞要自己挡一层**。`directoryFlow` 由工作区选择器无条件渲染，而占用组件在关闭时返回 `null`——直接 `React.lazy` 会让页面一加载就取 427 行去渲染一个 `null`。主包留的 `FlowSlot` 先判 `open`，再挂懒组件。
+6. **宿主无条件渲染的空洞要自己挡一层**。`directoryFlow` 由工作区选择器无条件渲染，而占用组件在关闭时返回 `null`——直接 `React.lazy` 会让页面一加载就取 427 行去渲染一个 `null`。主包留的 `FlowSlot` 先判 `open`，再挂懒组件。
+7. **启动 chunk 的名字要在 `apply` 里重发布一次**。`Object.assign(exports, …)` 拷的是**值**，而它在模块求值时就执行了——那时三块数据还没取回，导出里全是 `() => null` 这类占位。chunk 只解构一次，拿到占位符就永远是占位符，画面空白且**零报错**。所以 `loadBootChunks()` 末尾必须调 `republishBootNames()` 重新拷那十二个名字。这条是末轮自己写出来的 bug，靠"真跑一次 `apply` 再渲染导出的图标"才抓到：静态 grep 看不出"值被拷早了"。
 
 **触发条件**：`lib/client.js` 继续增长到影响启动、内存或编辑体验时；或下一次本来就要大改界面时顺手做。
 

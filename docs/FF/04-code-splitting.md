@@ -111,6 +111,12 @@
     又是对的。`tests/support/free-names.mjs` 的 `bundleBorrows` 先剥掉 seam 语句
     再数外部名字，据此分两类，并在负向对照里验证过（让 `client.styles.js` 用一次
     `API`，两条断言同时变红）。
+15. **`Object.assign(exports, …)` 拷的是值，而它在模块求值时就跑了。** 三块启动数据
+    要等 `apply` 才到，所以那一刻导出里全是占位（`() => null` 的图标、
+    `() => undefined` 的 `provenanceText`）。chunk 只解构一次，拿到占位符就永远是
+    占位符：界面空白、**没有任何报错**。`loadBootChunks()` 末尾必须调
+    `republishBootNames()`。这条静态 grep 抓不到——要靠"真跑一次 `apply`，再渲染
+    导出的 `CloseIcon({})` 并断言它是 svg"（`client-chunk-smoke` 的 `[6]`）。
 
 ### 1.2 基线（本机实测，供拆完对照）
 
@@ -365,9 +371,10 @@ chunk 文件里 `load({ id: '<本插件 id>', chunk: 'client.dialogs.js', factor
 **实施结果（2026-11-21）**：八个 chunk 全部落地，`require('<本插件 id>')` 通道在真机与
 `tests/client-chunk-smoke.mjs` 上都成立，所以 `client.history.js` 没有放弃。落地时
 还补了两条方案里没预见到的边界，见 §1.1 第 11、12 条；末轮把字典 / 样式 / 图标
-搬成启动期 chunk 又补了第 13 条（`apply` 可以是 async）。
+搬成启动期 chunk 又补了第 13、14 条（`apply` 可以是 async；叶子要断言），
+以及自己写出来的一个 bug 的第 15 条（名字拷早了，要重发布）。
 
-**末轮（E10）的三条收获**：
+**末轮（E10）的四条收获**：
 
 1. **`apply` 返回 Promise 是被支持的**，不是本包的私招：`cordis/lib/index.js` 的
    `_execute` 里 `else if ("then" in effect) return effect.then(safeCollect)`——解析出的
@@ -379,6 +386,11 @@ chunk 文件里 `load({ id: '<本插件 id>', chunk: 'client.dialogs.js', factor
 3. **`HostCard` 跟着面板走**：它只有面板一个读者。搬的时候要先把名字从面板的
    seam 列表里删掉，否则同一文件里声明两次——`SyntaxError: Identifier 'HostCard'
    has already been declared`。
+4. **导出的名字要在 `apply` 里重发布**：`Object.assign(exports, …)` 在模块求值时就跑，
+   而那三块数据还没到，所以导出里全是占位符。这条是本轮自己写出来的 bug——静态
+   grep 全绿、`node --check` 全绿、连 `client-chunk-smoke` 的接缝检查也全绿，
+   因为名字确实"带过来了"，只是值是空的。只有真跑一次 `apply` 再渲染导出的图标
+   才看得出来。
 
 **map 与检查**：文件头那张 map（`lib/client.js:12-66`）现在有 `client-shape-smoke`
 的强校验（解析 banner、要求内容与顺序都一致，`tests/client-shape-smoke.mjs:1286-1351`）。
