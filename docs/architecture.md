@@ -21,7 +21,7 @@
 - **客户端半边**（`lib/client/client.js` 加十二个 chunk，七个启动期、五个按需）：由 DSH 客户端的模块加载器
   （`window.__ModuleLoader__.load({ id, factory })`）直接执行，通过 `slots`
   服务挂载「远程工作区」面板与「添加工作区」菜单，并做工作区标记的 DOM 装饰。
-  `apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何 slot。
+  `apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何 slot——而且**分三批**：kernel 单独、图标单独、其余并发。分批不是洁癖：chunk 在**自己的 factory 执行期间**就会 destructure 借来的名字，所以「谁先到」是契约的一部分。
   最先取回的是**无状态底层**（`lib/client/client.kernel.js`，十二个 chunk 里最大的一个）：
   API 表、fetch、选择模型的接线、分块上传、选择器入口、菜单的 DOM 读取、forge 页的反射。
   它是按**层**切的——从每个声明出发遍历它引用到的一切，只要走到任何模块级 `let` 就留下，

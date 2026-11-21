@@ -31,6 +31,7 @@ import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
 import { bundleBorrows, bundleNames, exportedNames, seamNames, unboundBorrows, unexportedBorrows } from './support/free-names.mjs'
+import { clientChunkNames } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -376,6 +377,68 @@ console.log('\n[6] the boot chunks\' names are republished')
   check('...and loadBootChunks actually calls it',
     /republishBootNames\(\)/u.test(bootBody), 'the call is gone, so the exports keep the stand-ins')
 
+  // A boot chunk can read a name that ANOTHER boot chunk owns, and when it does
+  // the order in `loadBootChunks` is part of the contract — not a detail. A
+  // component-shaped stand-in survives being read early (`lazyDialog(...)` really
+  // is the component); a VALUE does not. `client.marks.js` destructures
+  // `REMOTE_MARK_VIEWBOX` while its own factory runs, so it read `''` and built
+  // every mark with an empty viewBox — a squashed glyph in the sidebar, and no
+  // error anywhere. This asserts the general rule, so the next such read is
+  // caught by the suite rather than by a screenshot.
+  // Concurrency groups, not a flat order. Two chunks inside one `Promise.all`
+  // are fetched TOGETHER, so neither may read a name the other owns: whichever
+  // factory runs first would see the bundle's stand-in. That was exactly the
+  // reported bug — `marks` read `REMOTE_MARK_VIEWBOX` from `icons` while both sat
+  // in the same `Promise.all`, so it built every mark with an empty viewBox.
+  const bootGroups = []
+  for (const statement of bootBody.split(/^\s{6}const |^\s{6}await /mu)) {
+    const loaders = [...statement.matchAll(/(\w+Module)\(\)/gu)].map(match => match[1])
+    if (loaders.length > 0) bootGroups.push(loaders)
+  }
+  const bootOrder = bootGroups.flat()
+  const chunkOfLoader = new Map()
+  for (const match of bundleSource.matchAll(/const (\w+Module) = \(\) => require\.async\('\.\/(client\.[\w.-]+\.js)'\)/gu)) {
+    chunkOfLoader.set(match[1], match[2])
+  }
+  /** Which group a chunk is fetched in; -1 means "not a boot chunk". */
+  const bootGroupOf = chunk => {
+    const loader = [...chunkOfLoader].find(([, name]) => name === chunk)?.[0]
+    if (loader === undefined) return -1
+    return bootGroups.findIndex(group => group.includes(loader))
+  }
+  check('the boot load order is readable', bootGroups.length >= 2, bootGroups.map(group => `[${group.join()}]`).join(' '))
+
+  /** Which chunk declares each top-level name. */
+  const declaredBy = new Map()
+  for (const name of clientChunkNames(pluginRoot).concat('client.js')) {
+    const text = readFileSync(path.join(pluginRoot, 'lib', 'client', name), 'utf8')
+    for (const match of text.matchAll(/^ {4}(?:async )?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gmu)) {
+      if (!declaredBy.has(match[1])) declaredBy.set(match[1], name)
+    }
+  }
+  const earlyReads = []
+  for (const name of clientChunkNames(pluginRoot)) {
+    if (bootGroupOf(name) < 0) continue // lazy: fetched after apply, everything is in by then
+    const text = readFileSync(path.join(pluginRoot, 'lib', 'client', name), 'utf8')
+    const seam = /const \{([\s\S]*?)\} = require\('@shiqyka\/dsh-ssh-workspace'\)/u.exec(text)
+    if (seam === null) continue
+    for (const piece of seam[1].split(',')) {
+      const borrowed = piece.trim().split(':').pop()?.trim() ?? ''
+      const owned = declaredBy.get(borrowed)
+      if (owned === undefined || owned === name || owned === 'client.js') continue
+      const ownerAt = bootGroupOf(owned)
+      if (ownerAt < 0) continue // the bundle holds it; republishBootNames covers it
+      const mine = bootGroupOf(name)
+      if (ownerAt >= mine) {
+        earlyReads.push(ownerAt === mine
+          ? `${name} reads ${borrowed} from ${owned}, which is fetched in the SAME group (unordered)`
+          : `${name} reads ${borrowed} but ${owned} is fetched later`)
+      }
+    }
+  }
+  check('every boot chunk is loaded before the chunk that reads its names',
+    earlyReads.length === 0, earlyReads.join('; '))
+
   // ...and the dynamic half, on the real loader: after `apply`, the exported
   // glyph draws something. `document` is absent here, so the apply-time
   // installers take their headless branch; `setTimeout` is a no-op so the
@@ -454,6 +517,13 @@ console.log('\n[6] the boot chunks\' names are republished')
   check('...while the stand-in would have drawn nothing',
     typeof applied.CloseIcon === 'function' && String(applied.CloseIcon).includes('size'),
     String(applied.CloseIcon).slice(0, 60))
+  // The mark's viewBox is a plain string owned by the icons chunk, and it is the
+  // value that was actually wrong: `client.marks.js` built every remote mark with
+  // an empty viewBox, so the symptom was a squashed glyph with no error anywhere.
+  // A stand-in cannot cover a value, so both the order and the republish matter.
+  check('...and the mark viewBox is a real box, not the empty stand-in',
+    typeof applied.REMOTE_MARK_VIEWBOX === 'string' && applied.REMOTE_MARK_VIEWBOX.split(' ').length === 4,
+    JSON.stringify(applied.REMOTE_MARK_VIEWBOX))
 }
 
 
