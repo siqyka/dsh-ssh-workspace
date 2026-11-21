@@ -30,6 +30,8 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
+import { bundleNames, seamNames, unboundBorrows } from './support/free-names.mjs'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const coreRoot = process.env.DSH_CORE_ROOT
@@ -259,30 +261,29 @@ check('require.async needs a "./" prefix for a sibling chunk',
   typeof system.makeRequire(BUNDLE_ID, new Set()).async === 'function')
 
 // ---------------------------------------------------------------------------
-// [5] every shipped chunk binds every bundle name it uses
+// [5] every chunk carries across every bundle name it borrows
 // ---------------------------------------------------------------------------
-// The bug this exists for: `client.dialogs.js` called `fetchJson` three times
-// and destructured fourteen names from the bundle — fifteen were needed.
-// Nothing failed at load, because an undeclared identifier only throws when the
-// line RUNS. So the directory picker opened, listed nothing, and told the user
-// "无法加载目录 / fetchJson is not defined": the panel was fine, the chunk was
-// fine, and no test was looking at the seam between them.
+// The bug this exists for, twice over: `client.dialogs.js` called `fetchJson`
+// three times without destructuring it, and then reached for
+// `BROWSE_LIST_LIMIT` — a constant that was not even exported yet. Both were
+// invisible until a user opened the directory picker, because an undeclared
+// identifier is a load-time nothing and a run-time ReferenceError.
 //
-// This is a static diff rather than a render: for every chunk, the names it
-// pulls out of the bundle must cover the bundle's exports that it names as bare
-// identifiers. Local names, parameters and globals are not this check's
-// business — only the seam is.
-console.log('\n[5] every chunk binds what it borrows')
+// The question is narrow on purpose: does a chunk name something the main
+// bundle declares, without either destructuring it from the bundle or declaring
+// it locally? That is exactly the bug, and it needs no scope analysis to answer
+// — the tokenizer in `tests/support/free-names.mjs` removes comments, strings
+// and regexes (and keeps the code inside `${…}`), so what is left is real
+// mentions of real names.
+//
+// Deliberately NOT asked: whether a use is reachable from a declaration in a
+// nested scope. Over-approximating there can only hide a bug, and a check that
+// cries wolf on correct code is a check that gets deleted.
+console.log('\n[5] every chunk carries what it borrows')
 {
   const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
-  const assign = /Object\.assign\(exports, \{([\s\S]*?)\n {4}\}\)/u.exec(bundleSource)
-  check('the bundle declares what the chunks may reach for', assign !== null)
-  const exported = new Set()
-  for (const line of (assign?.[1] ?? '').split('\n')) {
-    const name = line.replace(/\/\/.*$/u, '').trim().replace(/,$/u, '')
-    if (/^[A-Za-z_$][\w$]*$/u.test(name)) exported.add(name)
-  }
-  check('...and that list is not empty', exported.size > 0, String(exported.size))
+  const available = bundleNames(bundleSource)
+  check('the bundle makes names available to its chunks', available.size > 0, String(available.size))
 
   const chunkFiles = readdirSync(path.join(pluginRoot, 'lib'))
     .filter(name => /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u.test(name))
@@ -291,23 +292,14 @@ console.log('\n[5] every chunk binds what it borrows')
 
   for (const file of chunkFiles) {
     const source = readFileSync(path.join(pluginRoot, 'lib', file), 'utf8')
-    const seam = /const \{([\s\S]*?)\} = require\('@shiqyka\/dsh-ssh-workspace'\)/u.exec(source)
-    check(`${file}: reaches the bundle through the documented seam`, seam !== null)
-    const bound = new Set()
-    for (const line of (seam?.[1] ?? '').split('\n')) {
-      const name = line.replace(/\/\/.*$/u, '').trim().replace(/,$/u, '')
-      if (/^[A-Za-z_$][\w$]*$/u.test(name)) bound.add(name)
-    }
-    const unbound = []
-    for (const name of exported) {
-      if (bound.has(name)) continue
-      const pattern = new RegExp(`(?<![.\\w$])${name.replace(/\$/gu, '\\$')}\\b`, 'u')
-      if (pattern.test(source)) unbound.push(name)
-    }
-    check(`${file}: binds every bundle name it uses`, unbound.length === 0,
-      `not destructured: ${unbound.join(', ')}`)
+    check(`${file}: reaches the bundle through the documented seam`,
+      seamNames(source).size > 0, 'no destructuring from the package id')
+    const unbound = unboundBorrows(source, available)
+    check(`${file}: carries every bundle name it borrows`, unbound.length === 0,
+      `used but neither destructured nor declared: ${unbound.join(', ')}`)
   }
 }
+
 
 if (failures > 0) {
   console.log('\nfailures:')
