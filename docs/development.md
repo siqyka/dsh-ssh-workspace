@@ -22,7 +22,7 @@
 
 ## 源码结构
 
-纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的单文件 bundle（`lib/client.js`，由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器）。
+纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client.js`）加三个按需 chunk，都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -59,7 +59,10 @@
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → `DSH_CORE_ROOT` → 各 profile → 部署自带树。`DSH_CORE_ROOT` 在列表里，是因为每个套件与 `tests/run.mjs` 都用它拼 stub 根：不认这个名字，套件就会先造出 stub 树、再被告知 peer 缺失 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现 |
 | `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。自检（缺工具、环境告警）**只进 `notes`，不参与判定**——它是主机的属性，不是这个会话的故障。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
-| `lib/client.js` | 浏览器半边：面板、添加工作区流程、标记装饰、全部样式与中英文案 |
+| `lib/client.js` | 浏览器半边的主包：面板、添加工作区流程、标记装饰、全部样式与中英文案，以及三个 chunk 的 `React.lazy` 入口 |
+| `lib/client.dialogs.js` | 浏览器半边的按需 chunk：主机编辑 / 目录选择 / 诊断报告三个对话框 |
+| `lib/client.transfer-queue.js` | 浏览器半边的按需 chunk：转移队列浮层（队列状态仍在主包，文件面板也在读它） |
+| `lib/client.history.js` | 浏览器半边的按需 chunk：更改请求标签页底部的提交历史页脚 |
 | `lib/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) |
 
 ## 上游临时补丁
@@ -116,8 +119,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 
 两个半边都无编译步骤，"改完即所测"：
 
-- **宿主半边**（`lib/*.js`，除 client）与 `client.js` 的**样式/文案**：改动进入已安装位置后重启 DSH 生效。调试源码检出的宿主半边可用 DSH 自带的 Electron 运行时：以 `ELECTRON_RUN_AS_NODE=1` 运行宿主源码脚本，并设 `DSH_PEER_ROOT` 指向 DSH 安装目录的 `node_modules`（参考 [architecture.md](./architecture.md) 的「peer 解析」顺序）。
-- **浏览器半边**：`client.js` 由 DSH 前端按单文件包加载，改动需重装进 profile 并重启 DSH，再重载页面；文件头注释里写明其加载协议，无独立构建管线。
+- **宿主半边**（`lib/*.js`，除 client）与浏览器半边的**样式/文案**：改动进入已安装位置后重启 DSH 生效。调试源码检出的宿主半边可用 DSH 自带的 Electron 运行时：以 `ELECTRON_RUN_AS_NODE=1` 运行宿主源码脚本，并设 `DSH_PEER_ROOT` 指向 DSH 安装目录的 `node_modules`（参考 [architecture.md](./architecture.md) 的「peer 解析」顺序）。
+- **浏览器半边**：`client.js` 与它的三个 chunk 由 DSH 前端加载，改动需重装进 profile 并重启 DSH，再重载页面；文件头注释里写明其加载协议，无独立构建管线。只改 chunk 不会自己生效——chunk 的 URL 带主入口的 revision，改完 chunk 还要碰一下 `lib/client.js` 或重启 DSH。
 
 ### 日志与诊断
 

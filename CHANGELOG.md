@@ -6,6 +6,7 @@
 
 ### 新增
 
+- **浏览器半边按需加载（三个 chunk）**：`lib/client.js` 从 12,604 行降到 11,841 行，三个只在交互后才需要的部分搬进同目录的 `client.<name>.js`，由 `require.async` 首次用到时才取——主机编辑 / 目录选择 / 诊断报告三个对话框（`client.dialogs.js`）、转移队列浮层（`client.transfer-queue.js`）、更改请求页脚的提交历史（`client.history.js`）。三条边界是实测踩出来的，写进了文件头注释：**渲染期要调用的纯函数留在主包**（目录选择器的 `directoryPath` / `usePathDraftPreview` 等被面板与「添加工作区」在 render 里调用，只能由 chunk 反向 import）；**失败隔离要自己给**（`React.lazy` 的 reject 抛给最近的 error boundary，而本包一个都没有，所以每个 chunk 都包在 `Suspense fallback: null` 里，取不到只损失它自己）；**遮蔽组件不能进 chunk**（`ForgeTabWithHistory` 是「渲染官方面板」的遮蔽层，它失败就等于整个标签页空白——移走的是它下面的页脚）。chunk 回连主包的通道（`require('<插件 id>')` 拿到主包 exports）由 `tests/client-chunk-smoke.mjs` 在真实 loader 上证明，不再靠推断。收益要说实话：`new Function(...)` 编译整个主包 3.60 ms、砍掉三个 chunk 候选后 3.24 ms，**每次页面加载省 0.36 ms**，所以这条线的理由是编辑时的阅读上下文，不是启动时间。运维约束未变：chunk 的 URL rev 来自主入口，只改 chunk 不会生效，要重启 DSH 或触碰 `lib/client.js`。
 - **测试骨架与基线治理（`tests/support/`，零依赖）**：裸检出上「远端读写」长期没有可跑的覆盖——`writeText` / `editText` / `listDir` / 原子发布 / 版本冲突这些**成功路径**只在 `live` 套件里跑，而它需要一台真主机。本轮补的是替身与收敛，不是「优化测试」：
   - **内存 SFTP（`fake-sftp.mjs`）**：按**服务器**的行为作答而不是当 mock——`rename` 撞已有目标必须失败（SFTP 规范如此，否则 `publishRename` 的回退分支永远测不到）、默认通告 `posix-rename`（关掉才走非原子回退）、父目录缺失给 ENOENT、`stat` 的 mtime 每次改动推进（`freezeMtime` 复现「同大小同秒改写」）。配套的 `remote-fs-smoke`（67 项）把原子发布、写一半断线后目标不动、`FS_STALE_VERSION` / `FS_NOT_OBSERVED`、三种围栏拒绝、软链逃逸、`editText` 的换行与二进制判定全部搬到裸检出上跑。
   - **共享宿主替身（`plugin-host.mjs`）**：19 处手搓 `ctx` 字面量收敛到一处。替身**可以比 Cordis 小，绝不能比它松**——重复 `provide`、已销毁 fiber 的读写、同名工具注册在这里同样被拒，否则套件测的是替身。

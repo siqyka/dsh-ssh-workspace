@@ -1,6 +1,6 @@
 # FF-04 代码拆分：把五个「改一处要读半个文件」的地方拆开
 
-> 状态：方案（未实施，2026-11-20 实测核对）
+> 状态：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。实施记录与实测结论见 `docs/optimization-and-future03.md` §1.1 与 `CHANGELOG.md` 未发布段。
 > 任务书见 [04-code-splitting-prompt.md](./04-code-splitting-prompt.md)
 > 本辑回答：**哪些文件真的该拆、拆成什么样、每步怎么证明没拆坏**。
 > 不做 GitHub issue（用户选择只落仓库文档）；技能模板的六节内容按本页的
