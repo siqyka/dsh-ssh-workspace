@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 60 | recursive listing |
+| modules under `lib/` | 59 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
@@ -52,7 +52,7 @@
 | `lib/archive.js` | 两种归档格式的手写写出器（tar 在前、zip 在后），一次产出一块 Buffer：tar 走 ustar 头 + 512 字节分块，zip 走储 / 压缩条目 + data descriptor + 中央目录；都**不支持符号链接 / 硬链接 / 归属**（调用方跳过并上报，一个指向 `/` 的条目会把「下载这个文件夹」变成别人机器上的覆盖）。浏览器只能收到一个文件，而 ZIP 是每个桌面系统都原生能开的格式，所以它是默认，tar 是回退——见 `transfer.js` |
 | `lib/store.js` | `$DSH_HOME/dsh-ssh.json` 存储：校验、合并（保留未知字段）、原子写。文件底部是**静态加密那一半**：AES-256-GCM，密钥在 `$DSH_HOME/dsh-ssh.key`（owner-only，首次按需生成），密文拼写 `enc:v1:<base64(iv|tag|ciphertext)>`，没有该前缀的值原样通过——那是让旧明文存储与 `~/.ssh/config` 的明文 `password` 继续可用、由启动迁移改写成密文的原因。两半共用一个 `dshHome()`：密钥写在 A 处却从 B 处读，症状与「密钥被换掉」无法区分 |
 | `lib/routes/` | 浏览器半边的 33 条 HTTP 路由，按资源域分开：`routes.js`（组合点 + `ROUTES` 表）负责把五个数组拼成一张表，`hosts` / `workspaces` / `forwards` / `transfers` / `entries` 五个模块各放自己那族 handler，`kit.js` 是围栏与流式响应工具，`transfer-bytes.js` 是浏览器直传 / 直下的字节搬运。入口仍是 `lib/index.js` 里的一次 `makeRoutes()`：hosts / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / mutation-policy / self-check / support-bundle / passthrough-settings |
-| `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
+| `lib/shell.js` | 远端 shell 的两半。上半是**持久会话**：`(别名, 会话名)` 一个长活 PTY，`cd` / 导出变量 / 后台任务跨调用保留，每条命令后追加带退出状态的重标记（新标记每命令一次，程序自己打印不出一个假结尾）。下半是**这台主机到底有哪几支 shell**：接管宿主 `terminalController.shells()`（宿主只在 `spawn` / `spawnTerminal` 上被包过，`resolveExecutable` / `terminalEnvironment` 没有 seam，所以菜单一直答的是本机），一次往返跑 `command -v` 加 `dsh-shells-done` 完成标记，三态诚实——缺标记 / 非零退出 / 传输抛错一律 reject 且不缓存，绝不回落成一份本机列表；答案按「主机 + 连接代次」缓存，只在重连时重探 |
 | `lib/tools.js` | 11 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
 | `lib/status.js` | `ssh_workspace_status` 的三半放在一处：输出 schema（形，375 行无行为）、`renderStatus`（词，措辞本身就是契约——面板与渲染器回答同一个问题）、`statusProvenance`（`live` / `cached` / `stale` 三种来源标注，第四种会抛）。四者外加 `text()` 那个唯一的结果形状都只随彼此变化：**加一个字段就要渲染它并标注它**，少一处答案就错在一个地方；未标注的字段是 bug，不是「大概没问题」的字段 |
 | `lib/remote-skills.js` | 远端技能发现：`ctx.skills` 上注册 `ssh-workspace-remote-skills`（rank 250），扫会话工作区下的 `.dsh/skills` 与 `.agents/skills`。路径全程 `normalizeRemotePath` / `formatRemotePath`——宿主的 `discoverRoot` 用 `node:path.join`，在 Windows 上会把 `ssh://` 拼成 `.\ssh:\...` 而让候选静默消失；frontmatter 自写子集解析（不引入 YAML）；非法候选在返回前滤掉（宿主 `validateCandidate` 是 `throw`，会带走整个会话的技能目录）；`get()` 每次加载正文前重做 `assertFencedRealpath`（`remote-fs.js` 的围栏只挂写路径）。默认关闭，按主机白名单开启，有界，`complete: false` 不缓存 |

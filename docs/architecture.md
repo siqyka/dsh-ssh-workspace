@@ -545,7 +545,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 于是菜单永远回答本机装了哪些 shell——远端独有的一支选不到，本机独有的选了也跑不
 起来（标签写 zsh、远端跑 sh）。
 
-`lib/remote-shells.js` 因此接管 `shells()` 本身：`ssh://` 会话问主机，本机会话原样
+`lib/shell.js` 的下半因此接管 `shells()` 本身：`ssh://` 会话问主机，本机会话原样
 交给原方法。四点在实现里必须这么写：
 
 - **为什么是 own property，而不是新端点**。Cordis 的服务是 traceable proxy，赋值会
