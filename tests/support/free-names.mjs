@@ -341,6 +341,45 @@ export function bundleNames (bundleSource) {
 }
 
 /**
+ * The names the bundle actually EXPORTS, as opposed to merely declaring.
+ *
+ * This is a narrower question than {@link bundleNames}, and it exists because
+ * the broad one let a real bug through. `require('<plugin id>')` returns
+ * `module.exports`, which is ONLY the `Object.assign(exports, …)` block — a
+ * chunk that destructures a name the block does not list gets `undefined`, not
+ * a ReferenceError. So `unboundBorrows` was satisfied (the chunk carried the
+ * name across) while the value was never there.
+ *
+ * `refreshRemoteWorkspaceMarks` shipped that way: the panel chunk exported it,
+ * the add-workspace chunk destructured it, and the call sits in the mount
+ * handler — so adding a workspace would have thrown only after the workspace
+ * was already created.
+ *
+ * @param {string} bundleSource - `lib/client.js`.
+ * @returns {Set<string>} names the exports block lists.
+ */
+export function exportedNames (bundleSource) {
+  const names = new Set()
+  const assign = /Object\.assign\(exports, \{([\s\S]*?)\n {4}\}\)/u.exec(bundleSource)
+  for (const line of (assign?.[1] ?? '').split('\n')) {
+    const name = line.replace(/\/\/.*$/u, '').trim().replace(/,$/u, '')
+    if (/^[A-Za-z_$][\w$]*$/u.test(name)) names.add(name)
+  }
+  return names
+}
+
+/**
+ * The names a chunk destructures from the bundle that the bundle never exports.
+ *
+ * @param {string} chunkSource - the chunk's text.
+ * @param {Set<string>} exported - from {@link exportedNames}.
+ * @returns {string[]} sorted offending names.
+ */
+export function unexportedBorrows (chunkSource, exported) {
+  return [...seamNames(chunkSource)].filter(name => !exported.has(name)).sort()
+}
+
+/**
  * The names a chunk uses from the bundle without carrying them across.
  *
  * @param {string} chunkSource - the chunk's text.

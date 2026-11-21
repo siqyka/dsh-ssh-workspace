@@ -30,7 +30,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
-import { bundleNames, seamNames, unboundBorrows } from './support/free-names.mjs'
+import { bundleNames, exportedNames, seamNames, unboundBorrows, unexportedBorrows } from './support/free-names.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -283,7 +283,10 @@ console.log('\n[5] every chunk carries what it borrows')
 {
   const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
   const available = bundleNames(bundleSource)
+  const exported = exportedNames(bundleSource)
   check('the bundle makes names available to its chunks', available.size > 0, String(available.size))
+  check('the exports block is smaller than "everything declared"', exported.size > 0 && exported.size < available.size,
+    `${exported.size} exported of ${available.size} declared — equal would mean the check below cannot fail`)
 
   const chunkFiles = readdirSync(path.join(pluginRoot, 'lib'))
     .filter(name => /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u.test(name))
@@ -297,6 +300,14 @@ console.log('\n[5] every chunk carries what it borrows')
     const unbound = unboundBorrows(source, available)
     check(`${file}: carries every bundle name it borrows`, unbound.length === 0,
       `used but neither destructured nor declared: ${unbound.join(', ')}`)
+    // The question above is "did the chunk carry the name across"; this one is
+    // "does the bundle actually hand it over". They are different, and the
+    // weaker one passed while `refreshRemoteWorkspaceMarks` was destructured by
+    // the add-workspace chunk and absent from the exports block — `undefined`,
+    // not a ReferenceError, thrown only after a workspace had been created.
+    const unexported = unexportedBorrows(source, exported)
+    check(`${file}: every name it destructures is really exported`, unexported.length === 0,
+      `destructured but the bundle's exports block does not list: ${unexported.join(', ')}`)
   }
 }
 
