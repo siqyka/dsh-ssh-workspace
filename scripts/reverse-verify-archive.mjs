@@ -134,13 +134,13 @@ const MUTATIONS = [
     // covers a wiring change it cannot see.
     name: 'the tree-row upload goes back to two separate toasts',
     file: 'lib/client/client.js',
-    find: "      transferQueueNotice = { handle: transferNotice(line), ids: new Set(items.map(item => item.id)), line }",
+    find: "      transferQueueNotice = { handle: transferNotice(line), ids: new Set(items.map(item => item.id)), line, note: tail }",
     replace: "      notifyUser(toastError(line))\n      transferQueueNotice = null",
     suite: 'archive',
   },
   {
     name: 'a completion notice survives navigation',
-    file: 'lib/client/client.js',
+    file: 'lib/client/client.transfer-queue.js',
     find: "function TransferQueuePanel ({ anchor, onClose, t }) {\n      const queue = useTransferQueue()",
     replace: "function TransferQueuePanel ({ anchor, onClose, t }) {\n      const queue = transferQueueState",
     suite: 'archive',
@@ -154,7 +154,7 @@ const MUTATIONS = [
   },
   {
     name: 'the completion line is moved behind the modal backdrop as a toast',
-    file: 'lib/client/client.js',
+    file: 'lib/client/client.transfer-queue.js',
     find: "    function TransferQueuePanel ({ anchor, onClose, t }) {",
     replace: "    function TransferQueueInline () {}\n    function TransferQueuePanel ({ anchor, onClose, t }) {",
     suite: 'archive',
@@ -187,7 +187,7 @@ const MUTATIONS = [
   },
   {
     name: 'the fallback claims a save it cannot observe',
-    file: 'lib/client/client.js',
+    file: 'lib/client/client.locale.js',
     find: "      'transfer.downloadStarted': '已开始下载 {name}（{size}），保存位置由浏览器决定',",
     replace: "      'transfer.downloadStarted': '已下载 {name}（{size}）',",
     suite: 'archive',

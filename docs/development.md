@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes.js` + `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 79 | recursive listing |
+| modules under `lib/` | 80 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5032 | measured 2026-11-20 |
 
@@ -22,7 +22,7 @@
 
 ## 源码结构
 
-纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client/client.js`）加八个 chunk（三个启动期、五个按需），都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
+纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client/client.js`）加九个 chunk（四个启动期、五个按需），都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -63,6 +63,7 @@
 | `lib/client/client.locale.js` | 浏览器半边的启动 chunk：zh / en 两张字典加三个纯函数（`applyParams` / `makeTranslate` / `relativeTimeText` / `provenanceText`）。`apply` 一进来就取，因为侧栏行的 label 要用它 |
 | `lib/client/client.styles.js` | 浏览器半边的启动 chunk：整张样式表（`CSS_ID` + `injectStyles`）。页面必须先有规则再画面板，所以 `apply` 直接 await，不做懒加载 |
 | `lib/client/client.icons.js` | 浏览器半边的启动 chunk：十四个 SVG 图标工厂加 `TRAY_ARROW_PATHS`。侧栏行字形、文件树 DOM 菜单、工作区标记都要它，`apply` await |
+| `lib/client/client.queue.js` | 浏览器半边的启动 chunk：转移队列的纯规则——两个并发上限、上传体积上限、`queueReduce` / `queueDrain` / `queueItemPercent` / `truncateTransferName` 等。**没有钟、没有 DOM、没有 `fetch`、不读 `translate`**，所以 `apply` await 它，而队列状态与真正搬字节的 worker 仍在主包 |
 | `lib/client/client.dialogs.js` | 浏览器半边的按需 chunk：主机编辑 / 目录选择 / 诊断报告三个对话框 |
 | `lib/client/client.panel.js` | 浏览器半边的按需 chunk：主面板（主机卡片、转发、挂载、自检、命令审计）**加 `HostCard`**——它只有面板一个读者，所以跟着面板走。它是插件唯一**常驻可见**的界面，但仍然不是启动所需——侧栏行和文件树桥才是 |
 | `lib/client/client.add-workspace.js` | 浏览器半边的按需 chunk：添加工作区流程（本地 / 远程选择器、远程目录选择、挂载）。宿主会无条件渲染 `directoryFlow` 空洞，所以主包留了个 `FlowSlot`：关闭时直接返回 `null`，只有 `open` 才去取 chunk |

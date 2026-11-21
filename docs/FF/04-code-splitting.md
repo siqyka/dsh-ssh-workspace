@@ -103,7 +103,9 @@
     是 `async function apply`。于是 `loadBootChunks()` 用一次 `Promise.all` 取回
     `client.locale.js` / `client.styles.js` / `client.icons.js`，填进各段的 `let`
     绑定，**之后**才注册第一个 slot。代价是首屏少 0.72 ms（0.32 + 0.31 + 0.09，
-    全新进程实测）。反面的坑：`await` 之后一切名字都可能还没到，本包已经因此被
+    全新进程实测）。队列的纯规则（`client.queue.js`）后来也进了这一组：它没有钟、
+    没有 DOM、不读 `translate`，所以是货真价实的叶子，而队列状态和搬字节的 worker
+    留在主包——一条传输如果在规则到达前开始，就会既没有上限也没有 drain。反面的坑：`await` 之后一切名字都可能还没到，本包已经因此被
     用户抓到四次（`schemeRules`、`fetchJson`、`BROWSE_LIST_LIMIT`、
     `refreshRemoteWorkspaceMarks`）。
 14. **三块数据的"叶子"身份要被断言，不能只靠人记得。** 它们不 destructure 主包任何
@@ -296,13 +298,15 @@ CI 的 `npm run lint` 因此会「通过」而漏掉语法错误。
 
 本辑采用的边界因此不是「哪些段整体搬走」，而是**「哪些段可以被一个懒组件包住」**：
 chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 props 或
-`require('<本插件 id>')` 拿到。最初落地为三个 chunk，实施中又加了两个：
+`require('<本插件 id>')` 拿到。最初三个，实施中加到九个（四个启动期 + 五个按需）；
+最后加的 `client.queue.js` 不是组件 chunk，是纯规则 chunk——见它自己的行。
 
 | chunk | 导出的组件 | 搬走的渲染代码 | 必须拿到的（留主 bundle） |
 | --- | --- | --- | --- |
 | `lib/client/client.locale.js` | `NS`、`zh`、`en`、`applyParams`、`makeTranslate`、`provenanceText`、`relativeTimeText` | 850 行 | **无**（叶子：不借主包任何名字） |
 | `lib/client/client.styles.js` | `injectStyles`、`CSS_ID` | 546 行 | **无**（叶子） |
 | `lib/client/client.icons.js` | 十四个图标工厂加 `TRAY_BASE_PATH` / `TRAY_ARROW_PATHS` | 228 行 | **无**（叶子，只 `require('react')`） |
+| `lib/client/client.queue.js` | 队列的纯规则：两个并发上限、上传上限、`queueReduce` / `queueDrain` / `queueItemPercent` / `transferQueueProgress` / `truncateTransferName` / `splitOversizeFiles` | 583 行 | **无**（叶子：没有钟、没有 DOM、不 `fetch`、不读 `translate`） |
 | `lib/client/client.dialogs.js` | `HostEditor`、`DirectoryBrowser`、`ReportDialog` | 约 510 行 | `API`、`FolderIcon`、`CloseIcon`、`useDialogA11y`、`modalLayer`、`backdropDismiss`、`capabilityNotes`、目录选择器的纯 helper |
 | `lib/client/client.panel.js` | `RemoteWorkspacePanel`、`HostCard` | 1,780 行 | `API`、`fetchJson`、`fetchReportText`、`RemoteMarkIcon`、`relativeTimeText`、`provenanceText`、`DialogSlot` 与三个对话框、`notifyUser`、`toastError`、`useTransferActionsSlot`、`syncRemoteWorkspaceMarks`、`capabilityNotes` |
 | `lib/client/client.add-workspace.js` | `AddChooser`、`RemoteWorkspaceDialog`、`AddWorkspaceFlow` | 490 行 | `API`、`fetchJson`、`BROWSE_LIST_LIMIT`、`FLOW_MENU_WIDTH_ROOMY`、`flowMenuPosition`、四个图标、`backdropDismiss`、`modalLayer`、`useDialogA11y`、`useMenuKeyboard`、目录选择器的纯 helper、`refreshRemoteWorkspaceMarks` |

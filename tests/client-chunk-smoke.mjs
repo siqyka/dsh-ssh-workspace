@@ -429,9 +429,21 @@ console.log('\n[6] the boot chunks\' names are republished')
   }
   check('apply completes against the real loader and the real chunks',
     applyError === undefined, applyError?.message)
-  check('...after fetching exactly the three boot chunks',
-    loadedChunks.sort().join(',') === 'client.icons.js,client.locale.js,client.styles.js',
-    loadedChunks.join(', '))
+  // Derived from the bundle rather than hard-coded: the point of the check is
+  // that `apply` fetches the boot set and nothing else, so the expected list has
+  // to come from `loadBootChunks` itself. Each boot module is declared as
+  // `const xModule = () => require.async('./client.x.js')`; the ones the boot
+  // body calls are the ones that must arrive.
+  const bootModules = new Map()
+  for (const [, loader, chunk] of bundleSource.matchAll(/const (\w+Module) = \(\) => require\.async\('\.\/(client\.[\w.-]+\.js)'\)/gu)) {
+    bootModules.set(loader, chunk)
+  }
+  const expectedBoot = [...bootModules].filter(([loader]) => bootBody.includes(`${loader}()`)).map(([, chunk]) => chunk).sort()
+  check('the bundle declares the boot chunks it loads',
+    expectedBoot.length >= 3, expectedBoot.join(', '))
+  check('...after fetching exactly the boot chunks',
+    loadedChunks.slice().sort().join(',') === expectedBoot.join(','),
+    `expected ${expectedBoot.join(',')} / got ${loadedChunks.slice().sort().join(',')}`)
   const glyph = applyError === undefined ? applied.CloseIcon({}) : undefined
   check('...and the exported glyph is the real one, not the module-scope stand-in',
     glyph !== null && glyph !== undefined && glyph.type === 'svg',

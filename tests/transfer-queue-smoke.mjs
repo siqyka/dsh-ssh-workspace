@@ -25,7 +25,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -47,19 +47,28 @@ function check (name, condition, detail) {
 }
 
 const START = '// ---- queue state machine (pure: no clock, no DOM, no translation)'
-const END = '// ---- queue runtime (clock, workers, notices, subscriptions)'
+// The slice ends where the chunk publishes its surface, NOT at a `queue runtime`
+// marker: the runtime stayed in the main bundle, so the pure part now ends at the
+// edge of its own module.
+const END = '// The pure surface.'
 
 /**
- * Lift the reducer and its helpers out of the shipped bundle.
+ * Lift the reducer and its helpers out of the shipped chunk.
+ *
+ * Read from `client.queue.js` rather than from the concatenation: the point of
+ * this suite is to drive the REAL code users get, and the pure half now lives in
+ * exactly one file. Slicing it out of the bundle by markers stopped meaning
+ * anything the moment the bundle only kept a stub.
  *
  * @returns {object} the pure API, bound to no DOM and no clock.
  */
 function liftQueue () {
-  const start = source.indexOf(START)
-  if (start < 0) throw new Error('client.js no longer marks the pure queue state machine')
-  const end = source.indexOf(END, start)
-  if (end < 0) throw new Error('client.js no longer marks the queue runtime')
-  const body = source.slice(start, end)
+  const queuePart = clientPartSource(packageRoot, 'client.queue.js')
+  const start = queuePart.indexOf(START)
+  if (start < 0) throw new Error('client.queue.js no longer marks the pure queue state machine')
+  const end = queuePart.indexOf(END, start)
+  if (end < 0) throw new Error('client.queue.js no longer separates the machine from its exports')
+  const body = queuePart.slice(start, end)
   // eslint-disable-next-line no-new-func
   const factory = new Function(`
     ${body}
