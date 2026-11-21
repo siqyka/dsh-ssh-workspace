@@ -180,7 +180,7 @@ const MUTATIONS = [
     // Closing instead of aborting publishes a truncated file under the name the
     // user chose, which reads as a successful download.
     name: 'a failed write CLOSES the file instead of aborting it',
-    file: 'lib/client/client.js',
+    file: 'lib/client/client.kernel.js',
     find: '        try { await writable.abort() } catch { /* already closed */ }',
     replace: '        try { await writable.close() } catch { /* already closed */ }',
     suite: 'archive',
@@ -194,7 +194,7 @@ const MUTATIONS = [
   },
   {
     name: 'a picker refusal is collapsed into a cancel',
-    file: 'lib/client/client.js',
+    file: 'lib/client/client.kernel.js',
     find: "        if (err?.name === 'AbortError') return { kind: 'canceled' }\n        return { kind: 'unsupported' }",
     replace: "        return { kind: 'canceled' }",
     suite: 'archive',

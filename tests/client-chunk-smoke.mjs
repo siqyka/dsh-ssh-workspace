@@ -396,7 +396,10 @@ console.log('\n[6] the boot chunks\' names are republished')
       const name = url.split('/').pop().split('?')[0]
       loadedChunks.push(name)
       // A chunk's script executes against the LIVE facade — the module system.
-      const chunkContext = { window: { __ModuleLoader__: live.facade }, console }
+      // The chunk context needs the same headless globals the bundle gets: a
+      // chunk is not just data, it holds code that schedules and reads timers
+      // while its factory runs (the kernel's polling helpers do).
+      const chunkContext = { window: { __ModuleLoader__: live.facade }, console, setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {}, queueMicrotask }
       vm.createContext(chunkContext)
       vm.runInContext(readFileSync(path.join(pluginRoot, 'lib', 'client', name), 'utf8'), chunkContext, { filename: name })
     },

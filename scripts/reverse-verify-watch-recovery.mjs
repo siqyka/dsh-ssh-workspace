@@ -43,13 +43,13 @@ const MUTATIONS = [
   },
   {
     name: 'the poller reports instead of retrying',
-    file: 'lib/remote-fs.js',
+    file: 'lib/remote-watch.js',
     find: '      if (verdict.retry !== true) {\n        // A real failure on a healthy connection',
     replace: '      if (true) {\n        // A real failure on a healthy connection',
   },
   {
     name: 'the recovery rescan is dropped (silent freeze)',
-    file: 'lib/remote-fs.js',
+    file: 'lib/remote-watch.js',
     find: '    if (failures > 0) {\n      // Observations resumed.',
     replace: '    if (false) {\n      // Observations resumed.',
   },

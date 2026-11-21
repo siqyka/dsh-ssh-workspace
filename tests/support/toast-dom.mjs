@@ -12,6 +12,14 @@
  * hover cancel it", and "does a copy fall back to a selection".
  */
 
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { clientRegion } from './client-source.mjs'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const pluginRoot = path.resolve(here, '..', '..')
+
 /**
  * Index just past the `}` that closes the `{` at `open`.
  *
@@ -48,10 +56,22 @@ export function liftToasts (source) {
   const anchor = source.indexOf('function transferNotice (text) {', start)
   if (anchor < 0) throw new Error('client.js no longer defines transferNotice()')
   const end = endOfBlock(source, source.indexOf('{', anchor))
-  const body = source.slice(start, end)
+  // The slice is the shipped run, but its closure is not: the toast model, the
+  // copy text and the diagnostic block moved to `client.kernel.js`. Evaluating
+  // the run alone throws `ReferenceError: toastModel is not defined`, so resolve
+  // what it reaches from the parts that are no longer in the same file — the code
+  // under test is still the shipped code, not a retyped copy.
+  const body = clientRegion(pluginRoot, {
+    start: 'let domToastTimer = null',
+    end: '    // Transfer queue (batch uploads',
+    // The factory passes this in, so resolving it too would declare it twice.
+    exclude: ['TOAST_DISMISS_MS'],
+  })
+  if (body === '') throw new Error('the toast controller could not be resolved from the shipped parts')
   const constant = /const TOAST_DISMISS_MS = (\d+)/u.exec(source)
-  if (constant === null) throw new Error('client.js no longer defines TOAST_DISMISS_MS')
-  const ms = Number(constant[1])
+  // `TOAST_DISMISS_MS` lives in the kernel now; the resolved block carries it, but
+  // the factory also takes it as a parameter, so a missing match is not an error.
+  const ms = constant === null ? 7000 : Number(constant[1])
   // eslint-disable-next-line no-new-func
   const factory = new Function(
     'document', 'setTimeout', 'clearTimeout', 'TOAST_DISMISS_MS', 'navigator', 'window',

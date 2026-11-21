@@ -25,7 +25,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { clientPartSource, clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -199,11 +199,20 @@ function idsIn (state, status) {
  */
 function liftQueueRuntime () {
   const runtimeAborts = []
-  const start = source.indexOf('// ---- queue runtime (clock, workers, notices, subscriptions)')
-  if (start < 0) throw new Error('client.js no longer marks the queue runtime')
-  const end = source.indexOf('// ---- uploads', start)
-  if (end < 0) throw new Error('client.js no longer separates the runtime from upload jobs')
-  const body = source.slice(start, end)
+  // The runtime still lives in the bundle, but it now calls into the kernel, so
+  // the region is resolved with its closure rather than sliced thin.
+  const body = clientRegion(packageRoot, {
+    start: '// ---- queue runtime (clock, workers, notices, subscriptions)',
+    end: '// ---- uploads',
+    // Everything the factory below takes as a parameter is a double here, so
+    // resolving it from the source would shadow the double — or, for the names
+    // that are stub `let`s in the bundle now, declare it twice.
+    exclude: [
+      'React', 'translate', 'formatBytes', 'transferNotice', 'queueReduce', 'transferQueueIsTerminal', 'postUploadChunk',
+      'document', 'window', 'fetch', 'File', 'Blob', 'crypto', 'createPortal', 'jsx', 'jsxs', 'Fragment',
+    ],
+  })
+  if (body === '') throw new Error('the queue runtime could not be resolved from the shipped parts')
   const pure = liftQueue()
   const notices = []
   const translate = (key, params = {}) => {

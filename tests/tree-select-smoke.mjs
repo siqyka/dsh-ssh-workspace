@@ -24,7 +24,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeTreeDom } from './support/tree-dom.mjs'
 import { endOfBlock } from './support/toast-dom.mjs'
-import { clientPartSource, clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -64,7 +64,26 @@ let bridgeSlice = ''
 let api
 try {
   const reducer = slice('    // ---- selection state machine', '    // The pure surface.', 'the selection state machine', selectionSource)
-  const bridge = slice('    // =========================================================================\n    // Host file tree: Windows-style multi-select', '    let composerBridgesInstalled = false', 'the tree selection bridge')
+  // The bridge calls into `client.kernel.js` now (`treeSelectableRows` being the
+  // one this suite named when the cut landed), so the region is resolved with its
+  // closure rather than sliced thin. The names the factory injects are excluded —
+  // they are doubles standing in for the DOM and for services, not for helpers.
+  // Whatever the reducer slice already declares wins: the bridge region is
+  // resolved with those names excluded, so the two never declare the same
+  // `const` twice.
+  const reducerNames = new Set()
+  for (const m of reducer.matchAll(/^[ \t]*(?:async )?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gmu)) reducerNames.add(m[1])
+  const bridge = clientRegion(pluginRoot, {
+    start: '    // =========================================================================\n    // Host file tree: Windows-style multi-select',
+    end: '    let composerBridgesInstalled = false',
+    exclude: [
+      'document', 'window', 'Element', 'Node', 'MutationObserver',
+      'translate', 'notifyUser', 'remoteTargetOf', 'pickDirTarget', 'enqueueDownloadJobs',
+      'React', 'createPortal', 'jsx', 'jsxs', 'Fragment',
+      ...reducerNames,
+    ],
+  })
+  if (bridge === '') throw new Error('the shipped source no longer marks the tree selection bridge')
   // Named once: the "no checkbox" assertion must look at THIS region, not at
   // "everything after the banner" — the panel's own checkbox inputs live later
   // in the file and made that slice match its own unrelated code.
@@ -79,7 +98,6 @@ try {
     'translate', 'notifyUser', 'remoteTargetOf', 'pickDirTarget', 'enqueueDownloadJobs',
     `
     ${reducer}
-    const TREE_ROW_SELECTOR = '[data-files-entry][data-files-path]'
     ${bridge}
     return { installTreeSelectionBridge, selectReduce, treeSelectableRows, TREE_SELECTED_CLASS, TREE_CURSOR_CLASS }
     `,

@@ -45,7 +45,7 @@ import {
   readGitHistory,
 } from '../lib/git-history.js'
 import { installPeerStubs } from './peer-stubs.mjs'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -552,9 +552,27 @@ console.log('\n[client structure]')
 console.log('\n[hook shape]')
 {
   const client = clientSource(pluginRoot)
-  const start = client.indexOf('function splitForgeFace (face)')
-  const end = client.indexOf('    /**\n     * The official change-request body', start)
-  const block = start < 0 || end < 0 ? '' : client.slice(start, end)
+  // The layer cut split this pair: `splitForgeFace` and `isUsableForgeSplit` went
+  // to the kernel chunk with the rest of the stateless bottom layer, while
+  // `forgeHookFor` / `absentForgeHook` stayed in the bundle. Two regions, joined
+  // in dependency order — the hook helper first, because the splitter's callers
+  // assume it exists.
+  const hookBlock = clientRegion(pluginRoot, {
+    start: '    /**\n     * Wrap one selector source as a hook',
+    end: '    function ForgeTabWithHistory (props) {',
+    // `absentForgeHook` is resolved from the kernel chunk (it is not inside this
+    // region). `forgeHookCache` is excluded: it sits inside the split region,
+    // which is emitted first, and declaring it twice would not compile.
+    exclude: ['React', 'createPortal', 'jsx', 'jsxs', 'Fragment', 'forgeHookCache'],
+  })
+  const block = hookBlock === ''
+    ? ''
+    : clientRegion(pluginRoot, {
+      start: 'function splitForgeFace (face)',
+      end: '    /**\n     * The hook handed over when no source exists',
+      text: clientPartSource(pluginRoot, 'client.kernel.js'),
+      exclude: ['React', 'localStorage', 'translate', 'ReactDOM', 'createPortal', 'jsx', 'jsxs', 'Fragment', 'forgeHookFor', 'absentForgeHook', 'forgeHookCache'],
+    }) + '\n' + hookBlock
   check('the helper block is extractable for a behaviour test', block !== '', 'splitForgeFace/forgeHookFor not found')
   if (block !== '') {
     const hookCalls = []

@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes.js` + `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 82 | recursive listing |
+| modules under `lib/` | 83 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5032 | measured 2026-11-20 |
 
@@ -22,7 +22,7 @@
 
 ## 源码结构
 
-纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client/client.js`）加十一个 chunk（六个启动期、五个按需），都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
+纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client/client.js`）加十二个 chunk（七个启动期、五个按需），都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -59,6 +59,7 @@
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → `DSH_CORE_ROOT` → 各 profile → 部署自带树。`DSH_CORE_ROOT` 在列表里，是因为每个套件与 `tests/run.mjs` 都用它拼 stub 根：不认这个名字，套件就会先造出 stub 树、再被告知 peer 缺失 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现 |
 | `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。自检（缺工具、环境告警）**只进 `notes`，不参与判定**——它是主机的属性，不是这个会话的故障。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
+| `lib/client/client.kernel.js` | 浏览器半边的启动 chunk，也是最大的一块：**无状态底层**——API 表、`fetchJson`、选择模型的接线、分块上传、目录 / 文件选择器入口、菜单的 DOM 读取、forge 页的反射。边界是**量出来的**：从每个声明出发遍历它引用到的一切，只要走到任何模块级 `let`（重新赋值会留下陈旧副本且不报错）或任何必须在 `apply` 之前就有真值的名字（`lazyDialog` 家族、`inject`、各 chunk loader）就留下。拼缝**只有一个方向**：它不从主包借任何名字，主包通过 `loadBootChunks()` 拿回 117 个。它必须**先单独**取回——`client.marks.js` 在自己的 factory 执行期间就解构 `API` / `fetchJson` / `TREE_ROW_SELECTOR` / `rowReferenceKind` |
 | `lib/client/client.js` | 浏览器半边的主包：API 表，以及全部常驻行为——文件树拖拽 / 右键 / 多选、合成器 @ 引用桥、转移队列状态机、会话列表补齐。文档性数据（字典 / 样式 / 图标）与界面组件都在 chunk 里；`apply` 是 `async`，先 `await loadBootChunks()` 再注册任何 slot |
 | `lib/client/client.locale.js` | 浏览器半边的启动 chunk：zh / en 两张字典加三个纯函数（`applyParams` / `makeTranslate` / `relativeTimeText` / `provenanceText`）。`apply` 一进来就取，因为侧栏行的 label 要用它 |
 | `lib/client/client.styles.js` | 浏览器半边的启动 chunk：整张样式表（`CSS_ID` + `injectStyles`）。页面必须先有规则再画面板，所以 `apply` 直接 await，不做懒加载 |

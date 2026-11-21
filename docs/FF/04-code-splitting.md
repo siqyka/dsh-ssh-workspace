@@ -298,11 +298,14 @@ CI 的 `npm run lint` 因此会「通过」而漏掉语法错误。
 
 本辑采用的边界因此不是「哪些段整体搬走」，而是**「哪些段可以被一个懒组件包住」**：
 chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 props 或
-`require('<本插件 id>')` 拿到。最初三个，实施中加到十一个（六个启动期 + 五个按需）；
-最后加的 `client.queue.js` 不是组件 chunk，是纯规则 chunk——见它自己的行。
+`require('<本插件 id>')` 拿到。最初三个，实施中加到十二个（七个启动期 + 五个按需）。
+最后加的 `client.kernel.js` 不是「被懒组件包住的段」，而是**按层切**出来的：它把每个声明
+引用到的一切都算进闭包，只要闭包碰到任何模块级 `let` 就留在主包，剩下的整块搬走。
+拼缝因此是**单向**的——它不从主包借任何名字。
 
 | chunk | 导出的组件 | 搬走的渲染代码 | 必须拿到的（留主 bundle） |
 | --- | --- | --- | --- |
+| `lib/client/client.kernel.js` | API 表、`fetchJson`、`fetchReportText`、选择模型接线、分块上传、选择器入口、菜单 DOM 读取、forge 反射——共 117 个导出 | 2,950 行 | **无**（单向拼缝：它不 destructure 主包任何东西） |
 | `lib/client/client.locale.js` | `NS`、`zh`、`en`、`applyParams`、`makeTranslate`、`provenanceText`、`relativeTimeText` | 850 行 | **无**（叶子：不借主包任何名字） |
 | `lib/client/client.styles.js` | `injectStyles`、`CSS_ID` | 546 行 | **无**（叶子） |
 | `lib/client/client.icons.js` | 十四个图标工厂加 `TRAY_BASE_PATH` / `TRAY_ARROW_PATHS` | 228 行 | **无**（叶子，只 `require('react')`） |
@@ -315,8 +318,9 @@ chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 
 | `lib/client/client.transfer-queue.js` | `TransferQueuePanel` | 215 行 | `useTransferQueue`、`useDialogA11y`、`backdropDismiss`、队列的 14 个纯 helper |
 | `lib/client/client.history.js` | `ForgeTabWithHistory` 的渲染体 | 243 行 | `ChevronIcon`、`RefreshIcon`、`ourT`（由 apply 注入） |
 
-合计 **3,967 行**离开主包，`lib/client/client.js` 从 12,604 行降到 8,290 行（−34%，
-500,755 → 386,314 B）。
+合计 **6,917 行**离开主包，`lib/client/client.js` 从 12,604 行降到 4,343 行（−66%，
+500,755 → 197,647 B）。kernel 是其中最大的一块（2,950 行），也是最像「底层」的一块：
+其余 chunk 都在**用它**，而它不用别人。
 
 三份数据 chunk 是**叶子**：它们不 destructure 主包任何名字。`apply` 因此必须是
 `async`——开头 `await loadBootChunks()` 把三块取回并填进各段的 `let` 绑定，**之后**

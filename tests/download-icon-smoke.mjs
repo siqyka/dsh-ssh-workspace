@@ -23,7 +23,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clientPartSource, clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -202,11 +202,18 @@ check('a queued download counts as in progress',
 
 // ---- the row menu's DOM icon builder ---------------------------------------
 
-const menuSource = sliceBetween(
-  '    const MENU_GLYPH_PATHS = {',
-  '    /** A hairline rule between the reference action and the transfer actions. */',
-  'the row-menu icon builder',
-)
+// `createMenuIcon` reads `MENU_GLYPH_PATHS`, which moved to the kernel chunk, so
+// the region is resolved with its closure instead of sliced thin. The table and
+// the document are injected, so they are excluded from the resolution.
+const menuSource = clientRegion(pluginRoot, {
+  start: '    /**\n     * One distinct mark per row-menu verb',
+  end: '    function createTransferItem (',
+  // The glyph table used to sit directly above this function; the layer cut put
+  // it in the kernel chunk, so it is resolved as a dependency instead of being
+  // assumed adjacent.
+  exclude: ['document', 'TRAY_ARROW_PATHS', 'React', 'createPortal', 'jsx', 'jsxs', 'Fragment'],
+})
+if (menuSource === '') throw new Error('the client half no longer marks the row-menu icon builder')
 
 function makeDocumentDouble () {
   function makeElement (tagName) {

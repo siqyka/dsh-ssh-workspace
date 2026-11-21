@@ -31,7 +31,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -67,10 +67,10 @@ function endOfBlock (text, open) {
 }
 
 /** One function's full text, located by its declaration line. */
-function functionText (declaration) {
-  const at = source.indexOf(declaration)
-  if (at < 0) throw new Error(`client.js no longer declares ${declaration}`)
-  return source.slice(at, endOfBlock(source, source.indexOf('{', at)))
+function functionText (declaration, text = source) {
+  const at = text.indexOf(declaration)
+  if (at < 0) throw new Error(`the browser half no longer declares ${declaration}`)
+  return text.slice(at, endOfBlock(text, text.indexOf('{', at)))
 }
 
 /** A contiguous region, failing loudly when either marker moved. */
@@ -82,14 +82,23 @@ function sliceBetween (startMarker, endMarker, label) {
   return source.slice(start, end)
 }
 
-const remoteTargetOfSrc = functionText('    function remoteTargetOf (absPath) {')
-const entryNameOfSrc = functionText('    function entryNameOf (target) {')
-const resolveTargetsSrc = functionText('    function resolveTargets (clickedRow, selection) {')
-const counterSrc = sliceBetween(
-  '    /** How many entries a delete confirmation counts',
-  '\n    /**\n     * The delete confirmation',
-  'the delete counters',
-)
+// Three of the four moved to the stateless kernel chunk; `requestRowDelete` and
+// its helpers stayed in the bundle. Each is read from the file that declares it,
+// and the counter's region is resolved with its closure so `DELETE_COUNT_LIMIT`
+// and `listRemoteForCount` come with it.
+const kernelSource = clientPartSource(pluginRoot, 'client.kernel.js')
+const remoteTargetOfSrc = functionText('    function remoteTargetOf (absPath) {', kernelSource)
+const entryNameOfSrc = functionText('    function entryNameOf (target) {', kernelSource)
+const resolveTargetsSrc = functionText('    function resolveTargets (clickedRow, selection) {', kernelSource)
+const counterSrc = clientRegion(pluginRoot, {
+  start: '    /**\n     * Count what a delete is about to remove',
+  end: '    /**\n     * The delete confirmation',
+  text: kernelSource,
+  exclude: ['document', 'translate', 'fetchJson', 'API', 'openRowActionDialog', 'notifyUser',
+    'toastError', 'refreshFilesPanel', 'countDeleteContents', 'pickDirTarget',
+    'enqueueDownloadsInto', 'downloadTreeRow', 'React', 'createPortal', 'jsx', 'jsxs', 'Fragment'],
+})
+if (counterSrc === '') throw new Error('client.kernel.js no longer marks the delete counters')
 const requestRowDeleteSrc = functionText('    async function requestRowDelete (request) {')
 const requestBatchDownloadSrc = functionText('    function requestBatchDownload (chosen, skipped, ctx) {')
 const downloadRowsSrc = functionText('    async function downloadRows (items, ctx) {')

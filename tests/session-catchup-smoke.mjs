@@ -47,7 +47,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createHost } from './support/plugin-host.mjs'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -80,14 +80,22 @@ console.log('\n=== session catch-up smoke ===\n')
  * @returns {object} the exported helpers and the catch-up factory.
  */
 function liftCatchUp (deps) {
-  const start = source.indexOf('    // Session list catch-up (one re-pull after a repair)')
-  const end = source.indexOf('    // Plugin apply')
-  if (start === -1 || end === -1 || end <= start) throw new Error('the catch-up section is not where the map says it is')
-  const block = source
-    .slice(start, end)
+  // The timing constants moved to the kernel chunk, so the section is resolved
+  // with its closure. The factory below supplies the clock and the fetch, so
+  // those stay excluded.
+  const block = clientRegion(pluginRoot, {
+    // The whole section moved to the kernel chunk when the layer cut landed; the
+    // bundle keeps the banner and nothing else. Anchor on the paragraph that
+    // explains the pull, and stop at the constants that follow it.
+    start: '    // The compensation in `lib/ownership.js` repairs',
+    end: "    const PANEL_ID = 'ssh-workspace'",
+    text: clientPartSource(pluginRoot, 'client.kernel.js'),
+    exclude: ['fetchJson', 'API', 'setTimeout', 'clearTimeout', 'Date', 'document', 'window', 'React', 'createPortal', 'jsx', 'jsxs', 'Fragment'],
+  })
     .split('\n')
     .map(line => (line.startsWith('    ') ? line.slice(4) : line))
     .join('\n')
+  if (block === '') throw new Error('the catch-up section is not where the map says it is')
   const factory = new Function(
     'fetchJson', 'API', 'setTimeout', 'clearTimeout', 'Date',
     `${block}

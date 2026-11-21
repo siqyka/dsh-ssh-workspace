@@ -18,16 +18,21 @@
   用 `ctx.inject(['fs', 'workspaceRegistry'], …)` 恢复重启前登记的远端工作区；
   用 `ctx.inject(['fs', 'webServer'], …)` 注册浏览器半边的 HTTP 路由。
   这些注入都可以晚于本插件出现，安装顺序无关。
-- **客户端半边**（`lib/client/client.js` 加十一个 chunk，六个启动期、五个按需）：由 DSH 客户端的模块加载器
+- **客户端半边**（`lib/client/client.js` 加十二个 chunk，七个启动期、五个按需）：由 DSH 客户端的模块加载器
   （`window.__ModuleLoader__.load({ id, factory })`）直接执行，通过 `slots`
   服务挂载「远程工作区」面板与「添加工作区」菜单，并做工作区标记的 DOM 装饰。
-  三份**数据**先搬走，`apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何
-  slot：字典（`lib/client/client.locale.js`）、样式表（`lib/client/client.styles.js`）、图标
-  （`lib/client/client.icons.js`），以及两份纯规则：队列（`lib/client/client.queue.js`——没有钟、
+  `apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何 slot。
+  最先取回的是**无状态底层**（`lib/client/client.kernel.js`，十二个 chunk 里最大的一个）：
+  API 表、fetch、选择模型的接线、分块上传、选择器入口、菜单的 DOM 读取、forge 页的反射。
+  它是按**层**切的——从每个声明出发遍历它引用到的一切，只要走到任何模块级 `let` 就留下，
+  剩下的才搬走；拼缝只有一个方向，这份代码不从主包借任何名字。
+  随后是四份**数据**：字典（`lib/client/client.locale.js`）、样式表（`lib/client/client.styles.js`）、
+  图标（`lib/client/client.icons.js`），以及两份纯规则：队列（`lib/client/client.queue.js`——没有钟、
   没有 DOM、不读 `translate`；队列状态与搬字节的 worker 仍在主包）与翻选模型
   （`lib/client/client.selection.js`——同一个理由，而用它的文件树接线留在主包），
   以及整块工作区装饰（`lib/client/client.marks.js`——状态全在自己手里，`apply` 之后立刻
-  开始观察）。五份
+  开始观察）。kernel 必须**先单独**取回：`client.marks.js` 在自己的 factory 执行期间就解构
+  `API`、`fetchJson`、`TREE_ROW_SELECTOR`、`rowReferenceKind`，而这四个现在都在 kernel 里。五份
   **交互界面**按需懒加载：三个对话框、主面板、添加工作区流程、转移队列浮层，分别是
   `lib/client/client.dialogs.js`、`lib/client/client.panel.js`、
   `lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`；更改请求页脚是

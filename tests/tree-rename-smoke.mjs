@@ -26,7 +26,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeTreeDom } from './support/tree-dom.mjs'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -43,12 +43,12 @@ function check (name, condition, detail) {
 
 console.log('\n=== tree rename smoke ===\n')
 
-function slice (startMarker, endMarker, label) {
-  const start = source.indexOf(startMarker)
-  if (start < 0) throw new Error(`client.js no longer marks ${label} (start)`)
-  const end = source.indexOf(endMarker, start + startMarker.length)
-  if (end < 0) throw new Error(`client.js no longer marks ${label} (end)`)
-  return source.slice(start, end)
+function slice (startMarker, endMarker, label, text = source) {
+  const start = text.indexOf(startMarker)
+  if (start < 0) throw new Error(`the browser half no longer marks ${label} (start)`)
+  const end = text.indexOf(endMarker, start + startMarker.length)
+  if (end < 0) throw new Error(`the browser half no longer marks ${label} (end)`)
+  return text.slice(start, end)
 }
 
 // ---- the pure decision ----------------------------------------------------
@@ -56,12 +56,20 @@ let decision
 try {
   const body = slice(
     '    /**\n     * What an inline rename edit means, as a pure answer.',
-    '    /** The element an inline rename editor should cover',
+    '    function openInlineRename (row, request) {',
     'the inline rename decision',
   )
+  // `localNameRefusal` moved to the kernel chunk, so the rules are resolved with
+  // their closure. The factory already supplies `translate`, so it is excluded.
+  const rules = clientRegion(pluginRoot, {
+    start: '    /**\n     * Client-side name rules.',
+    end: "    /**\n     * The session's mutation mode",
+    exclude: ['translate', 'React', 'createPortal', 'jsx', 'jsxs', 'Fragment'],
+  })
+  if (rules === '') throw new Error('the browser half no longer marks the client-side name rules')
   decision = new Function(`
     const translate = (key) => key
-    ${slice('    /**\n     * Client-side name rules.', '    /**\n     * The session\'s mutation mode', 'the client-side name rules')}
+    ${rules}
     ${body}
     return { inlineRenameDecision }
   `)().inlineRenameDecision
@@ -87,10 +95,14 @@ try {
 // ---- the anchor: the row's NAME, never a host class -----------------------
 let renameAnchorOf
 try {
+  // `renameAnchorOf` moved to the stateless kernel chunk, so both markers have to
+  // come from that file — the "one live inline editor" doc belongs to a function
+  // that stayed in the bundle.
   const body = slice(
     '    /** The element an inline rename editor should cover',
-    '    /** The one live inline editor, if any. */',
+    '    const DELETE_COUNT_LIMIT = 200',
     'the rename anchor',
+    clientPartSource(pluginRoot, 'client.kernel.js'),
   )
   renameAnchorOf = new Function('Element', `
     ${body}
@@ -147,11 +159,16 @@ try {
 // ---- the editor itself, on a real DOM double -----------------------------
 let api
 try {
-  const body = slice(
-    '    /**\n     * What an inline rename edit means, as a pure answer.',
-    '    /**\n     * The rename prompt as a modal',
-    'the inline rename editor',
-  )
+  // `openInlineRename` reaches `renameAnchorOf`, which moved to the kernel chunk,
+  // so the region is resolved with its closure. Everything the factory injects is
+  // excluded — those are doubles standing in for the DOM and the routes.
+  const body = clientRegion(pluginRoot, {
+    start: '    /**\n     * What an inline rename edit means, as a pure answer.',
+    end: '    /**\n     * The rename prompt as a modal',
+    exclude: ['document', 'Element', 'translate', 'localNameRefusal', 'fetchJson', 'refreshFilesPanel',
+      'notifyUser', 'describeRenameFailure', 'API', 'entryNameOf', 'React', 'createPortal', 'jsx', 'jsxs', 'Fragment'],
+  })
+  if (body === '') throw new Error('the browser half no longer marks the inline rename editor')
   const factory = new Function('document', 'Element', 'translate', 'localNameRefusal', 'fetchJson', 'refreshFilesPanel', 'notifyUser', 'describeRenameFailure', 'API', 'entryNameOf', `
     ${body}
     return { openInlineRename, closeInlineRename, inlineRenameDecision }
