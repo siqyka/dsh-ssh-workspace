@@ -535,7 +535,7 @@ node scripts/check-doc-links.mjs
 | --- | --- | --- | --- |
 | `modules under lib/` | 83 | **57** | 唯一会因合并而变的数字（递归计数，含 `lib/client/` 13 与 `lib/routes/` 8），每合一组都要重跑 |
 | `test suites` | 99 | **99** | 不变（套件没增删） |
-| `upstream patch modules` | 7 | **7** | 不变（`patch-projection.js` 保留原名） |
+| `upstream patch modules` | 7 | **7** | 不变（`patch-projection.js` 保留原名；§9.6 搬家只改目录，生成表的来源列自己跟着变成了 `lib/patch/patch-*.js`） |
 | `HTTP routes` | 33 | **33** | 不变 |
 | `model-facing tools` | 11 | **11** | 不变 |
 
@@ -543,8 +543,9 @@ node scripts/check-doc-links.mjs
 `N` 取自 `node tests/run.mjs` 的收尾行加总（口径见 `docs/development.md` 的统计一节，
 注意逐行数 `PASS` 会少算——两者差 87 项）。
 
-`docs/development.md` 的「源码结构」表现在有 **47 行**覆盖 83 个模块（只覆盖一部分，且带子目录路径）；
-每合一组，被删掉的文件若有对应行，就要把内容并进目标名那一行，而不是删行。
+`docs/development.md` 的「源码结构」表在写方案时是 **47 行**覆盖 83 个模块（只覆盖一部分，且带子目录路径），
+合并完成后是 **44 行**覆盖 57 个模块——被删掉的文件若有对应行，内容并进了目标名那一行而不是删行
+（少了 `path-binding` / `secrets` / `match-eval` 三行，多了 `ssh-config` 一行）。
 
 ## 7. 不做什么
 
