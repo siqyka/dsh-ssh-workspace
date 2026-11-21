@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes.js` + `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 67 | directory listing |
+| modules under `lib/` | 68 | directory listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5032 | measured 2026-11-20 |
 
@@ -59,8 +59,9 @@
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → `DSH_CORE_ROOT` → 各 profile → 部署自带树。`DSH_CORE_ROOT` 在列表里，是因为每个套件与 `tests/run.mjs` 都用它拼 stub 根：不认这个名字，套件就会先造出 stub 树、再被告知 peer 缺失 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现 |
 | `lib/diagnosis.js` | 面板状态灯的判定：只读报告**已在打印的字段**（不探测、不连接、不读文件），三态 `ok` / `warn` / `unknown` 且不折叠成两色；聚合时确定的坏压过不确定。自检（缺工具、环境告警）**只进 `notes`，不参与判定**——它是主机的属性，不是这个会话的故障。与 `support-bundle.js` 的分工是「判定 vs 汇总」——报告不能报告面板会否认的事实，判定不能脱离报告另立事实 |
-| `lib/client.js` | 浏览器半边的主包：面板、添加工作区流程、标记装饰、全部样式与中英文案，以及三个 chunk 的 `React.lazy` 入口 |
+| `lib/client.js` | 浏览器半边的主包：样式、文案、图标、API 表，以及全部常驻行为——文件树拖拽 / 右键 / 多选、合成器 @ 引用桥、转移队列状态机、会话列表补齐。界面部分按需装在 chunk 里，四个 `React.lazy` 入口都留在这里 |
 | `lib/client.dialogs.js` | 浏览器半边的按需 chunk：主机编辑 / 目录选择 / 诊断报告三个对话框 |
+| `lib/client.panel.js` | 浏览器半边的按需 chunk：主面板（主机卡片、转发、挂载、自检、命令审计）。它是插件唯一**常驻可见**的界面，但仍然不是启动所需——侧栏行和文件树桥才是 |
 | `lib/client.transfer-queue.js` | 浏览器半边的按需 chunk：转移队列浮层（队列状态仍在主包，文件面板也在读它） |
 | `lib/client.history.js` | 浏览器半边的按需 chunk：更改请求标签页底部的提交历史页脚 |
 | `lib/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) |

@@ -36,7 +36,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -123,21 +123,31 @@ const pageCode = pageSource.slice(0, pageSource.indexOf('    // ================
 
 const PanelStub = function RemoteWorkspacePanelStub () { return null }
 const jsxTree = (type, props) => ({ type, props })
-const page = new Function('jsx', 'RemoteWorkspacePanel', `${pageCode}; return RemoteWorkspacePage`)(jsxTree, PanelStub)
+// The page hands the panel to `PanelSlot` now — the slot occupant owns the
+// Suspense boundary the panel's lazy chunk needs — so the stub is bound to that
+// name. `PanelSlot` is a pass-through here: what this suite asserts is the
+// props the PAGE passes, not how the boundary renders them.
+const page = new Function('jsx', 'PanelSlot', `${pageCode}; return RemoteWorkspacePage`)(jsxTree, PanelStub)
 const pageElement = page({ translate, ctx: pluginCtx })
 check('the page renders the panel',
   pageElement?.type === 'div' && pageElement?.props?.children?.type === PanelStub,
-  'the page no longer wraps RemoteWorkspacePanel in its container div')
+  'the page no longer wraps the panel slot in its container div')
 check('the page hands the container to the panel as ctx',
   pageElement?.props?.children?.props?.ctx === pluginCtx,
-  'RemoteWorkspacePanel was rendered without the apply-time ctx')
+  'the panel was rendered without the apply-time ctx')
 check('the page hands the translator to the panel as t',
   pageElement?.props?.children?.props?.t === translate,
   'the translator was dropped on the way to the panel')
 
 // ---- the panel signature actually binds ctx ---------------------------------
 
-const signatureMatch = source.match(/function RemoteWorkspacePanel\s*\((.+?)\)\s*\{/u)
+// The panel lives in its own chunk now, so the assertions about its body read
+// that part rather than the concatenation: the whole point of the split is that
+// these lines are NOT in the main bundle, and a suite that still found them
+// there would keep passing after a bad merge put them back.
+const panelSource = clientPartSource(pluginRoot, 'client.panel.js')
+
+const signatureMatch = panelSource.match(/function RemoteWorkspacePanel\s*\((.+?)\)\s*\{/u)
 check('the panel still has a destructuring signature',
   signatureMatch !== null && signatureMatch[1].startsWith('{'),
   'RemoteWorkspacePanel no longer destructures its props')
@@ -171,7 +181,7 @@ check('the panel still binds the translator',
 // The dialog now renders through `DialogSlot`, which owns the Suspense boundary
 // its lazy chunk needs, so the props live one level down. What this suite cares
 // about is unchanged: the panel passes `ctx` and the alias at the call site.
-const dialogMatch = source.match(/browserAlias !== null && jsx\(DialogSlot, \{[\s\S]*?\n        \}\)/u)
+const dialogMatch = panelSource.match(/browserAlias !== null && jsx\(DialogSlot, \{[\s\S]*?\n        \}\)/u)
 check('the browser dialog render is still a conditional JSX call',
   dialogMatch !== null,
   'the browser dialog call could not be located')
@@ -198,11 +208,7 @@ check('the dialog still receives the alias under the cursor',
 
 // ---- and the defect that started this: nothing else in the panel asks for ctx
 
-const panelBody = sliceBetween(
-  '    function RemoteWorkspacePanel (',
-  '    // =========================================================================\n    // Add-workspace flow',
-  'the panel body',
-)
+const panelBody = panelSource.slice(panelSource.indexOf('function RemoteWorkspacePanel ('))
 const ctxUses = [...panelBody.matchAll(/\bctx\b/gu)].length
 check('ctx is referenced exactly twice in the panel body (signature + dialog)',
   ctxUses === 2,
