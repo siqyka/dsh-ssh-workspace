@@ -128,8 +128,8 @@
 
 ## 4. 验证证据的缺口与口径
 
-- **默认门禁**：`node tests/run.mjs`，最近一次实测 `89 passed, 3 partial, 7 skipped, 0 failed`（99 套件，5037 项断言）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
-- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 后为 `94 passed, 3 partial, 2 skipped, 0 failed`（99 套件，5348 项断言）；`boot` 与 `local-changes-remote` 的 live 段为 `partial`，`live` / `acceptance` 仍 SKIP。默认不在门禁内的 7 个按环境套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `client-chunk` / `live` / `acceptance`。
+- **默认门禁**：`node tests/run.mjs`，最近一次实测 `89 passed, 3 partial, 7 skipped, 0 failed`（99 套件，5057 项断言）。套件数与断言数由 `scripts/doc-numbers.mjs` 生成到 `docs/development.md`，**不要手写**。
+- **装配树口径**：设 `DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 后为 `94 passed, 3 partial, 2 skipped, 0 failed`（99 套件，5368 项断言）；`boot` 与 `local-changes-remote` 的 live 段为 `partial`，`live` / `acceptance` 仍 SKIP。默认不在门禁内的 7 个按环境套件是 `projection-real` / `lifecycle` / `boot` / `tool-schemas` / `client-chunk` / `live` / `acceptance`。
 - **`run.mjs` 的跳过判定（已修）**：`tests/run.mjs:186-189` 先前只要输出里出现行首 `SKIP` 就把整套记为 skipped，没有看「跑了几项」。默认口径下 `tests/boot-smoke.mjs:32` 因 `DSH_CORE_ROOT` 未设置而打印 SKIP 并以 `0 passed` 退出，因此早先的 `76 passed / 6 skipped` 没有高估；设 `DSH_CORE_ROOT` 后 boot 真的跑 30 项（`tests/boot-smoke.mjs:198` 只是内部 remote-host 段 SKIP），旧 runner 却把整套记为 skipped。第三态 `partial` 已由 `tests/support/run-state.mjs` 与 `tests/run-state-smoke.mjs` 引入。
 - **`scripts/reverse-verify-archive.mjs`**：20 个变异全部 RED（2026-11-08 实测），跑前备份、跑后逐字节还原。它是评审动作，**不进 CI**——它会改写源文件。
 - **`scripts/reverse-verify-tree-drag.mjs`：17 confirmed / 0 not（2026-11-09 实测，exit 0）**：本轮三个行为各配一组变异——本地空白菜单（解析最近目录 / 根内栅栏 / 行按钮不算空白 / 展开目录的子列表算空白 / 远端根不进入 / 项目数 / 只读只禁用新建）、多选拖入（载荷退回单路径 / 只插第一项 / 行菜单退回单行 / 每项各聚焦一次 / 去掉去重 / 中途失败即中止 / 丢掉接收卡）、本地 mkdir 分支（边界改读请求 / 跳过 realpath 父目录检查 / 接受远端工作区）。同样是评审动作、不进 CI。

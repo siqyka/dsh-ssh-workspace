@@ -43,12 +43,41 @@ const TARGET = path.join(root, 'docs', 'development.md')
 const BEGIN = '<!-- doc-numbers:begin -->'
 const END = '<!-- doc-numbers:end -->'
 
-/** Read a file, or '' when it does not exist. */
+/**
+ * Read a file, or '' when it does not exist.
+ *
+ * Only for the document being spliced: there, "absent" is a real answer the
+ * caller reports on its own ("the document does not exist"). Every counter uses
+ * `readRequired` instead, because for a count a missing file is not an answer.
+ */
 function readOrEmpty (file) {
   try {
     return fs.readFileSync(file, 'utf8')
   } catch {
     return ''
+  }
+}
+
+/**
+ * Read a file that must exist, or fail loudly.
+ *
+ * `readOrEmpty` answers a different question — "is there anything here?" — and
+ * is safe only where absence is itself the answer. A counter that reads a file
+ * it cannot find and returns zero does not report "missing": it reports a
+ * number, and the number is then written into the document. That is how a moved
+ * or renamed file turns into a documented `0` instead of a red gate.
+ *
+ * @param {string} file - the file to read.
+ * @returns {string} the file's text.
+ * @throws {Error} when the file cannot be read.
+ */
+function readRequired (file) {
+  try {
+    return fs.readFileSync(file, 'utf8')
+  } catch (error) {
+    throw new Error(
+      `doc-numbers: cannot read ${path.relative(root, file)} — the figure it feeds would be silently wrong (${error.code ?? error.message})`
+    )
   }
 }
 
@@ -89,9 +118,23 @@ export function countTools (source) {
  * @returns {number} the patch module count.
  */
 export function countPatches () {
-  return fs.readdirSync(path.join(root, 'lib'))
-    .filter(name => name.startsWith('patch-') && name.endsWith('.js'))
-    .length
+  return patchModules().length
+}
+
+/**
+ * The patch modules, as paths relative to `lib/`.
+ *
+ * The family is a naming convention (`patch-*.js`), not a folder, so it is
+ * FOUND by walking rather than assumed to sit at the top level. What the figure
+ * reports is a fact about the source; where the files happen to live is a
+ * detail of the layout, and it is derived below so the table's `source` column
+ * cannot go on naming a folder that no longer holds them.
+ *
+ * @returns {string[]} relative patch module paths, sorted.
+ */
+export function patchModules () {
+  return moduleFiles(path.join(root, 'lib'))
+    .filter(name => path.posix.basename(name).startsWith('patch-') && name.endsWith('.js'))
 }
 
 /**
@@ -104,9 +147,11 @@ export function countPatches () {
  * @returns {string[]} suite names in run order.
  */
 export function suiteNames () {
-  const source = readOrEmpty(path.join(root, 'tests', 'run.mjs'))
+  const source = readRequired(path.join(root, 'tests', 'run.mjs'))
   const block = /const SUITES = \[([\s\S]*?)\]/u.exec(source)
-  if (block === null) return []
+  if (block === null) {
+    throw new Error('doc-numbers: tests/run.mjs has no `const SUITES = [...]` list — the suite count cannot be computed')
+  }
   return [...block[1].matchAll(/'([^']+)'/gu)].map(match => match[1])
 }
 
@@ -125,18 +170,7 @@ export function suiteNames () {
  */
 export function routeSources () {
   const directory = path.join(root, 'lib', 'routes')
-  let entries
-  try {
-    entries = fs.readdirSync(directory)
-  } catch {
-    return []
-  }
-  const sources = []
-  for (const name of entries.sort()) {
-    if (!name.endsWith('.js')) continue
-    sources.push(readOrEmpty(path.join(directory, name)))
-  }
-  return sources
+  return moduleFiles(directory).map(name => readRequired(path.join(directory, ...name.split('/'))))
 }
 
 /**
@@ -150,21 +184,64 @@ export function routeSources () {
  * @returns {number} module count.
  */
 export function countModules (directory = path.join(root, 'lib')) {
-  let total = 0
+  return moduleFiles(directory).length
+}
+
+/**
+ * Every `.js` module under a directory, as paths relative to it.
+ *
+ * A module that moved into a subfolder is still a module of this plugin, so the
+ * walk is recursive and the answer is a relative path rather than a bare name —
+ * two folders can hold a same-named file, and a caller that has to say WHICH one
+ * it found cannot do that with a basename.
+ *
+ * @param {string} directory - the directory to walk.
+ * @returns {string[]} relative module paths, POSIX separators, sorted.
+ * @throws {Error} when the directory cannot be read.
+ */
+export function moduleFiles (directory) {
   let entries
   try {
     entries = fs.readdirSync(directory, { withFileTypes: true })
-  } catch {
-    return 0
+  } catch (error) {
+    throw new Error(
+      `doc-numbers: cannot list ${path.relative(root, directory)} — every figure derived from it would be silently wrong (${error.code ?? error.message})`
+    )
   }
+  const found = []
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      total += countModules(path.join(directory, entry.name))
+      for (const nested of moduleFiles(path.join(directory, entry.name))) {
+        found.push(path.posix.join(entry.name, nested))
+      }
     } else if (entry.isFile() && entry.name.endsWith('.js')) {
-      total += 1
+      found.push(entry.name)
     }
   }
-  return total
+  return found.sort()
+}
+
+/**
+ * The one module of `lib/` whose basename is `name`.
+ *
+ * Found rather than assumed, so a module that moves into a subfolder keeps its
+ * figure instead of turning it into a silent zero. Zero or several matches are
+ * both errors: "not there" and "there twice" are different defects, and neither
+ * is something a count should paper over.
+ *
+ * @param {string} name - the module's basename, e.g. `tools.js`.
+ * @returns {string} its absolute path.
+ * @throws {Error} when the module is missing or ambiguous.
+ */
+export function findModule (name) {
+  const matches = moduleFiles(path.join(root, 'lib'))
+    .filter(relative => path.posix.basename(relative) === name)
+  if (matches.length !== 1) {
+    throw new Error(
+      `doc-numbers: expected exactly one lib/**/${name}, found ${matches.length} — the figure it feeds cannot be computed`
+    )
+  }
+  return path.join(root, 'lib', ...matches[0].split('/'))
 }
 
 /**
@@ -175,10 +252,25 @@ export function countModules (directory = path.join(root, 'lib')) {
  */
 export function renderNumbers (options = {}) {
   const routes = routeSources().reduce((total, source) => total + countRoutes(source), 0)
-  const tools = countTools(readOrEmpty(path.join(root, 'lib', 'tools.js')))
-  const patches = countPatches()
+  const toolsPath = findModule('tools.js')
+  const tools = countTools(readRequired(toolsPath))
+  const patchFiles = patchModules()
+  const patches = patchFiles.length
   const modules = countModules()
   const suites = suiteNames()
+  // The `source` column names where the figure was read FROM, so it is derived
+  // from the paths actually used. A hardcoded `lib/tools.js` would keep pointing
+  // at a file that moved, which reads as "the count is wrong" rather than "the
+  // label is stale" — and the number itself would already have thrown above.
+  const toolsSource = path.relative(root, toolsPath).split(path.sep).join('/')
+  // The patch family is one convention that could be spread over more than one
+  // folder (a split family is a layout choice, not a defect), so the column only
+  // names a folder when every patch module sits in the same one.
+  const patchFolders = new Set(patchFiles.map(name => path.posix.dirname(name)))
+  const [patchFolder] = patchFolders
+  const patchSource = patchFolders.size === 1 && patchFolder !== '.'
+    ? `\`lib/${patchFolder}/patch-*.js\``
+    : '`lib/patch-*.js`'
   const lines = [
     BEGIN,
     '<!-- generated by scripts/doc-numbers.mjs — do not edit by hand -->',
@@ -186,8 +278,8 @@ export function renderNumbers (options = {}) {
     '| figure | value | source |',
     '| --- | --- | --- |',
     `| HTTP routes | ${routes} | \`lib/routes/\` |`,
-    `| model-facing tools | ${tools} | \`lib/tools.js\` |`,
-    `| upstream patch modules | ${patches} | \`lib/patch-*.js\` |`,
+    `| model-facing tools | ${tools} | \`${toolsSource}\` |`,
+    `| upstream patch modules | ${patches} | ${patchSource} |`,
     `| modules under \`lib/\` | ${modules} | recursive listing |`,
     `| test suites | ${suites.length} | \`tests/run.mjs\` |`,
   ]

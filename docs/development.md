@@ -16,7 +16,7 @@
 | upstream patch modules | 7 | `lib/patch-*.js` |
 | modules under `lib/` | 57 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
-| passing assertions (sampled) | 5037 | measured 2026-11-21 |
+| passing assertions (sampled) | 5057 | measured 2026-11-21 |
 
 <!-- doc-numbers:end -->
 
@@ -165,13 +165,13 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `boot` / `tool-schemas` / `client-chunk` 缺真实装配树，`live` / `acceptance` 缺真实主机），另有
 3 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段、
 `dirs-listing` 在 Windows 上造不出「不可读 / 不可写」两种状态）；
-裸检出实测 **5037 项通过断言**（runner 汇总 99 条收尾行相加）。生成表那一行就是这次
-**裸检出采样值**（2026-11-21：5037 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
+裸检出实测 **5057 项通过断言**（runner 汇总 99 条收尾行相加）。生成表那一行就是这次
+**裸检出采样值**（2026-11-21：5057 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
 装配树上的数字更大，但换机器就会变，所以不写进表。
 带 `DSH_CORE_ROOT=<含 @deepseek-ai/dsh-fs 的 node_modules>` 时，`projection-real` / `lifecycle` /
 `tool-schemas` / `client-chunk` 四个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
 **94 个套件通过、3 个部分运行（`boot`、`local-changes-remote` 的 live 段与 `dirs-listing` 的权限段）、2 个 SKIP**
-（`live` / `acceptance`）。这一形态下实测 **5348 项通过断言**（本轮 2026-11-21 采样），但这不写进表：
+（`live` / `acceptance`）。这一形态下实测 **5368 项通过断言**（本轮 2026-11-21 采样），但这不写进表：
 装配树因机器与宿主版本而异，表里只保留裸检出那一行采样值。
 
 **两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
@@ -188,7 +188,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
 **统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 99 条
-收尾行就是断言总数（本轮采样：裸检出 5037 项 / 99 个套件）。逐行数 `PASS` 会少算 87 项——
+收尾行就是断言总数（本轮采样：裸检出 5057 项 / 99 个套件）。逐行数 `PASS` 会少算 87 项——
 `toast-smoke` 用的是 `ok` 而不是 `PASS`，两种记法都算通过，所以**按收尾行加总，不要按 token 数行**。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
@@ -282,13 +282,13 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `forward-smoke` | 无 | 34 | 无 | 隧道本身：建立 / 拆除、`closeForAlias` 按主机拆除且**只拆该主机**、`holds` 引用计数、关闭转发不得断开主机 |
 | `forward-persist-smoke` | 无 | 102 | 无 | 已存映射：意图 / 事实分离、端口预检三态、占用端口不落盘、自动开启幂等、连接断开留痕、**主动断开主机与端口行「断开」逐字段一致**（`live` / `enabled` / `error` 三元组） |
 | `capabilities-smoke` | 无 | 19 | 无 | 主机能力探测（rg / git / inotifywait）与提示渲染；答案用 `dsh-tool:<name>` 前缀行，因为存在性必须整行匹配（子串匹配会让路径里的工具名算作已安装） |
-| `capabilities-report-smoke` | 无 | 58 | 无 | 远程环境自检（`lib/capabilities.js`）：**三态不可合并**（`unknown` 不是 `absent`，只有 `absent` 带安装提示，缺键读作 `unknown`）、工具表与探测脚本的询问列表同源、四项环境警告各自写清后果、`unknown` 不被计成缺失。引擎侧：一次往返问完全部工具与环境事实、`dsh-env:` 前缀解析、失败探针既不缓存判定也不缓存环境 |
+| `capabilities-report-smoke` | 无 | 60 | 无 | 远程环境自检（`lib/capabilities.js`）：**三态不可合并**（`unknown` 不是 `absent`，只有 `absent` 带安装提示，缺键读作 `unknown`）、工具表与探测脚本的询问列表同源、四项环境警告各自写清后果、`unknown` 不被计成缺失。引擎侧：一次往返问完全部工具与环境事实、`dsh-env:` 前缀解析、失败探针既不缓存判定也不缓存环境。源码扫描的排除名单按 basename 匹配（`/capabilities\.js$/`），并**先断言这两个文件真的被找到**——排除规则一旦失配，词表主人就会被自己的检查扫描，每一行都能自证 |
 | `ssh-config-smoke` | 无 | 47 | 无 | `Match` 块必须**终止**当前 `Host` 段（`lib/ssh-config.js`）：三个扫描器过去只在 `Host` 行重置选择状态，于是 `Match host db` 之后的 `User` / `Port` / `IdentityFile` 被当成上一个 `Host` 的内容——主机名对、凭据是另一台机器的；更严重的是该段里的 `ProxyJump none` 会取消 `Host *` 的跳板机，让本应被拒的主机变成「可直连」。section 切分现在只有一个实现，精确块、代理扫描与审计都从它读。另钉住 `O-18` 的通配身份字段：`Host *` 里的 `User` 必须报 `lost`（解析器只从精确块取身份，审计也这么说），而精确块里的同一关键字保持沉默；词表每个键都必须能被 `verdictFor` 命中（`addkeysToagent` / `stricthostkeychecking` 曾经是混合大小写的死键，`strict-host-key-checking` 连解析正则都匹配不上） |
 | `config-audit-smoke` | 无 | 38 | 无 | `~/.ssh/config` 审计（`lib/report.js` 的 `auditConfigText`）：`ignored` / `lost` / `refused` 三种判定不可合并（`LocalForward` 是 `lost`，`ProxyJump` 走 `skipped` 而不是审计）、未列出的关键字也有判定、匹配跟随 resolver（`Host *` 生效、`!name` 排除、别的块不串味）、first-wins 且重复只报一次、长值截断、`listing()` 每行带 `unsupported` |
 | `scratch-safety-smoke` | 无 | 41 | 无 | 测试自己的远端清理围栏：`DSH_WS_TEST_DIR` 为空、含空格、指向 `/etc` 三种输入都必须在任何删除发生**之前**被拒，而不是把 `rm -rf` 带着错误路径发出去 |
-| `doc-numbers-smoke` | 无 | 23 | 无 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红） |
+| `doc-numbers-smoke` | 无 | 42 | 无 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红）。**计数器不许把「找不到」答成 0**：`moduleFiles()` 对读不了的目录抛错、`findModule()` 按 basename 定位并拒绝 0 或 2 个匹配、`readRequired()` 不把 ENOENT 降级成空串 |
 | `run-state-smoke` | 无 | 10 | 无 | 跑批判定：`pass` / `partial` / `skip` / `fail` 四态不可合并，汇总行缺失时证明不了跑过，`0 passed` 不算通过 |
-| `upstream-contract-smoke` | 无 | 47 | 无 | 每个补丁声明它碰的宿主符号，双向校验：磁盘上每个 `patch-*.js` 都有契约、契约不指向不存在的文件、安装函数确实导出、声明的符号确实出现在模块里，且安装顺序固定——上游改名一个符号而补丁照常安装，就是「命令静默地跑在本机」 |
+| `upstream-contract-smoke` | 无 | 49 | 无 | 每个补丁声明它碰的宿主符号，双向校验：磁盘上每个 `patch-*.js` 都有契约、契约不指向不存在的文件、安装函数确实导出、声明的符号确实出现在模块里，且安装顺序固定——上游改名一个符号而补丁照常安装，就是「命令静默地跑在本机」。清单走递归的 `modulePaths()` 并**先断言补丁模块确实被找到**，否则「每个 `patch-*.js` 都有契约」会在空集上成立 |
 | `patch-sandbox-smoke` | 无（设 `DSH_CORE_ROOT` 时多 3 项） | 51（装配树 54） | 真实 ACL 段（`DSH_CORE_ROOT` 未设时 ACL 边界检查不可导入；已跑 51 项） | 远端工作区根交给本机沙箱提供方时的改写（`lib/patch-sandbox.js`）：每个命令路径都在到达本插件接管的 seam 之前先跑 `ctx.sandbox.confine`，而 `policy.workspaceRoot` 是会话的 `ssh://` 拼写——Windows ACL 提供方把它当主机路径 realpath，ENOENT 后 fail-closed，于是远端命令一条也起不来。断言：替身根**真实存在、绝对、且是 tmpdir 的子目录**（相等会被判 temp 在 workspace 内）、**稳定**（提供方按 root 缓存授权，随机根每条命令泄一个 ACE）、纯本地 policy **按引用原样返回**（不是拷贝）、远端 policy 的 `mode` / `sessionId` 原样带过、`additionalWritableRoots` 里只剔远端项、同步实现不被包成 promise、argv 与 signal 原样转发、装两次不双重包裹、卸载还原；以及模块**不碰 `sandboxPolicy`**（改它会让 `workspace-write` 的会话级收窄失效） |
 | `remote-fs-smoke` | 无（`tests/support/fake-sftp.mjs` 提供内存树） | 67 | 无 | 远端文件系统的**成功路径**，以前只有 live 套件能跑：原子发布（暂存目录 → `chmod 0600` 独占创建 → 恢复目标 mode → posix-rename）、无扩展时的「先删再 rename」回退、版本冲突 `FS_STALE_VERSION` 与 `FS_NOT_OBSERVED`、写一半断线后目标不动且暂存清空、`read-only` / 兄弟根 / 未挂载路径三种拒绝各自的码与话术、软链逃逸、`editText` 的换行与二进制判定。内存 SFTP 是**服务器形状**的替身：`rename` 撞已有目标必须失败、默认通告 `posix-rename@openssh.com`（否则每次写入都会静默走回退分支而测试全绿）、`stat` 带 ino/size/mtime、未实现的方法显式抛错 |
 | `plugin-host-smoke` | 无 | 44 | 无 | 共享宿主替身（`tests/support/plugin-host.mjs`）本身。它是 19 处手搓 `ctx` 字面量的收敛点，所以断言几乎全是**拒绝**：重复 `provide` 必须抛（Cordis 的隔离符号会让第二次注册硬失败）、`set` 只有提供者能改、fiber 销毁后 `get` / `provide` / `tools.register` 一律拒绝、工具定义缺 `name` 或 `execute` 被拒、同名工具不得静默覆盖。另有两条正向能力：`inject` 的延迟语义（服务到齐才跑、两依赖缺一不跑、已就绪则立即跑）与销毁按逆序执行 effect、单独销毁的 effect 不会被重复执行。`LocalBackend` 用真 `node:fs` 走完整本地契约：`resolve` 相对路径落到绝对拼写、`contains` 区分子路径与兄弟、`writeText` 先写暂存再 `rename`（失败不留半截文件）、`replaceIfVersion` 过期即 `FS_STALE_VERSION` 且目标字节不变、`createIfAbsent` 拒绝已存在、`editText` 的未命中与多处命中各自成错、`watch` 按名拒绝而不是返回 `undefined`。|

@@ -519,7 +519,7 @@ node scripts/check-doc-links.mjs
 
 | 位置 | 现状 | 合并后 |
 | --- | --- | --- |
-| `tests/capabilities-report-smoke.mjs:124` | `modulePaths(libDir).filter(name => !/^(?:capabilities\|tar)\.js$/u.test(name))`（**已改成递归走 `lib/`**，`:123`） | 正则改成 `!/^(?:capabilities\|archive)\.js$/u`：把 `tar` 换成 `archive`。**不改必红**——`archive.js` 里的 `` `path too long for a tar entry (ustar allows 155+100 bytes)` `` 会让 `:165` 那条「unprobed tool 'tar' is never invoked」失败 |
+| `tests/capabilities-report-smoke.mjs` | 递归 `modulePaths(libDir)` + 两条按 basename 的排除（`/(?:^\|\/)capabilities\.js$/`、`/(?:^\|\/)archive\.js$/`），并**先断言这两个文件真的被找到**。合并时曾是 `!/^(?:capabilities\|tar)\.js$/u`，`132fb8e` 把它拆成两条（理由不同：前者拥有被检查的词表，后者自己写归档格式），§9.5 又把它改成 basename 锚定 | 已随 §9.5 收紧，无待办 |
 | `tests/diagnostics-smoke.mjs:159` | `['engine.js', 'remote-fs.js', 'forward.js', 'ownership.js', 'remote-skills.js']` | 名单不变（`reverse-forward` 并进 `forward.js` 后仍只列 `forward.js`） |
 | `tests/diagnostics-smoke.mjs:160` | 逐文件读源码找 `KINDS.<name>` | 同上 |
 
@@ -603,7 +603,7 @@ node scripts/check-doc-links.mjs
 | 其中顶层 | 36（方案起点 62 + `lib/shared.js`） |
 | import 环 | **5**，全部是 `lib/routes/routes.js ↔ lib/routes/<subject>.js`（方案起点 6，含唯一的功能环） |
 | 套件 | 99，不变 |
-| 断言 | 装配树 5348 / 裸检出 5037（合并前后逐个套件相同） |
+| 断言 | 装配树 5368 / 裸检出 5057（合并本身逐个套件相同；四天后 §9.5 的四处收紧各加了断言，见该节） |
 | 门禁 | `lint` 198 模块解析通过；`doc-numbers --check` 绿（modules 57 / suites 99 / routes 33 / tools 11 / patches 7）；`check-doc-links` 24 个 markdown 全过 |
 | 位置 | 分支 `refactor/code-splitting`，方案基线 `ac720fa` 之后 17 个提交（含 `9657264` 把 `lib/routes.js` 搬进目录） |
 
@@ -622,6 +622,9 @@ node scripts/check-doc-links.mjs
 4. **`HostConfigStore` 的 import 在删 import 块时被连带删掉**，`ReferenceError` 只在
    `host-listing-smoke`（真的构造 `HostStore`）里炸，只在做解析的套件里看不出来。
    这类错误正是「受影响套件的断言数与合并前逐个相同」这条验收标准的用处。
+5. **「已经递归了」不等于「已经诚实了」**：`countModules()` 在合并期间就改成了递归，
+   但同一个脚本里另外两个计数（`countTools` / `countPatches`）仍然是「读不到就是 0」。
+   合并本身没踩到，因为没人在合并期间搬顶层文件；一旦真去分文件夹就会踩到。详见 §9.5。
 
 ### 9.4 写方案时的起点状态（历史，仅供回溯）
 
@@ -632,6 +635,33 @@ node scripts/check-doc-links.mjs
 | 已提交的轨道 A | `b6f2e2d`(quote) / `f2f8554`(requirePort) / `75aaaa7`(positive) / `d217f5c`(escapeRegExp) |
 | `package.json` 版本 | `0.3.6` |
 | 门禁现状 | `lint` 223 文件解析通过；`doc-numbers --check` 绿（表里 modules 83，`recursive listing`）；`suites` 99；`check-doc-links` 24 个 markdown 全过 |
+
+### 9.5 搬家前的四处收紧（在评估「`lib/` 能不能再分文件夹」时发现并修掉）
+
+十六组合并完成后，问题变成「剩下的 36 个顶层文件要不要按能力域分文件夹」。量成本时发现：
+**真正贵的不是搬，而是搬完之后有四个检查会静默变松**——它们都不报错，只是把「找不到」
+答成 0 或让空集成立，而结果会进文档。四处的形状是同一个：
+
+| 位置 | 原来的形状 | 搬家后会怎样 | 现在 |
+| --- | --- | --- | --- |
+| `scripts/doc-numbers.mjs` 的 `countTools()` | `countTools(readOrEmpty(path.join(root,'lib','tools.js')))`，`readOrEmpty` 遇 ENOENT 返回 `''` | 工具数变 **0**，并被当作正确结果写进 `docs/development.md` | `readRequired()` 抛错点名文件；新增 `findModule(name)` 按 basename 在递归清单里定位，**0 个或 2 个都抛错** |
+| `countPatches()` | `readdirSync(path.join(root,'lib'))`，非递归 | `lib/patch/` 里的补丁数成 **0** | 与 `countModules()` 共用新增的递归 `moduleFiles()`（返回相对路径，两个目录可能同名） |
+| `tests/upstream-contract-smoke.mjs:43` | 扁平 `readdirSync(lib)` 找补丁 | `patchFiles` 空集 → 「每个 `patch-*.js` 都有契约」**在空集上成立**（绿灯），而 `missingFiles` 让 7 条契约全 stale，错误信息指向契约表而不是停止查找的那次列目录 | 走递归 `modulePaths()`，**先断言补丁模块确实被找到**，再断言数量与契约表相等 |
+| `tests/capabilities-report-smoke.mjs` | `!/^(?:capabilities\|archive)\.js$/u` 这种**顶层锚定** | 排除名失配 → 词表主人被自己的检查扫描，每一行都能自证 | 按 basename 匹配（`/(?:^|\/)capabilities\.js$/`），并**先断言两个被排除的文件真的被找到** |
+
+`routeSources()` 与 `suiteNames()` 也一并从 `readOrEmpty` 换成 `readRequired`：读不到
+`tests/run.mjs` 时「0 个套件」与「0 条路由」都不是事实，而它们都会进表。
+
+`tests/doc-numbers-smoke.mjs` 从 26 项加到 42 项，其中新增的 §7 共 16 条断言钉住这些行为
+（临时目录造模块树验证递归与相对路径、验证读不到的目录抛错且点名、验证 `findModule` 的两种
+失败、验证补丁族按名字被走查找到且生成表的 `source` 列跟着实际位置走、并断言三个真实数字在
+收紧之后仍是正数——收紧检查最容易的失败方式是把它变成一条只能红的检查）。
+变异验证：把 `moduleFiles()` 的 `catch` 改回 `return []`，§7 立刻红两条。
+
+**结论没变**：即使四处都收紧，全量按能力域分文件夹仍不值得（约 740 处引用点，收益只是
+平铺的 36 个名字）；唯一值得的一组仍是 7 个 `patch-*.js` → `lib/patch/`，成本 12 条对外
+import + 7 处套件锚点 + **0 条变异锚点** + 30 处文档引用。收紧只是让「搬完之后绿灯」这件事
+本身有意义。
 
 ## 相关
 

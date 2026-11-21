@@ -125,9 +125,26 @@ console.log('\n[every promised capability is actually wired]')
   // modules, and a top-level listing would silently stop covering them the
   // moment a file moved into one — the same drift that made `doc-numbers` count
   // 79 modules instead of 63 after the browser half moved into its own folder.
-  const readable = modulePaths(libDir)
-    .filter(name => !/^capabilities\.js$/u.test(name))
-    .map(name => ({ name, text: readFileSync(path.join(libDir, name), 'utf8') }))
+  //
+  // The two exclusions match on the BASENAME, not on a top-level spelling. An
+  // `^capabilities\.js$` anchored at the start of a relative path stops matching
+  // the moment the file moves into a folder, and then the vocabulary owner is
+  // scanned by the very check it is supposed to be excluded from — every row
+  // would vouch for itself, and the result would be a green suite that proves
+  // nothing. The presence of both excluded files is asserted below for the same
+  // reason: an exclusion that matches nothing is a check that silently widened.
+  const OWNED_MODULE = /(?:^|\/)capabilities\.js$/u
+  const ARCHIVE_MODULE = /(?:^|\/)archive\.js$/u
+  const allModules = modulePaths(libDir)
+  check('the capability vocabulary module is present under lib/',
+    allModules.filter(name => OWNED_MODULE.test(name)).length === 1,
+    allModules.filter(name => OWNED_MODULE.test(name)).join(', ') || 'not found')
+  check('the archive writer is present under lib/',
+    allModules.filter(name => ARCHIVE_MODULE.test(name)).length === 1,
+    allModules.filter(name => ARCHIVE_MODULE.test(name)).join(', ') || 'not found')
+  const readable = allModules
+    .filter(name => !OWNED_MODULE.test(name))
+    .map(name => ({ name, text: readFileSync(path.join(libDir, ...name.split('/')), 'utf8') }))
   const sources = readable.map(entry => entry.text).join('\n')
   for (const spec of TOOL_CAPABILITIES) {
     // `tput` is only ever named in a comment, so a plain substring test is not
@@ -152,7 +169,7 @@ console.log('\n[every promised capability is actually wired]')
   // opposite direction as the four fictional rows this table already had
   // corrected.
   const code = readable
-    .filter(entry => !/^archive\.js$/u.test(entry.name))
+    .filter(entry => !ARCHIVE_MODULE.test(entry.name))
     .map(entry => entry.text)
     .join('\n')
     .replace(/\/\*[\s\S]*?\*\//gu, '')

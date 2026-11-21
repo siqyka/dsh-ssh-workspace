@@ -22,9 +22,10 @@
  * Run: node tests/upstream-contract-smoke.mjs
  */
 
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { modulePaths } from './support/lib-modules.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { CONTRACTS, contractFor, missingFiles } = await import(
@@ -40,17 +41,32 @@ function check (label, ok, detail) {
   }
 }
 
-const libFiles = readdirSync(path.join(pluginRoot, 'lib')).filter(name => name.endsWith('.js'))
-const patchFiles = libFiles.filter(name => name.startsWith('patch-'))
+// The listing is RECURSIVE and the paths are relative, so a patch module that
+// moves into a folder such as `lib/patch/` is still found. A flat
+// `readdirSync(lib)` is why this suite could pass vacuously: after such a move
+// `patchFiles` would be empty, `every patch-*.js has a contract` would hold
+// over nothing at all, and only the stale-contract check would go red —
+// pointing at the contract table rather than at the listing that stopped
+// looking.
+const libDir = path.join(pluginRoot, 'lib')
+const libFiles = modulePaths(libDir)
+const patchFiles = libFiles.filter(file => path.posix.basename(file).startsWith('patch-'))
 
-/** The source of one lib module. */
+/** The source of one lib module, from its path relative to `lib/`. */
 function sourceOf (file) {
-  return readFileSync(path.join(pluginRoot, 'lib', file), 'utf8')
+  return readFileSync(path.join(libDir, ...file.split('/')), 'utf8')
 }
 
 console.log('\n[1] every patch on disk is declared, and vice versa')
 {
   check('the contract table is not empty', CONTRACTS.length > 0, String(CONTRACTS.length))
+  // `every X has a contract` is satisfied by an empty X, so the population is
+  // asserted before the claim about it. Without this, a listing that stopped
+  // finding patch modules would turn the direction that matters green.
+  check('the patch modules were actually found', patchFiles.length > 0, patchFiles.join(', ') || 'none found')
+  check('the patch modules and the declared files are the same size',
+    patchFiles.length === CONTRACTS.length,
+    `${patchFiles.length} on disk vs ${CONTRACTS.length} declared`)
   const declaredFiles = CONTRACTS.map(contract => contract.file)
   const undeclared = patchFiles.filter(file => !declaredFiles.includes(file))
   check('every patch-*.js has a contract', undeclared.length === 0, undeclared.join(', ') || 'none missing')

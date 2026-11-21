@@ -14,7 +14,8 @@
  * Run: node tests/doc-numbers-smoke.mjs
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -199,6 +200,93 @@ console.log('\n[6] the runner, the document table and the generated count agree'
   check('the runner list has no duplicate entries',
     new Set(suites).size === suites.length,
     `${suites.length} entries, ${new Set(suites).size} distinct`)
+}
+
+// ---------------------------------------------------------------------------
+// A counter must not answer 0 for something it could not find
+// ---------------------------------------------------------------------------
+// The figures in this table are spliced into a document, which is what makes a
+// silent zero dangerous: nothing is red, and the document now states a number
+// that is not merely stale but WRONG in a direction nobody re-derives. Three
+// sites had that shape — a flat listing of `lib/`, a `tools.js` read whose
+// failure became `''` and then `0`, and a patch count that only saw the top
+// level. `lib/patch/` and any future folder would have made each of them
+// quietly smaller.
+console.log('\n[7] a counter refuses to answer 0 for something it could not find')
+{
+  const sandbox = mkdtempSync(path.join(os.tmpdir(), 'doc-numbers-'))
+  try {
+    mkdirSync(path.join(sandbox, 'nested'))
+    writeFileSync(path.join(sandbox, 'top.js'), 'export const a = 1\n')
+    writeFileSync(path.join(sandbox, 'nested', 'deep.js'), 'export const b = 2\n')
+    writeFileSync(path.join(sandbox, 'nested', 'notes.txt'), 'not a module\n')
+
+    // The walk is the authority for both the module count and the patch count,
+    // so a file in a subfolder has to appear in it — by relative path, because
+    // two folders may hold a same-named module.
+    const walked = numbers.moduleFiles(sandbox)
+    check('the walk finds a module in a subfolder', walked.includes('nested/deep.js'), JSON.stringify(walked))
+    check('the walk ignores a non-module file', !walked.some(name => name.endsWith('.txt')), JSON.stringify(walked))
+    check('the walk reports relative paths, not basenames',
+      walked.every(name => path.isAbsolute(name) === false), JSON.stringify(walked))
+    check('the module count is the walk length',
+      numbers.countModules(sandbox) === walked.length, `${numbers.countModules(sandbox)} vs ${walked.length}`)
+
+    // A directory that is not there is a defect, not an empty answer: "there
+    // are zero modules in a folder that does not exist" reads as a fact.
+    let missing
+    try {
+      numbers.moduleFiles(path.join(sandbox, 'gone'))
+    } catch (caught) {
+      missing = caught
+    }
+    check('walking a missing directory is an error, not 0', missing !== undefined, String(missing))
+    check('the error names the directory it could not list',
+      /gone/u.test(String(missing?.message ?? '')), String(missing?.message))
+
+    // The counters behind the tool and patch figures locate their module by
+    // basename, so a move into a folder keeps the figure. Ambiguity and absence
+    // are both errors — they are different defects and neither is a number.
+    const tools = numbers.findModule('tools.js')
+    check('the tools module is found wherever it lives', path.basename(tools) === 'tools.js', tools)
+    check('the module it finds is under lib/', tools.includes(`${path.sep}lib${path.sep}`), tools)
+    let unknown
+    try {
+      numbers.findModule('does-not-exist.js')
+    } catch (caught) {
+      unknown = caught
+    }
+    check('a module that cannot be found is an error, not 0 tools', unknown !== undefined, String(unknown))
+    check('the error names the module it wanted',
+      /does-not-exist\.js/u.test(String(unknown?.message ?? '')), String(unknown?.message))
+
+    // The real numbers still come out, so the tightening did not turn the gate
+    // into a check that can only fail.
+    const region = numbers.renderNumbers()
+    const modules = /^\| modules under `lib\/` \| (\d+) \|/mu.exec(region)?.[1]
+    check('the module figure is still computed from the source',
+      modules === String(numbers.moduleFiles(path.join(pluginRoot, 'lib')).length),
+      `doc region says ${modules}`)
+    // The patch family is a naming convention, not a folder: it is FOUND by
+    // walking, so the figure survives the files moving into `lib/patch/` and the
+    // table's `source` column follows them there instead of naming a folder that
+    // no longer holds them.
+    const patches = numbers.patchModules()
+    check('the patch modules are found by walking', patches.length > 0, String(patches.length))
+    check('the patch count is the list length',
+      numbers.countPatches() === patches.length, `${numbers.countPatches()} vs ${patches.length}`)
+    check('the patch source column names where they actually are',
+      /^\| upstream patch modules \| \d+ \| `lib\/(?:[\w.-]+\/)?patch-\*\.js` \|$/mu.test(numbers.renderNumbers()),
+      numbers.renderNumbers().split('\n').find(line => line.includes('upstream patch')) ?? '(no row)')
+    check('the patch figure is still positive',
+      /^\| upstream patch modules \| [1-9]\d* \|/mu.test(region),
+      region.split('\n').find(line => line.includes('upstream patch')) ?? '(no row)')
+    check('the tool figure is still positive',
+      /^\| model-facing tools \| [1-9]\d* \|/mu.test(region),
+      region.split('\n').find(line => line.includes('model-facing tools')) ?? '(no row)')
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true })
+  }
 }
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
