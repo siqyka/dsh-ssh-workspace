@@ -29,9 +29,9 @@
   `client.js` 的 chunk 只能按**懒渲染边界**拆（段间依赖图里有一个 11 段强连通分量）。
   04 与 03 **建议串行**：两者在同一批文件里搬东西，并行会互相踩。
 - **05 是 04 的延续**：04 的轨道 A 建了 `lib/text.js` / `lib/options.js` /
-  `lib/forward-common.js` / `lib/shell-quote.js` 四个「给一行逻辑开一个文件」的模块，
-  05 的第 1 组再把它们并成一个 `lib/shared.js`，然后按「其实是一件事」给出 16 组
-  合文件方案（`lib/` 83 → 57 个模块，删 26 个文件）。两者都只搬代码、不改语义，
+  `lib/shell-quote.js` / `lib/forward-common.js` 四个「给一行逻辑开一个文件」的模块，
+  05 的第 1 组把前三个并成一个 `lib/shared.js`（`forward-common.js` 归第 11 组），
+  然后按「其实是一件事」给出 16 组合文件方案（`lib/` 83 → 57 个模块，删 26 个文件）。两者都只搬代码、不改语义，
   但**都会动 `lib/` 的顶层文件名**，所以 05 与 04 的轨道 C/D 必须串行，
   且每一步都要重跑 `scripts/doc-numbers.mjs`（`modules under lib/` 会从 83 一路降到 57）。
   05 明确不碰 `lib/routes/` 与 `lib/client/`——那两块是用户特意拆的。

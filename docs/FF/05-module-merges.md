@@ -54,14 +54,16 @@ lib/routes/routes.js -> lib/routes/forwards.js -> lib/routes/routes.js       ┘
 
 | 函数 | 现在的位置 | 提交 |
 | --- | --- | --- |
-| `quote` / `shellQuote` | `lib/shell-quote.js`（23 行） | `b6f2e2d` |
+| `quote` / `shellQuote` | `lib/shared.js`（组 1 已并入） | `b6f2e2d` |
 | `requirePort` + `normalizedHost` | `lib/forward-common.js`（52 行） | `f2f8554` |
-| `positive` | `lib/options.js`（31 行） | `75aaaa7` |
-| `escapeRegExp` | `lib/text.js`（25 行） | `d217f5c` |
+| `positive` | `lib/shared.js`（组 1 已并入） | `75aaaa7` |
+| `escapeRegExp` | `lib/shared.js`（组 1 已并入） | `d217f5c` |
 
-这四个文件是**上一轮去重的产物**，每个都不足 55 行、只导出 1–2 个符号，
-但仍各有 3 处以上的外部 `import` 站点。本方案第 1 组把它们并成 `lib/shared.js`——
+这些文件是**上一轮去重的产物**，每个都不足 55 行、只导出 1–2 个符号，
+但仍各有 3 处以上的外部 `import` 站点。本方案第 1 组把其中三个并成 `lib/shared.js`——
 不是「再抽一层」，而是承认「为 25 行开一个文件」这件事本身是多余的。
+（`forward-common.js` 不走这条路：它有两个导出、语义是「端口与主机校验」，
+属第 11 组，跟着方向那两件一起进 `forward.js`。）
 
 ### 1.2 三个已死的 `re-export`（合并顺手删）
 
