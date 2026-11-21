@@ -168,17 +168,24 @@ check('the panel still binds the translator',
 
 // ---- the browser dialog receives that binding --------------------------------
 
-const dialogMatch = source.match(/browserAlias !== null && jsx\(DirectoryBrowser, \{[\s\S]*?\n        \}\)/u)
+// The dialog now renders through `DialogSlot`, which owns the Suspense boundary
+// its lazy chunk needs, so the props live one level down. What this suite cares
+// about is unchanged: the panel passes `ctx` and the alias at the call site.
+const dialogMatch = source.match(/browserAlias !== null && jsx\(DialogSlot, \{[\s\S]*?\n        \}\)/u)
 check('the browser dialog render is still a conditional JSX call',
   dialogMatch !== null,
   'the browser dialog call could not be located')
 const BrowserStub = function DirectoryBrowserStub () { return null }
+// The panel hands the dialog to DialogSlot, which renders it inside the
+// Suspense boundary its lazy chunk needs. For this suite the boundary must be
+// transparent: what is asserted is the props the PANEL passes.
+const DialogSlotStub = (props) => props.component(props)
 let dialog
 try {
   dialog = new Function(
-    'browserAlias', 'jsx', 'DirectoryBrowser', 'setBrowserAlias', 'refresh', 'ctx', 't',
+    'browserAlias', 'jsx', 'DialogSlot', 'DirectoryBrowser', 'setBrowserAlias', 'refresh', 'ctx', 't',
     `return (${dialogMatch[0]})`,
-  )('host-alias', jsxTree, BrowserStub, () => {}, () => {}, pluginCtx, translate)
+  )('host-alias', jsxTree, DialogSlotStub, BrowserStub, () => {}, () => {}, pluginCtx, translate)
 } catch (err) {
   dialog = undefined
 }

@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 // two different implementations.
 import { makeToastDom } from './support/toast-dom.mjs'
 import { routeSource } from './support/route-source.mjs'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientSource } from './support/client-source.mjs'
 import { compareClientMap } from '../scripts/client-map.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -134,7 +134,7 @@ console.log('\n[five-row list cap]')
 // off). The four sections the cap applies to are pinned here, because losing
 // one of the wrappers silently brings back a panel that scrolls for pages.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   check('LIST_CAP is 5', /const LIST_CAP = 5\b/.test(client))
   check('CappedList is defined', /function CappedList \(/.test(client))
   const capped = (client.match(/jsx\(CappedList, \{/g) ?? []).length
@@ -166,7 +166,7 @@ console.log('\n[stylesheet covers the classes the bundle renders]')
 // no test compared what the bundle renders against what the sheet declares.
 // Each entry below is a class the panel depends on for MEANING, not decoration.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   for (const className of ['sshwsp-empty', 'sshwsp-mount', 'sshwsp-mount-path', 'sshwsp-entry-meta', 'sshwsp-btn', 'sshwsp-input', 'sshwsp-mount-off', 'sshwsp-check']) {
     // Rendered either as its own class token or inside a multi-class list
     // ("sshwsp-mount sshwsp-mount-off"); the declaration is what this pins.
@@ -184,7 +184,7 @@ console.log('\n[detached rows refuse interaction, not just attention]')
 // actually refuses the click, and it is easy to delete without noticing because
 // the row still renders, merely greyed.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   check('a detached row declares its actions inert',
     /\[data-sshwsp-disabled="1"\]\s+button[^{]*\{[^}]*pointer-events:\s*none/.test(client),
     'a greyed row whose buttons still fire is a lie the user only discovers by clicking')
@@ -223,7 +223,7 @@ console.log('\n[detached workspaces mark their sessions, not just their header]'
 // This runs the real collector rather than grepping for a string, because the
 // bug was a missing assignment, not a missing name.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   const start = client.indexOf('function collectRemoteWorkspaces')
   const end = client.indexOf('/** Update the mark source', start)
   check('the collector is extractable for a behaviour test', start !== -1 && end > start, 'collector not found')
@@ -256,7 +256,7 @@ console.log('\n[a local workspace that shares a remote title keeps its own icon]
 // mounted from a host. Matching on the title alone swapped the LOCAL row's
 // folder for the remote mark (and, for a detached workspace, made it inert).
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   const start = client.indexOf('function collectRemoteWorkspaces')
   const end = client.indexOf('/** Update the mark source', start)
   const rulesEnd = client.indexOf('/** Fetch /status once', end)
@@ -383,7 +383,7 @@ console.log('\n[the unmount hint states BOTH outcomes, and only in the tooltip]'
 // alone — an always-on line under the row would have to be rewritten as the
 // checkbox flips, and a second copy of the same sentence drifts from the first.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   const hints = [...client.matchAll(/'mounted\.detachHint': '([^']*)'/g)].map(match => match[1])
   const [zhHint = '', enHint = ''] = hints
   check('both locales define the unmount hint', hints.length === 2, `${hints.length} definition(s)`)
@@ -420,7 +420,7 @@ console.log('\n[a deliberate disconnect looks like closing the tunnel by hand]')
 // user asked for. The panel's failure line is driven by the row's `error`, which
 // is set only by the unplanned-drop path.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   const toasts = [...client.matchAll(/'hosts\.disconnectOkForwards': '([^']*)'/g)].map(match => match[1])
   const [zhToast = '', enToast = ''] = toasts
   check('both locales define the disconnect-with-forwards toast', toasts.length === 2, `${toasts.length} definition(s)`)
@@ -470,7 +470,7 @@ console.log('\n[a11y: the dialog contract]')
 // returned to the trigger on close, and a trap so Tab cannot walk behind the
 // backdrop into the page.
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   const count = (re) => (source.match(re) ?? []).length
   check('the shared hook exists once, not per dialog',
     count(/function useDialogA11y /gu) === 1, `${count(/function useDialogA11y /gu)} definition(s)`)
@@ -530,7 +530,7 @@ console.log('\n[a11y: the menu contract]')
 // right or the modulo is wrong — and this repository has already shipped
 // assertions of exactly that kind (see O-14 in docs/optimization-and-future03.md).
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   const count = (re) => (source.match(re) ?? []).length
 
   // The client is a Host factory (`window.__ModuleLoader__.load({...})`), so it
@@ -602,7 +602,7 @@ console.log('\n[a11y: the menu contract]')
 // other half of O-10, not a cosmetic addition.
 // ---------------------------------------------------------------------------
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   check('the panel keeps the listing gaps from the hosts response',
     /setListingGaps\(\{ skipped: hostsData\.skipped \?\? \[\], storeError: hostsData\.storeError \}\)/u.test(source),
     'the response gaps are dropped')
@@ -634,7 +634,7 @@ console.log('\n[a11y: the menu contract]')
 // verdict arithmetic.
 // ---------------------------------------------------------------------------
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   check('the panel renders the advisory rows', /\(diagnosis\.notes \?\? \[\]\)\.length > 0/u.test(source),
     'notes are not rendered at all')
   check('...under their own heading', /t\('diagnosis\.notes', \{ n: /u.test(source),
@@ -677,7 +677,7 @@ console.log('\n[a11y: the menu contract]')
 // not the bug that preceded it. The gate itself is pinned in the block above.
 // ---------------------------------------------------------------------------
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   const flag = source.match(/const SHOW_SELF_CHECK_SECTION = (true|false)/u)
   check('the self-check section has one named switch', flag !== null, 'SHOW_SELF_CHECK_SECTION not found')
   check('...and it is currently OFF', flag !== null && flag[1] === 'false',
@@ -717,7 +717,7 @@ console.log('\n[a11y: the menu contract]')
 }
 
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   const count = (re) => (source.match(re) ?? []).length
 
   // The self-check's rows must come from /status first. `checkReports` is a
@@ -807,7 +807,9 @@ console.log('\n[a11y: the menu contract]')
 // does nothing in the Desktop shell.
 // ---------------------------------------------------------------------------
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
+  // The dialogs moved into their own chunk; these assertions are about them.
+  const dialogs = clientPartSource(packageRoot, 'client.dialogs.js')
 
   // Slice the report section out of the panel so the assertions below cannot be
   // satisfied by an unrelated `window.open` elsewhere in the file. Matched
@@ -834,7 +836,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   check('a report dialog component exists',
     /function ReportDialog \(\{ text, onClose, onCopy, t \}\) \{/u.test(client), 'ReportDialog not defined')
   check('the panel mounts it from fetched text, not from a URL',
-    /reportText !== null && jsx\(ReportDialog, \{/u.test(client), 'dialog not mounted')
+    /reportText !== null && jsx\(DialogSlot, \{[\s\S]{0,120}?component: ReportDialog/u.test(client), 'dialog not mounted')
   check('the report text comes from a fetch of the route',
     /await fetch\(API\.supportBundle\)/u.test(client), 'no fetch of the report route')
   check('the dialog shows the text in a read-only, selectable field',
@@ -864,9 +866,11 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // user is still reading, and any keystroke replaces the selection. Sliced to
   // the component and COUNTED, because a pattern like "no `area.select()` on
   // mount" is trivially satisfied by writing `areaRef.current?.select()`.
-  const dlgStart = client.indexOf('function ReportDialog (')
-  const dlgEnd = client.indexOf('// Main panel', dlgStart)
-  const dlg = dlgStart >= 0 && dlgEnd > dlgStart ? client.slice(dlgStart, dlgEnd) : ''
+  // ReportDialog is the last component in the chunk, so the slice runs to the
+  // export block rather than to a following banner.
+  const dlgStart = dialogs.indexOf('function ReportDialog (')
+  const dlgEnd = dialogs.indexOf('    exports.HostEditor', dlgStart)
+  const dlg = dlgStart >= 0 && dlgEnd > dlgStart ? dialogs.slice(dlgStart, dlgEnd) : ''
   const selectSites = (dlg.match(/\.select\(/gu) ?? []).length
   const handleCopyAt = dlg.indexOf('const handleCopy = async () => {')
   const selectAt = dlg.indexOf('.select(')
@@ -951,7 +955,7 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 // each one is paired with the reverse-verification note in its detail string:
 // removing the construct is what should turn it red.
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
 
   /**
    * The body of one top-level module function, with its comments removed.
@@ -1356,7 +1360,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
 // ONCE (the server stages and renames, so a repeat is idempotent), and the
 // sentence is chosen by how long the request lasted.
 {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   const routes = routeSource(packageRoot)
   check('the chunked sender retries a transport death once',
     client.includes('for (let attempt = 1; attempt <= maxAttempts; attempt += 1)'), 'no retry loop')
@@ -1396,7 +1400,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
 // event, and a body stream cannot be paused. One transport therefore remains,
 // and it is the one that also crosses the packaged shell's `dsh-app://` origin.
 {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   const routes = routeSource(packageRoot)
   check('the browser no longer chooses an upload transport by page origin',
     !/canCarryBinaryBody|postFileAsBody/u.test(client),
@@ -1464,7 +1468,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
 // store. These pin the shape that makes that true, and the places where a
 // helpful-looking alternative would quietly become a second truth.
 {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
   const transfer = readFileSync(path.join(packageRoot, 'lib', 'transfer.js'), 'utf8')
 
   check('there is exactly one queue store',
@@ -1575,7 +1579,7 @@ console.log('\n[the toast window, measured on the code that ships]')
 // against a fake DOM and a fake clock, because "a timer exists" is also true of
 // one that removes the wrong node, and of one a hover does not cancel.
 {
-  const client = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const client = clientSource(packageRoot)
 
   {
     const dom = makeToastDom()
@@ -1669,7 +1673,7 @@ console.log('\n[the toast window, measured on the code that ships]')
 // collapsing the two levels back into one line.
 console.log('\n[the file-reference zone: two titles, and they are not interchangeable]')
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   check('the file-reference zone has its own heading key, in both dictionaries',
     (source.match(/'passthrough\.group':/gu) ?? []).length === 2,
     `${(source.match(/'passthrough\.group':/gu) ?? []).length} definition(s) — zh and en both need one`)
@@ -1721,7 +1725,7 @@ console.log('\n[the file-reference zone: two titles, and they are not interchang
 // assertions exist to make that copy fail loudly if it comes back.
 console.log('\n[the scheme rules are published, not duplicated]')
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   const start = source.indexOf('const savePassthroughScheme = async () => {')
   const end = source.indexOf('const handleUnforward', start)
   const body = start < 0 || end <= start ? '' : source.slice(start, end)
@@ -1785,7 +1789,7 @@ console.log('\n[the scheme rules are published, not duplicated]')
 // The workspace browser tab: shared selection, degrade path, bilingual keys
 // ---------------------------------------------------------------------------
 {
-  const source = readFileSync(path.join(packageRoot, clientRel), 'utf8')
+  const source = clientSource(packageRoot)
   /** Slice one declaration out of the bundle, comments stripped. */
   const sliceBody = (name) => {
     const forms = [

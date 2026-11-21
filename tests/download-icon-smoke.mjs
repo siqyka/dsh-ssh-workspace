@@ -23,11 +23,12 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const source = clientSource(pluginRoot)
+const dialogsSource = clientPartSource(pluginRoot, 'client.dialogs.js')
 
 let passed = 0
 const failures = []
@@ -246,11 +247,13 @@ const code = source
 check('no download arrow character is rendered anywhere any more',
   !/children:\s*'↓'/u.test(code) && !/children:\s*'↑'/u.test(code),
   'a text glyph survived beside the drawn mark')
-const dialog = sliceBetween(
-  '    function DirectoryBrowser',
-  '    // =========================================================================\n    // Diagnostic report dialog',
-  'the browse-only directory dialog',
-)
+// The directory browser now lives in its own chunk. The claim is about that
+// component, not about which file holds it, so it is sliced from the chunk.
+const dialogStart = dialogsSource.indexOf('function DirectoryBrowser')
+if (dialogStart < 0) throw new Error('client.dialogs.js no longer defines DirectoryBrowser()')
+const dialogEnd = dialogsSource.indexOf('// Diagnostic report dialog', dialogStart)
+if (dialogEnd < 0) throw new Error('client.dialogs.js no longer marks the diagnostic report dialog')
+const dialog = dialogsSource.slice(dialogStart, dialogEnd)
 check('the browse-only listing shows no download mark or progress ring',
   !/DownloadIcon|TransferProgressIcon|downloadQueueItemFor|queueItemPercent/u.test(dialog),
   'a row kept a transfer control the dialog no longer owns')
