@@ -1,9 +1,10 @@
 # FF-05 同功能模块合并：把「其实是一件事」的几个文件并成一个
 
-> 状态：**方案**（2026-11-21 在 `refactor/code-splitting` 分支、HEAD `ac720fa` 上实测）。
-> 轨道 A（四组重复函数收进共享模块）已全部提交（`b6f2e2d` / `f2f8554` / `75aaaa7` / `d217f5c`），
-> 本辑把它们**再并一层**，并按用户指定的边界（不碰 `lib/routes/`、不碰 `lib/client/`）
-> 给出 16 组可合并的模块。
+> 状态：**已全部实施**（16 组 16 个提交，2026-11-21 完成；§9 是完工记录，最初写方案时的起点状态留在 §9.2）。
+> 轨道 A（四组重复函数收进共享模块）此前已提交（`b6f2e2d` / `f2f8554` / `75aaaa7` / `d217f5c`），
+> 本辑把它们**再并一层**，并按用户指定的边界（不碰 `lib/routes/`、不碰 `lib/client/`）合并其余模块。
+> 结果：`lib/` 的模块数 **83 → 57**，import 环 **6 → 5**（剩下的全是 `lib/routes/routes.js ↔ lib/routes/*.js`），
+> 套件数、路由数、工具数、补丁数一个没动。
 > 本辑回答：**哪几个 `lib/*.js` 其实是一件事、合并后长什么样、每一组会撞到哪几处钉在文件名上的断言、按什么顺序做**。
 > 不做 GitHub issue（沿用 FF-04 的决定：只落仓库文档）。
 
@@ -14,7 +15,11 @@
 每合一组都留下可机械验证的边界（变异脚本的定位名、套件 import 路径、源码扫描的排除名），
 而不是靠人记住哪两块属于同一个东西。
 
-## 1. 现状（全部为本轮实测）
+## 1. 方案起点（写方案那一刻的实测，保留以供回溯）
+
+> 下面这一节的数字是**写方案时**的基线（HEAD `ac720fa`）。合并全部做完之后的样子见 §9.2：
+> 模块 57、环 5、其余数字不变。这一节不改写，因为「为什么当初判断这组合适」只能从当时的
+> 数据读出来。
 
 | 项 | 实测值 | 取法 |
 | --- | --- | --- |
@@ -55,7 +60,7 @@ lib/routes/routes.js -> lib/routes/forwards.js -> lib/routes/routes.js       ┘
 | 函数 | 现在的位置 | 提交 |
 | --- | --- | --- |
 | `quote` / `shellQuote` | `lib/shared.js`（组 1 已并入） | `b6f2e2d` |
-| `requirePort` + `normalizedHost` | `lib/forward-common.js`（52 行） | `f2f8554` |
+| `requirePort` + `normalizedHost` | `lib/forward.js`（组 11 已并入） | `f2f8554` |
 | `positive` | `lib/shared.js`（组 1 已并入） | `75aaaa7` |
 | `escapeRegExp` | `lib/shared.js`（组 1 已并入） | `d217f5c` |
 
@@ -454,6 +459,10 @@ FF-04 时代这条被写成「不做」，理由是生命周期不同；本轮�
 删了哪个文件、改了哪几处文件名引用、跑了哪些脚本。26 个文件的删除分散在 16 个提交里，
 任何一步出问题都只需要 revert 一个提交。
 
+实际执行**完全按这个顺序**，波次没有调整（逐组的提交号与文件数见 §9.1）。
+唯一一处与计划的偏差：第 10 组 `report` 里 `capabilities.js` 留在组外这个决定，
+计划时是用「合并后扫描器会误判」推出来的，落地时又实测确认了一遍（§2.10）。
+
 每批收尾固定四条命令（缺一条就不算做完）：
 
 ```bash
@@ -561,16 +570,67 @@ node scripts/check-doc-links.mjs
    `CHANGELOG.md` 的历史条目与 `docs/FF/` 本文件外**零命中**。
 7. import 图的环从 6 降到 5，且剩下 5 个全部是 `lib/routes/routes.js ↔ lib/routes/*.js`。
 
-## 9. 起点状态（开工前自己核对，不要重新推导）
+## 9. 实施记录
+
+### 9.1 16 组 16 个提交（全部完成）
+
+一组一个提交，任何一步出问题只回滚一个提交。顺序即实际执行顺序（四波）。
+
+| # | 组 | 提交 | 文件数 | 合并后 | 该组的实测标记 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `shared` | `2c43d33` | 14 | `lib/shared.js` 96 行 | 9 条外引一次改完，后面 5 个组直接受益 |
+| 15 | `patch-projection` | `50f3b56` | 9 | 688 行 | 新增 `scripts/graph-cycles.mjs`，环数不变 |
+| 16 | `diagnostics` | `d11725d` | 9 | 281 行 | `reverse-verify-future` 两处 `file:` 改指 |
+| 3 | `ssh-config` | `dacb90d` | 7 | 321 行 | 功能环消失，环 6 → 5 |
+| 5 | `reconnect` | `e43714f` | 7 | 434 行 | 两个死 re-export 一并删 |
+| 2 | `archive` | `132fb8e` | 8 | 626 行 | `capabilities-report-smoke` 的排除名改成「分开处理」 |
+| 4 | `status` | `43d102a` | 12 | 670 行 | `lib/tools.js` 三条 import 合成一条 |
+| 8 | `transfer-rules` | `a23dd65` | 24 | 657 行 | `lib/transfer.js:508` 的 JSDoc `{@link import()}` 也要改 |
+| 11 | `forward` | `7987627` | 15 | 1163 行 | 重复 `KINDS` import 折叠、`randomBytes` 提升 |
+| 6 | `store` | `375b448` | 4 | 1335 行 | 两个 `dshHome()` 合成一个 |
+| 7 | `passthrough` | `741afde` | 7 | 1070 行 | 只有一处外引 |
+| 9 | `hosts` | `a0b053f` | 12 | 1081 行 | `HostConfigStore` import 误删被 `host-listing-smoke` 抓住 |
+| 10 | `report` | `c63c31a` | 19 | 889 行 | `capabilities.js` 按 §2.10 留在组外 |
+| 12 | `shell` | `5dea723` | 9 | 1000 行 | 同时修掉 `quote` / `shellQuote` 双名 |
+| 14 | `tools` | `c72c391` | 6 | 2003 行 | 7 条变异改指 `lib/tools.js` |
+| 13 | `engine` | `2897a21` | 9 | 2173 行 | 9 条静态 import 一条没改（目标名不变） |
+
+### 9.2 完工时的实测
+
+| 项 | 值 |
+| --- | --- |
+| 模块数 | `lib/` **57**（方案起点 83，删 26 个文件、新建 1 个 `lib/shared.js`） |
+| 其中顶层 | 36（方案起点 62 + `lib/shared.js`） |
+| import 环 | **5**，全部是 `lib/routes/routes.js ↔ lib/routes/<subject>.js`（方案起点 6，含唯一的功能环） |
+| 套件 | 99，不变 |
+| 断言 | 装配树 5348 / 裸检出 5037（合并前后逐个套件相同） |
+| 门禁 | `lint` 198 模块解析通过；`doc-numbers --check` 绿（modules 57 / suites 99 / routes 33 / tools 11 / patches 7）；`check-doc-links` 24 个 markdown 全过 |
+| 位置 | 分支 `refactor/code-splitting`，方案基线 `ac720fa` 之后 17 个提交（含 `9657264` 把 `lib/routes.js` 搬进目录） |
+
+### 9.3 实施中发现的、方案里没预料到的四件事
+
+1. **`lib/routes.js` 先搬进了目录**（`9657264`，用户单独要求的）。这不影响任何一组
+   ——`lib/routes/` 本来就在「不碰」清单里——但它改了 `scripts/doc-numbers.mjs` 与
+   `tests/support/route-source.mjs` 的读法（整目录排序读，而不是单读组合点）。
+2. **`tests/capabilities-report-smoke.mjs` 的排除名不能只换文件名。** 原写法用一条正则
+   同时排除 `capabilities.js` 与 `tar.js`，两个排除的理由却不同：前者拥有被检查的词表，
+   后者自己写归档格式、错误文案里带 `tar entry`。只把 `tar` 改成 `archive` 会把 626 行
+   整块从**两次**扫描里摘掉；正确做法是分开处理（见 `132fb8e` 的提交信息）。
+3. **`lib/shell.js` 合并时暴露了 `quote` / `shellQuote` 两个名字并存**。前者是
+   `shell.js` 自己的别名、后者是 discovery 那半从 `engine.js` 拿的本名，合并后一个文件里
+   两种拼法都出现，直接 `ReferenceError`。统一成 `shellQuote`。
+4. **`HostConfigStore` 的 import 在删 import 块时被连带删掉**，`ReferenceError` 只在
+   `host-listing-smoke`（真的构造 `HostStore`）里炸，只在做解析的套件里看不出来。
+   这类错误正是「受影响套件的断言数与合并前逐个相同」这条验收标准的用处。
+
+### 9.4 写方案时的起点状态（历史，仅供回溯）
 
 | 项 | 值 |
 | --- | --- |
 | 分支 | `refactor/code-splitting` |
 | 基线提交 | `ac720fa fix(client): publish the icon names as they arrive, not at the end of boot` |
 | 已提交的轨道 A | `b6f2e2d`(quote) / `f2f8554`(requirePort) / `75aaaa7`(positive) / `d217f5c`(escapeRegExp) |
-| 工作树 | 写方案那一刻干净（client 拆分已全部提交）；此后仍有别的线在动 `lib/client/client.js`，与本方案无关，开工前自己 `git status --short` |
 | `package.json` 版本 | `0.3.6` |
-| 行尾 | `.gitattributes` 是 `* text=auto eol=lf`，**所有 `.js` 在 git 里都是 LF**；`docs/FF/*.md` 也是 LF。改动不要引入 CRLF |
 | 门禁现状 | `lint` 223 文件解析通过；`doc-numbers --check` 绿（表里 modules 83，`recursive listing`）；`suites` 99；`check-doc-links` 24 个 markdown 全过 |
 
 ## 相关

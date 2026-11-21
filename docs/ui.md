@@ -310,7 +310,7 @@ collapsing 继承区标题的下边距，再写一个 12px 会在标题与它命
 这对粘贴是对的（它不能与面板矛盾），对面板是错的：用户不该需要知道阈值才能判断
 `probe: 'fixed'` 意味着"该删了"、或者主机没出现在列表里意味着它的配置被拒绝了。
 
-所以判定被拆成独立模块 `lib/diagnosis.js`，并在报告标题后画一个圆点：
+所以判定和报告合成一个模块 `lib/report.js`，并在报告标题后画一个圆点：
 
 | 状态 | 颜色 | 含义 |
 | --- | --- | --- |
@@ -447,7 +447,7 @@ unavailable)` 把"补丁不需要装"和"我不知道补丁装没装"写成了�
 接收方。新标题用「诊断报告 / Diagnostic report」。
 
 **标识符一律不动**：路由 `/support-bundle`、工具字段 `supportBundle`、模块
-`lib/support-bundle.js`、套件 `support-bundle-smoke` 都是契约面，改名没有功能收益。
+`support-bundle` 这个拼写、套件 `support-bundle-smoke` 都是契约面，改名没有功能收益。
 这与仓库既有习惯一致——面板叫「最近的远端命令」而模块叫 `audit.js`。
 
 避免用「插件诊断」：`ssh_workspace_status` 里已有 `diagnosticsText`（事件环容量 40 条、

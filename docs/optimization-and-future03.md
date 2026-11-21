@@ -51,7 +51,7 @@
 
 ### 1.2 配置解析的统一词法层（F-10）
 
-**状态：已收敛，原前提不成立（2026-11-09 复核）。** 现在只有一个 section 切分实现：`lib/ssh-config.js:76` 的 `sectionsOf`；`selects`（`:124`）使用同一文件的 `patternMatches`（`:109`），`Match` 判定在 `:131` 委托同一文件底部的 `matchSelects`（`:296`），后者又把 `host` / `originalhost` 的模式交回 `patternMatches`。**这两个半以前是两个文件、互相 import，是 `lib/` 里唯一的功能环；现在合成一个文件，环消失了。**两个真实消费者读的是同一套：`lib/hosts.js:19-20` 与 `lib/config-audit.js:51` 都 import `sectionsOf` / `isExact` / `selects`，`lib/hosts.js:95`、`:143` 与 `lib/config-audit.js:235-236` 都调用它们。
+**状态：已收敛，原前提不成立（2026-11-09 复核）。** 现在只有一个 section 切分实现：`lib/ssh-config.js:76` 的 `sectionsOf`；`selects`（`:124`）使用同一文件的 `patternMatches`（`:109`），`Match` 判定在 `:131` 委托同一文件底部的 `matchSelects`（`:296`），后者又把 `host` / `originalhost` 的模式交回 `patternMatches`。**这两个半以前是两个文件、互相 import，是 `lib/` 里唯一的功能环；现在合成一个文件，环消失了。**两个真实消费者读的是同一套：`lib/hosts.js:55` 与 `lib/report.js:67` 都 import `sectionsOf` / `isExact` / `selects`，`lib/hosts.js` 与 `lib/report.js:256` 都调用它们（`report.js` 的前身是 `config-audit.js`，两者已合成一个模块）。
 
 逐条核对剩下的“差异”：
 
@@ -61,7 +61,7 @@
 | `lib/ssh-config.js:241` 的 `parseMatchConditions` | 解析 `criterion value` 条件语法；host 模式仍走 `patternMatches` | 否：条件语法与模式匹配是两层，不竞争同一输入 |
 | `Host` 与 `Match` 的引号 / token 化 | 两者都从 `sectionsOf` 拿同一份 `patterns`，因此内部消费者一致；`sectionsOf` 不做引号内空格合并，是**单实现相对 OpenSSH 的缺口** | 否（内部一致）；这是窄修，不是三处同步问题 |
 
-`lib/hosts.js:185` 的 `readConfigWithIncludes` 返回展开后的**文本**，不是第二套 section；`configTextOf`（`:494`）把它交给 `sectionsOf`。因此“新增一条指令必须同步改三处”没有真实样例：指令词表只在 `lib/config-audit.js` 的 `SUPPORTED_KEYWORDS` / `KNOWN_UNSUPPORTED` 维护，读取侧只有 `lib/hosts.js` 一处。
+`lib/hosts.js:185` 的 `readConfigWithIncludes` 返回展开后的**文本**，不是第二套 section；`configTextOf`（`:494`）把它交给 `sectionsOf`。因此“新增一条指令必须同步改三处”没有真实样例：指令词表只在 `lib/report.js` 的 `SUPPORTED_KEYWORDS` / `KNOWN_UNSUPPORTED` 维护，读取侧只有 `lib/hosts.js` 一处。
 
 目标中的完整词法层不再立项；若将来要支持引号模式或续行，按窄修处理，不预先抽象。完整 OpenSSH 语义仍明确不做（见第 2 节）。
 
@@ -135,8 +135,8 @@
 - **`scripts/reverse-verify-tree-drag.mjs`：17 confirmed / 0 not（2026-11-09 实测，exit 0）**：本轮三个行为各配一组变异——本地空白菜单（解析最近目录 / 根内栅栏 / 行按钮不算空白 / 展开目录的子列表算空白 / 远端根不进入 / 项目数 / 只读只禁用新建）、多选拖入（载荷退回单路径 / 只插第一项 / 行菜单退回单行 / 每项各聚焦一次 / 去掉去重 / 中途失败即中止 / 丢掉接收卡）、本地 mkdir 分支（边界改读请求 / 跳过 realpath 父目录检查 / 接受远端工作区）。同样是评审动作、不进 CI。
 - **`scripts/reverse-verify-passthrough.mjs`：20 confirmed / 0 not（2026-11-13 实测，exit 0）**：本机路径直通的 20 个变异，覆盖三段——matcher 段（默认前缀丢掉 attachments / 未知变量被展开 / 前缀匹配忽略分量边界 / 整 `$DSH_HOME` 被接受 / 非 win32 也认盘符 / 非盘符拼写进引用表 / 引用表不设上限 / 命中不了自己 / 引号形式不提取 / 提取放过 POSIX 绝对路径）、路由段（剥 cwd 改成原样透传 / 不再认直通拼写 / `path.resolve` 无视 matcher / `path.relative` 不再原样返回 / 热重载留旧 matcher / 安装点漏传 matcher / 内建桥漏传 matcher）、接线段（监听器把事件当消息 / 恢复的会话不再重扫 / 提示词丢掉边界段）。修变异时还发现并补了四处测试空洞：POSIX 拼写即使平台是 win32 也不能进引用表、提示词必须写明「只覆盖经过 ctx.fs」、消息提取器的 role / block 判定要真跑一遍、监听器必须把 `event.data` 而不是 `event` 交给提取器。**同样不进 CI**——它会改写源文件。
 - **`scripts/reverse-verify-future.mjs`：19 confirmed / 0 not（2026-11-09 复跑，exit 0）**：四条漂移均已落位——
-  - F-04 wildcard：破坏点改为 `lib/config-audit.js:236` 的 `selects(section, alias)` → `isExact(...)`，实测 2 红；
-  - F-04 repeated：删除 `lib/config-audit.js:243` 的 `seen.has(keyword)` 守卫，实测 1 红；
+  - F-04 wildcard：破坏点改为 `lib/report.js:256` 的 `selects(section, alias)` → `isExact(...)`，实测 2 红；
+  - F-04 repeated：删除 `lib/report.js:263` 的 `seen.has(keyword)` 守卫，实测 1 红；
   - F-07 environment assignment：`lib/engine.js:2004` 与 `lib/diagnostics.js` 的 `maskText` 两处同时破坏（脚本新增 `also` 多文件变异），实测 2 红；
   - F-09 login user：锚点移到 `lib/diagnostics.js` 里 `maskText` 的登录用户正则，实测 1 红。
   脚本现在对每个已写文件逐字节还原并按相反顺序收尾；跑后 `git status --short lib` 为空。
