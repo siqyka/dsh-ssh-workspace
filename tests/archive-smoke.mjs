@@ -34,7 +34,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 
 const { BLOCK, splitTarName, tarHeader, tarPadding, tarStream } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'archive.js')).href)
-const { globToRegExp, relativeForRule, treeFilter } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tree-filter.js')).href)
+const { globToRegExp, relativeForRule, treeFilter } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
 // The toast helpers are lifted from the shipped bundle by a shared harness so
 // this suite and `client-shape-smoke` drive the SAME code rather than two
 // retyped copies.

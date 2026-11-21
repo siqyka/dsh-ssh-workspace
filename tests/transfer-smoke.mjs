@@ -491,7 +491,7 @@ try {
     await writeFile(source, Buffer.from('ABCDEFGH'))
     const info = await stat(source)
     const { sourceIdentity, resumableStagingName, resumeSidecarName } = await import(
-      pathToFileURL(path.join(pluginRoot, 'lib', 'resume.js')).href)
+      pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
     const identity = sourceIdentity({ size: info.size, mtimeMs: info.mtimeMs })
 
     const { sftp, files, state } = fakeSftp({ dirs: ['/srv'] })
@@ -536,7 +536,7 @@ try {
     await writeFile(source, Buffer.from('ABCDEFGH'))
     const info = await stat(source)
     const { sourceIdentity, resumableStagingName, resumeSidecarName } = await import(
-      pathToFileURL(path.join(pluginRoot, 'lib', 'resume.js')).href)
+      pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
     // The sidecar describes an OLDER version of the source.
     const staleIdentity = `${info.size}:${Math.trunc(info.mtimeMs) - 60_000}`
 
@@ -592,7 +592,7 @@ try {
       thrown = error
     }
     check('the transfer failed', thrown !== undefined)
-    const { resumableStagingName } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'resume.js')).href)
+    const { resumableStagingName } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
     check('BUT the partial was kept for the next attempt',
       files.has(resumableStagingName('/srv/keep.bin')), JSON.stringify([...files.keys()]))
   }

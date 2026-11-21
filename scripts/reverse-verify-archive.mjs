@@ -72,21 +72,21 @@ const MUTATIONS = [
   },
   {
     name: 'the exclusion rules become first-match-wins (a re-include stops working)',
-    file: 'lib/tree-filter.js',
+    file: 'lib/transfer-rules.js',
     find: '      let verdict\n      for (const rule of compiled) {\n        if (rule.test(path, isDir)) verdict = !rule.include\n      }\n      return verdict === true',
     replace: '      return compiled.some(rule => !rule.include && rule.test(path, isDir))',
     suite: 'archive',
   },
   {
     name: "an anchored rule stops matching its own path",
-    file: 'lib/tree-filter.js',
+    file: 'lib/transfer-rules.js',
     find: "        if (pattern.test(clean)) return true\n        let cut = clean.lastIndexOf('/')",
     replace: "        if (pattern.test(clean)) return false\n        let cut = clean.lastIndexOf('/')",
     suite: 'archive',
   },
   {
     name: 'the glob compiles to a substring match instead of an anchored one',
-    file: 'lib/tree-filter.js',
+    file: 'lib/transfer-rules.js',
     find: "  return new RegExp(`^${out}$`, 'u')",
     replace: "  return new RegExp(out, 'u')",
     suite: 'archive',
@@ -251,7 +251,7 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const after = ['lib/archive.js', 'lib/tree-filter.js', 'lib/transfer.js', 'lib/client/client.js']
+const after = ['lib/archive.js', 'lib/transfer-rules.js', 'lib/transfer.js', 'lib/client/client.js']
   .map(name => [name, damagedCount(readFileSync(path.join(root, name), 'utf8'))])
   .filter(([, count]) => count > 0)
 if (after.length > 0) {

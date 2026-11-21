@@ -80,7 +80,7 @@ check(
   ['tar', 'rsync', 'tput'].every(tool => UNPROBED_CAPABILITIES.some(spec => spec.tool === tool)),
   JSON.stringify(UNPROBED_CAPABILITIES.map(spec => spec.tool)),
 )
-// `sha256sum` was one of the four and is now REAL: `lib/verify.js` hashes both
+// `sha256sum` was one of the four and is now REAL: `lib/transfer-rules.js` hashes both
 // sides of a transfer on request. The membership test above (does any code
 // outside this file reference the tool?) is what moves a row between the two
 // lists — in either direction. Pinning that here is what makes the earlier

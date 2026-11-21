@@ -18,7 +18,7 @@ import path from 'node:path'
 
 import { createHost } from './support/plugin-host.mjs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { isWithinLocalRoot, mutationNameRefusal, renameTargetPath, rootMutationRefusal, deletionSummary } from '../lib/mutations.js'
+import { isWithinLocalRoot, mutationNameRefusal, renameTargetPath, rootMutationRefusal, deletionSummary } from '../lib/transfer-rules.js'
 import { routeSource } from './support/route-source.mjs'
 import { clientSource } from './support/client-source.mjs'
 
