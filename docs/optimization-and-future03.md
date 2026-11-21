@@ -12,7 +12,7 @@
 
 ### 1.1 客户端 chunk 拆分（C-02；原 O-12 的“不做”已被推翻）
 
-**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出五个按需 chunk：`lib/client/client.dialogs.js`、`lib/client/client.panel.js`、`lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`、`lib/client/client.history.js`；随后又拆出五份**启动期**chunk（`lib/client/client.locale.js`、`lib/client/client.styles.js`、`lib/client/client.icons.js`、`lib/client/client.queue.js`、`lib/client/client.selection.js`），由 `apply` 开头的 `await loadBootChunks()` 统一取回。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
+**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出五个按需 chunk：`lib/client/client.dialogs.js`、`lib/client/client.panel.js`、`lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`、`lib/client/client.history.js`；随后又拆出六份**启动期**chunk（`lib/client/client.locale.js`、`lib/client/client.styles.js`、`lib/client/client.icons.js`、`lib/client/client.queue.js`、`lib/client/client.selection.js`、`lib/client/client.marks.js`），由 `apply` 开头的 `await loadBootChunks()` 统一取回。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
 
 宿主 `@deepseek-ai/dsh-client-modules`（`app.asar` 内）的真实能力：
 
@@ -94,7 +94,7 @@
 - 2026-11-09 门禁收口：`run.mjs` 增加 `partial` 第三态（`tests/support/run-state.mjs` + `run-state-smoke`），默认 71 passed / 6 skipped、装配树 74 passed / 1 partial / 2 skipped；`reverse-verify-future` 19/0；F-10 判定收敛、F-11 触发未满足（见 §1.2 / §1.3）。
 - 本机路径直通（`localPassthrough`，issue #4）已落地（2026-11-13）：`lib/passthrough.js` 做词法前缀匹配（默认 `$DSH_HOME/attachments` / `plugins`），`ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 在远端分类前直通本机；剥离 cwd 防递归，未命中路径仍远端，不做 `stat`，写围栏不变；测试见 `tests/local-passthrough-smoke.mjs`。
 - 显式本机 scheme 与「`@` 裸 POSIX 远端优先、miss 回退本机」已落地（2026-11-14，随 0.3.4 发布）：scheme 名与回退开关只存 `passthrough.settings` 一处，解析 / `fs-shim` 折叠 / `@` 提取三缝读同一个值；回退只覆盖点名路径与读动词。规则（≥ 3 字符、保留名表、两个大小写字段）由 `/status.passthrough.schemeRules` 下发，客户端不留第二份。测试见 `tests/local-passthrough-smoke.mjs`（231 项）与 `scripts/reverse-verify-passthrough.mjs`（43 条变异）。
-- C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分已于 2026-11-21 落地成八个 chunk：五个按需（`lib/client/client.dialogs.js`、`lib/client/client.panel.js`、`lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`、`lib/client/client.history.js`），五个启动期由 `apply` 的 `await loadBootChunks()` 取回（`lib/client/client.locale.js`、`lib/client/client.styles.js`、`lib/client/client.icons.js`、`lib/client/client.queue.js`、`lib/client/client.selection.js`）。
+- C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分已于 2026-11-21 落地成八个 chunk：五个按需（`lib/client/client.dialogs.js`、`lib/client/client.panel.js`、`lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`、`lib/client/client.history.js`），六个启动期由 `apply` 的 `await loadBootChunks()` 取回（`lib/client/client.locale.js`、`lib/client/client.styles.js`、`lib/client/client.icons.js`、`lib/client/client.queue.js`、`lib/client/client.selection.js`、`lib/client/client.marks.js`）。
 
 **版本约定**：未明确说“更新版本 / 发布 / 打 tag”时，不改版本号、不发布；发布前按 README 的发布检查表走（`npm run check` 必须全绿）。
 
