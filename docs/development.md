@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 81 | recursive listing |
+| modules under `lib/` | 80 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
@@ -38,7 +38,6 @@
 | `lib/fs-shim.js` | 内建桥接：`node:fs/promises` 的 `mkdir`/`stat`/`lstat`/`realpath`/`readdir`/`copyFile`/`open`/`rm` 与 `node:path` 的 `isAbsolute`/`resolve`/`join`/`relative` 对 `ssh://` 拼写单独处理（含 `syncBuiltinESMExports`）；变更追踪的 SFTP 读句柄与 scratch 镜像落盘/联动，`readdir` 服务 `@` 补全 |
 | `lib/hosts.js` | 主机解析：存储优先、`~/.ssh/config` 回退、行渲染 |
 | `lib/mode-gate.js` | 远端写入的统一门禁：`read-only` / `workspace-write` / `danger-full-access` 三态，加上「未挂载」「超出会话工作区」两类范围拒绝，被六条可写路径共用（工具 / shell / subprocess / 终端 / 传输路由）；判定失败时 fail-closed 且文案不谎称“仅可查看”；嵌套的链接不归它管 |
-| `lib/path-binding.js` | 探测 `node:path.isAbsolute` 是不是**通过模块绑定被读的**：探测期间换成记账包装，函数值形式被捕获下来的 schema 永远碰不到它。只有 `patch-projection.js` 的退役探测一个调用方：「宿主接受 `ssh://`」有两种成因，只有其中一种意味着补丁可以删 |
 | `lib/passthrough.js` | 本机路径直通的唯一实现：配置前缀展开、词法归一化与边界匹配、`$DSH_HOME` 整目录拒绝、`@` 引用表（`hostReferencePathsInText` 提取、`addHostReference` 登记、先进先出上限 256）、显式 scheme（`parseLocalScheme` / `normalizeScheme`，默认 `local`，一至三个斜杠，不做 percent-decoding）与远端未命中回退的开关。引用条目多带一位 `viaScheme`：用 scheme 点名过的路径不会因此让它的**裸拼写**变成本机读。`matches`（直通门）、`isNamed`（回退的唯一闸门）、`localSpelling`（交给本机后端的剥前缀值）是三张不同的问句，不合并；不 `stat`、不 `realpath`、不调用被补丁的 `path.isAbsolute` |
 | `lib/passthrough-settings.js` | 直通设置的唯一写入点：store 是运行时真相，插件配置（`localPassthroughScheme` / `localPassthroughFallback`）只是首次默认；`apply` 先校验后落盘再 `configure` 活 matcher，顺序保证三条消费缝看不到半套设置 |
 | `lib/capabilities.js` | 远端环境自检：7 项工具与 4 项环境事实一次往返问完，三态 `present` / `absent` / `unknown` 不能合并——`unknown` 不带安装提示 |
@@ -72,7 +71,7 @@
 | `lib/client/client.add-workspace.js` | 浏览器半边的按需 chunk：添加工作区流程（本地 / 远程选择器、远程目录选择、挂载）。宿主会无条件渲染 `directoryFlow` 空洞，所以主包留了个 `FlowSlot`：关闭时直接返回 `null`，只有 `open` 才去取 chunk |
 | `lib/client/client.transfer-queue.js` | 浏览器半边的按需 chunk：转移队列浮层（队列状态仍在主包，文件面板也在读它） |
 | `lib/client/client.history.js` | 浏览器半边的按需 chunk：更改请求标签页底部的提交历史页脚 |
-| `lib/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) |
+| `lib/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md)。文件底部是它自己的**退役探针**：`observePathBindingReads` 在探测期间把 `node:path.isAbsolute` 换成记账包装，`acceptsWithoutOurPatch` 再问一次「把我们补丁撤掉还接受吗」——「宿主接受 `ssh://`」有两种成因，函数值形式被捕获下来的 schema 永远碰不到记账包装，只有真正读绑定的那次接受才意味着补丁可以删 |
 
 ## 上游临时补丁
 

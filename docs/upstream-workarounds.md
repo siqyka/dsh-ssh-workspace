@@ -83,7 +83,7 @@ const directorySchema = z$1.string().min(1).refine((value) => isAbsolute(value))
 >
 > 判别式因此是：探测时把 `node:path.isAbsolute` 换成一次性的记账包装，
 > 看 schema 是否**调用了它**。捕获了函数值的 schema 永远不会碰这个属性；
-> 真正读了绑定的才会。见 `lib/path-binding.js` 的 `acceptsByReadingBinding`。
+> 真正读了绑定的才会。见 `lib/patch-projection.js` 底部的 `observePathBindingReads`。
 
 这个结论**不走 `ctx.logger`**——本部署没有 console exporter，`info` 进一个无人读取的环形缓冲，
 `debug` 更是低于所有默认级别。所以它落在两个真正能到达的地方：

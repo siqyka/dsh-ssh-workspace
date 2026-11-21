@@ -1,0 +1,26 @@
+refactor(projection): fold the retirement probe into the workaround it probes
+
+`lib/path-binding.js` had exactly one caller: the UPSTREAM-1 retirement probe in
+`lib/patch-projection.js`. It exists to answer a question only that probe asks —
+"does this schema READ `node:path.isAbsolute`, or did it capture our patched
+predicate as a value?" — and keeping it in its own file meant a reader chasing
+why `acceptsByReadingBinding` is not a plain accept-check had to jump files for
+the mechanism.
+
+The three predicates now sit at the bottom of `patch-projection.js` under a
+section header that says what they are for. `BRIDGE` keeps its own doc block and
+stays a `globalThis` symbol, because the module that INSTALLS the bridge is
+`fs-shim.js`, and importing that would pull in `remote-fs.js` and the peer
+resolution behind it — which a probe must not need.
+
+`patch-subprocess.js` reads `BRIDGE` from `patch-projection.js` now, and
+`projection-relax-smoke` imports it from there too.
+
+The import graph is unchanged: `patch-projection.js` still only imports
+`protocol.js`, so the five `fs-shim + patch-projection + path-binding` cycles the
+plan warned about do not appear.
+
+Gates: lint 221 modules, doc-numbers up to date (modules 81 -> 80), all 24
+markdown links OK, `projection-relax-smoke` 73 / `projection-real-smoke` 18 /
+`upstream-contract-smoke` 47 all pass, `run.mjs` 94 passed / 3 partial /
+2 skipped / 0 failed.

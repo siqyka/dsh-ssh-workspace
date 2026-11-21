@@ -452,7 +452,7 @@ function rejects (schema, value) {
 //     reproduced without the real fs-shim (which would drag in the peers).
 // ---------------------------------------------------------------------------
 {
-  const { BRIDGE } = await import(pathToFileURL(path.join(pluginRoot, 'lib/path-binding.js')).href)
+  const { BRIDGE } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-projection.js')).href)
   const originalIsAbsolute = path.isAbsolute
   /** A predicate that accepts ssh://, like the one fs-shim installs. */
   const patchedIsAbsolute = (candidate) => typeof candidate === 'string'
