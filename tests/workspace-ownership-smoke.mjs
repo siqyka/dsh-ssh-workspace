@@ -35,7 +35,7 @@ const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const load = file => import(pathToFileURL(path.join(pluginRoot, 'lib', file)).href)
 
 const { canonicalSpelling, emptyOwnershipSnapshot, makeIndexRebuilder, makeWorkspaceRepublisher, ownershipSnapshotCopy, reclaimCandidates, reclaimOwnership, makeSessionHeaderReader, failureReason } = await load('ownership.js')
-const { diagnose, STATE } = await load('diagnosis.js')
+const { diagnose, STATE } = await load('report.js')
 const { KINDS } = await load('diagnostics.js')
 
 let passed = 0

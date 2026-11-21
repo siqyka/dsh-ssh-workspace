@@ -243,7 +243,7 @@ console.log('\n[a seam that did not install is reported, an absent one is not]')
 
 {
   const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
-  const { diagnose } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'diagnosis.js')).href)
+  const { diagnose } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'report.js')).href)
   const engine = new SshWorkspaceEngine({})
 
   check('a fresh engine reports no seam verdicts', engine.seams.length === 0)
@@ -286,7 +286,7 @@ console.log('\n[a seam that did not install is reported, an absent one is not]')
   const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
   const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status.js'), 'utf8')
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'routes.js'), 'utf8')
-  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'support-bundle.js'), 'utf8')
+  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'report.js'), 'utf8')
   const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')
   check('ssh_workspace_status returns the seam table', /seams: \(engine\.seams/u.test(toolsSource))
   check('the panel status route returns it too', /seams: engine\.seams/u.test(routesSource))

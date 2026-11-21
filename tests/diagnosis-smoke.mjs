@@ -2,8 +2,9 @@
  * The verdict behind the status dot.
  *
  * The report is a FACT SHEET — nine sections of what happened and not one line
- * saying whether that is good or bad (`support-bundle.js` assembles and never
- * judges). `diagnosis.js` is the judgement half, and its whole claim is that it
+ * saying whether that is good or bad (`buildSupportBundle` assembles and never
+ * judges). `diagnose` is the judgement half — both now live in `lib/report.js`,
+ * and the judgement's whole claim is that it
  * can be WRONG in only two directions, both of which must be caught here:
  *
  *  - too LOUD: a normal startup reported as a problem (a `broken` patch is
@@ -26,10 +27,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { diagnose, renderDiagnosis, STATE, DIAGNOSIS_VERSION } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib/diagnosis.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href
 )
 const { buildSupportBundle, maskAlias } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib/support-bundle.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href
 )
 
 let passed = 0

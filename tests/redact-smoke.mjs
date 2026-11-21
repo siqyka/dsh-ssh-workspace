@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { maskText, maskAlias, maskPath, maskLine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
 const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
-const { buildSupportBundle } = await import(pathToFileURL(path.join(pluginRoot, 'lib/support-bundle.js')).href)
+const { buildSupportBundle } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href)
 const { redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/audit.js')).href)
 
 let passed = 0

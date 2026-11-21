@@ -72,7 +72,7 @@ const CASES = [
   },
   {
     label: 'F-04: "lost" collapses into "ignored"',
-    file: 'lib/config-audit.js',
+    file: 'lib/report.js',
     from: "  const known = KNOWN_UNSUPPORTED[keyword]\n  if (known !== undefined) return known",
     to: "  const known = KNOWN_UNSUPPORTED[keyword]\n  if (known !== undefined) return { verdict: 'ignored', detail: known.detail }",
     suite: 'config-audit-smoke.mjs',
@@ -81,7 +81,7 @@ const CASES = [
   },
   {
     label: 'F-04: the audit stops following wildcard blocks',
-    file: 'lib/config-audit.js',
+    file: 'lib/report.js',
     from: "    if (!selects(section, alias)) continue",
     to: "    if (!isExact(section, alias)) continue",
     suite: 'config-audit-smoke.mjs',
@@ -90,7 +90,7 @@ const CASES = [
   },
   {
     label: 'F-04: a repeated keyword is reported twice',
-    file: 'lib/config-audit.js',
+    file: 'lib/report.js',
     from: "      if (seen.has(keyword)) continue",
     to: "      // duplicate guard removed for reverse verification",
     suite: 'config-audit-smoke.mjs',
@@ -137,7 +137,7 @@ const CASES = [
   },
   {
     label: 'F-09: the bundle falls back to pre-formatted audit text',
-    file: 'lib/support-bundle.js',
+    file: 'lib/report.js',
     from: "  const commands = Array.isArray(input.commands) ? input.commands : []",
     to: "  const commands = []",
     suite: 'support-bundle-smoke.mjs',

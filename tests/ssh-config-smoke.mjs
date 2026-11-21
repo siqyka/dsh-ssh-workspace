@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { sectionsOf, selects, isExact, patternMatches } = await import(pathToFileURL(path.join(pluginRoot, 'lib/ssh-config.js')).href)
 const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts.js')).href)
-const { auditConfigText, KNOWN_UNSUPPORTED, verdictFor } = await import(pathToFileURL(path.join(pluginRoot, 'lib/config-audit.js')).href)
+const { auditConfigText, KNOWN_UNSUPPORTED, verdictFor } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href)
 
 let passed = 0
 let failures = 0
