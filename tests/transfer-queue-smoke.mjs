@@ -25,10 +25,14 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { clientSource } from './support/client-source.mjs'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
-const clientPath = path.join(packageRoot, 'lib', 'client.js')
-const source = readFileSync(clientPath, 'utf8')
+// The queue's state machine, runtime and panel span more than one file now
+// (the panel is a lazy chunk), and every assertion here is about the queue, not
+// about which file holds a function.
+const source = clientSource(packageRoot)
 
 const passes = []
 const failures = []

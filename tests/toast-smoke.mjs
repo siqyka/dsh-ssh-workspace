@@ -15,10 +15,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { makeToastDom } from './support/toast-dom.mjs'
+import { clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
-const client = await readFile(path.join(pluginRoot, 'lib/client.js'), 'utf8')
+const client = clientSource(pluginRoot)
 
 const failures = []
 let passed = 0

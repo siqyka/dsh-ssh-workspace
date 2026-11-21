@@ -28,6 +28,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { fakeSftpEngineFromTree } from './support/fake-sftp.mjs'
+import { clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -416,7 +417,7 @@ if (downloadTreeAsTar === undefined) {
 console.log('\n[the completion notice is ONE element, edited in place]')
 
 {
-  const client = await readFile(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
 
   /**
    * Lift the toast helpers out of the bundle and run the REAL `transferNotice`
@@ -523,7 +524,7 @@ console.log('\n[the completion notice is ONE element, edited in place]')
 console.log('\n[a download reports a save only when it can see one]')
 
 {
-  const client = await readFile(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  const client = clientSource(pluginRoot)
 
   /** Lift one top-level `async function` out of the bundle by brace matching. */
   function lift (name) {
