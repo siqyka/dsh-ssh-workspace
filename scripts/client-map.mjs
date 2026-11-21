@@ -80,6 +80,39 @@ function plain (title) {
 }
 
 /**
+ * Banner titles with no code between them and the next banner.
+ *
+ * A banner that describes nothing is a section the map still counts, so a
+ * deleted body can pass the entries/sections equality check. Surfacing it here
+ * makes an empty section a mismatch like any other.
+ *
+ * @param {string} source - one client part.
+ * @param {boolean} skipFirst - drop the map's own banner (the bundle only).
+ * @returns {string[]} titles of the empty sections.
+ */
+export function emptySectionTitles (source, skipFirst = false) {
+  const lines = source.split('\n')
+  const banners = []
+  for (let i = 1; i < lines.length - 1; i += 1) {
+    if (!BORDER_RE.test(lines[i - 1]) || !BORDER_RE.test(lines[i + 1])) continue
+    if (BORDER_RE.test(lines[i])) continue
+    const title = lines[i].trim().replace(/^\/\/ ?/u, '')
+    if (title !== '') banners.push({ i, title })
+  }
+  if (skipFirst) banners.shift()
+  const empty = []
+  for (let k = 0; k < banners.length; k += 1) {
+    const end = k + 1 < banners.length ? banners[k + 1].i : lines.length
+    const hasCode = lines.slice(banners[k].i + 2, end).some(line => {
+      const t = line.trim()
+      return t !== '' && !t.startsWith('//') && !t.startsWith('/*') && !t.startsWith('*')
+    })
+    if (!hasCode) empty.push(banners[k].title)
+  }
+  return empty
+}
+
+/**
  * Whether two titles name the same section.
  *
  * A map entry may gloss a banner that itself carries a parenthetical, so one is
@@ -119,6 +152,7 @@ export function compareClientMap () {
     const numbersOk = entries.every((entry, index) => entry.number === index + 1)
     const orderOk = entries.length === sections.length &&
       entries.every((entry, index) => sameSection(entry.title, sections[index]))
+    const emptySections = emptySectionTitles(source, name === 'client.js')
     return {
       name,
       sections,
@@ -127,8 +161,12 @@ export function compareClientMap () {
       phantomInMap: phantomInMap.map(entry => entry.title),
       numbersOk,
       orderOk,
+      emptySections,
       // A chunk has no map to compare, so it cannot fail this rule.
-      ok: entries.length === 0 ? true : missingFromMap.length === 0 && phantomInMap.length === 0 && numbersOk && orderOk,
+      ok: entries.length === 0
+        ? true
+        : missingFromMap.length === 0 && phantomInMap.length === 0 && numbersOk && orderOk &&
+          emptySections.length === 0,
     }
   })
   return { ok: parts.every(part => part.ok), parts }
@@ -147,6 +185,7 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLTo
       if (part.phantomInMap.length > 0) console.error(`  names no section: ${JSON.stringify(part.phantomInMap)}`)
       if (!part.numbersOk) console.error('  numbers are not consecutive from 1')
       if (!part.orderOk) console.error(`  order differs: map=${JSON.stringify(part.entries)} actual=${JSON.stringify(part.sections)}`)
+      if (part.emptySections.length > 0) console.error(`  empty sections: ${JSON.stringify(part.emptySections)}`)
     }
     process.exitCode = 1
   }

@@ -1310,6 +1310,8 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       `phantom ${JSON.stringify(part.phantomInMap)}`)
     check(`${part.name}: the map lists the sections in file order`, part.orderOk,
       JSON.stringify({ map: part.entries, actual: part.sections }))
+    check(`${part.name}: no banner describes an empty section`, part.emptySections.length === 0,
+      JSON.stringify(part.emptySections))
   }
 }
 
