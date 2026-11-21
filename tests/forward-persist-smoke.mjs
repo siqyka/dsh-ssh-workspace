@@ -30,7 +30,7 @@ import { fakeForwardEngine } from './support/fake-forward-engine.mjs'
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { ForwardManager, probeLocalPort, joinForwards } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
 const { HostConfigStore, forwardsOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
-const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward-persist.js')).href)
+const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
 
 let passed = 0
 let failures = 0

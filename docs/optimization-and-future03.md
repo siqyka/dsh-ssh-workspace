@@ -73,7 +73,7 @@
 
 | 资源 | 现有实现 | 是否需要统一登记表 |
 | --- | --- | --- |
-| 持久端口转发 | `lib/forward-persist.js:68` 的 `SavedForwardManager`：意图与事实分离、失败原因按 id 记在 `:86` 的 Map、启动时自动开启 | 需要，但已在原处有幂等生命周期 |
+| 持久端口转发 | `lib/forward.js` 的 `SavedForwardManager`：意图与事实分离、失败原因按 id 记在内部 Map、启动时自动开启 | 需要，但已在原处有幂等生命周期 |
 | 文件 watcher | `lib/reconnect.js:403` 的 `watchFailureVerdict` + `:431` 的退避；断链重试、恢复后重扫由引擎接线（O-19） | 需要，但已按连接健康与重连代次判定 |
 | 上传续传 | `lib/transfer-rules.js:245` 的 `planResume`、`:282` 的 `resumeRecord`：暂存文件 + sidecar，按源身份决定续不续 | 否：是传输内部状态，不跨连接恢复编排 |
 | 连接本身 | `lib/reconnect.js:78` 的 `ReconnectScheduler`：按 alias 维护 entry / 退避 / 放弃态 | 否：是连接策略，不是被恢复的资源 |

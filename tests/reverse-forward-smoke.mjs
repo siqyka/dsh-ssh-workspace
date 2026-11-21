@@ -44,7 +44,7 @@ console.log('\n=== reverse forward smoke ===\n')
 
 // `isExposedBind` is pure, so it runs even without ssh2. The rest needs a real
 // transport, because the subject is server-side listening state.
-const { isExposedBind } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'reverse-forward.js')).href)
+const { isExposedBind } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'forward.js')).href)
 
 console.log('[1] which bind addresses expose the tunnel beyond the host')
 {
@@ -75,7 +75,7 @@ const { startFakeSshServer } = await import(pathToFileURL(path.join(supportDir, 
 const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'store.js')).href)
 const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts.js')).href)
 const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
-const { ReverseForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'reverse-forward.js')).href)
+const { ReverseForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'forward.js')).href)
 
 const cleanups = []
 const track = (fn) => { cleanups.push(fn) }

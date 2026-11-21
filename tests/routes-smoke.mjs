@@ -1095,7 +1095,7 @@ async function postChunk (route, body, chunks = []) {
 // mapping with no fixed local port, or that let a rebinding page toggle a
 // tunnel, would be a real hole.
 {
-  const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward-persist.js')).href)
+  const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
   const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
   const { mkdtempSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
@@ -1611,7 +1611,7 @@ async function postChunk (route, body, chunks = []) {
     // shutdown, so the row has to end up exactly where the row's own close
     // button leaves it.
     {
-      const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward-persist.js')).href)
+      const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
       pool.clear()
       const record = makeRecord()
       pool.set('alpha', record)

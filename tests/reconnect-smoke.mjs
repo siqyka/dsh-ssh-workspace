@@ -422,7 +422,7 @@ console.log('\n[engine wiring]')
   check('a manual reconnect route exists', /hostReconnect/u.test(routesSource))
   const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')
   check('a reconnect restores the saved tunnels', /onReconnected[\s\S]{0,400}reopenEnabled/u.test(indexSource))
-  const persistSource = readFileSync(path.join(pluginRoot, 'lib', 'forward-persist.js'), 'utf8')
+  const persistSource = readFileSync(path.join(pluginRoot, 'lib', 'forward.js'), 'utf8')
   check('reopenEnabled only opens rows whose intent is still on', /entry\.alias === target && entry\.enabled/u.test(persistSource))
 }
 

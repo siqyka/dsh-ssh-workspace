@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 69 | recursive listing |
+| modules under `lib/` | 66 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
@@ -48,8 +48,7 @@
 | `lib/support-bundle.js` | 诊断报告：自包含、已脱敏的一份可贴文本，**组装而非采集**、不做任何上传。标识符保留 `support-bundle` 拼写（路由 / 字段 / 模块名都是契约面） |
 | `lib/upstream-contract.js` | 补丁的宿主契约成表：每个 `patch-*.js` 声明它碰的宿主符号与退役判据，由 `upstream-contract-smoke` 双向校验。它回答的是「我挂的形状还在吗」，不是「上游修好了吗」 |
 | `lib/secrets.js` | 凭据存储：密码 / 私钥口令的读写与清除，与 `hosts` 分区分离 |
-| `lib/forward.js` | 端口转发引擎：listener 与 `forwardOut` 隧道的建立 / 拆除、按主机拆除（`closeForAlias`）、`holds` 引用计数 |
-| `lib/forward-persist.js` | 已存映射：**意图**（`enabled`）与**事实**（`live`）分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径（后者逐条走前者） |
+| `lib/forward.js` | 端口转发的两个方向加**已存映射**，四段：`requirePort` / `normalizedHost`（两个方向共用同一套校验，0 只在调用方明说时合法——本地转发让操作系统挑端口，反向转发让 SSH 服务器挑）、`ForwardManager`（`ssh -L`：listener 与 `forwardOut` 隧道的建立 / 拆除、按主机拆除 `closeForAlias`、`holds` 引用计数）、`ReverseForwardManager`（`ssh -R`：远端真的绑端口、连接回到本机；非环回绑定标为 exposed 并写诊断——那个端口在远端主机上人人可达）、`SavedForwardManager`（**意图** `enabled` 与**事实** `live` 分离、启动时自动开启、`closeById` / `closeAlias` 两条断开路径，面板渲染两者的 join 所以按钮不会撒谎） |
 | `lib/transfer.js` | 文件传输：本机 ↔ 远端的流式 SFTP 拷贝与目录树上传（原子发布） |
 | `lib/transfer-rules.js` | 传输**动手之前**的五个判定，全是纯函数（不碰 sftp / engine / 请求 / 时钟）：完整性（`compareDigests` / `findRemoteHasher`，SFTP 没有哈希命令，只能在远端跑 `sha256sum` / `shasum` / `openssl`，因此是能力而不是保证）、续传（`planResume`，暂存路径由「目标 + 源身份」推导，sidecar 记录这个残片是谁的）、冲突（`decideConflict` 四态，`skip` 是结果不是错误）、排除规则（`treeFilter`，两个方向共用一份匹配，否则上传跳过 `node_modules` 而下载保留它）、改名 / 删除（`mutationNameRefusal` 等，空名、夹带分隔符、目标就是工作区根、词法越界都在碰文件系统之前判掉）。不纯的那一半（realpath / lstat / SFTP / 遍历本身）在 `transfer.js` 与路由族里，它们先问这些函数 |
 | `lib/archive.js` | 两种归档格式的手写写出器（tar 在前、zip 在后），一次产出一块 Buffer：tar 走 ustar 头 + 512 字节分块，zip 走储 / 压缩条目 + data descriptor + 中央目录；都**不支持符号链接 / 硬链接 / 归属**（调用方跳过并上报，一个指向 `/` 的条目会把「下载这个文件夹」变成别人机器上的覆盖）。浏览器只能收到一个文件，而 ZIP 是每个桌面系统都原生能开的格式，所以它是默认，tar 是回退——见 `transfer.js` |
