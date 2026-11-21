@@ -14,9 +14,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
-const { parseMatchConditions, matchSelects, EVALUABLE_CRITERIA, REFUSED_CRITERIA, DEFERRED_CRITERIA } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'match-eval.js')).href)
-const { patternMatches } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'ssh-config.js')).href)
+// `Match` evaluation and the `Host` pattern matcher it calls are one module
+// now — they imported each other, which was the only functional cycle in `lib/`.
+const { parseMatchConditions, matchSelects, patternMatches,
+  EVALUABLE_CRITERIA, REFUSED_CRITERIA, DEFERRED_CRITERIA } =
+  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'ssh-config.js')).href)
 
 let passed = 0
 let failures = 0

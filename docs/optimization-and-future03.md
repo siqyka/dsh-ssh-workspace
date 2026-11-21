@@ -51,14 +51,14 @@
 
 ### 1.2 配置解析的统一词法层（F-10）
 
-**状态：已收敛，原前提不成立（2026-11-09 复核）。** 现在只有一个 section 切分实现：`lib/ssh-config.js:71` 的 `sectionsOf`；`selects`（`:119`）使用同一文件的 `patternMatches`（`:104`），`Match` 判定在 `:130` 委托 `lib/match-eval.js:139` 的 `matchSelects`，后者又把 `host` / `originalhost` 的模式交回 `patternMatches`（import 在 `lib/match-eval.js:40`）。两个真实消费者读的是同一套：`lib/hosts.js:19-20` 与 `lib/config-audit.js:51` 都 import `sectionsOf` / `isExact` / `selects`，`lib/hosts.js:95`、`:143` 与 `lib/config-audit.js:235-236` 都调用它们。
+**状态：已收敛，原前提不成立（2026-11-09 复核）。** 现在只有一个 section 切分实现：`lib/ssh-config.js:76` 的 `sectionsOf`；`selects`（`:124`）使用同一文件的 `patternMatches`（`:109`），`Match` 判定在 `:131` 委托同一文件底部的 `matchSelects`（`:296`），后者又把 `host` / `originalhost` 的模式交回 `patternMatches`。**这两个半以前是两个文件、互相 import，是 `lib/` 里唯一的功能环；现在合成一个文件，环消失了。**两个真实消费者读的是同一套：`lib/hosts.js:19-20` 与 `lib/config-audit.js:51` 都 import `sectionsOf` / `isExact` / `selects`，`lib/hosts.js:95`、`:143` 与 `lib/config-audit.js:235-236` 都调用它们。
 
 逐条核对剩下的“差异”：
 
 | 看似第二套规则 | 实际 | 是否会在同一输入上给出不同结论 |
 | --- | --- | --- |
 | `lib/include-chain.js:76` 的 `expandGlob` | 展开 **文件路径**（`*` / `?` / `[...]`，按路径段），且只在 `Include` 上调用 | 否：输入是文件路径，不是 Host 模式 |
-| `lib/match-eval.js:84` 的 `parseMatchConditions` | 解析 `criterion value` 条件语法；host 模式仍走 `patternMatches` | 否：条件语法与模式匹配是两层，不竞争同一输入 |
+| `lib/ssh-config.js:241` 的 `parseMatchConditions` | 解析 `criterion value` 条件语法；host 模式仍走 `patternMatches` | 否：条件语法与模式匹配是两层，不竞争同一输入 |
 | `Host` 与 `Match` 的引号 / token 化 | 两者都从 `sectionsOf` 拿同一份 `patterns`，因此内部消费者一致；`sectionsOf` 不做引号内空格合并，是**单实现相对 OpenSSH 的缺口** | 否（内部一致）；这是窄修，不是三处同步问题 |
 
 `lib/include-chain.js:174` 的 `readConfigWithIncludes` 返回展开后的**文本**，不是第二套 section；`lib/hosts.js:45-55` 把它交给 `sectionsOf`。因此“新增一条指令必须同步改三处”没有真实样例：指令词表只在 `lib/config-audit.js` 的 `SUPPORTED_KEYWORDS` / `KNOWN_UNSUPPORTED` 维护，读取侧只有 `lib/hosts.js` 一处。
