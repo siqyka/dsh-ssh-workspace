@@ -62,6 +62,7 @@
 | `lib/client.js` | 浏览器半边的主包：样式、文案、图标、API 表，以及全部常驻行为——文件树拖拽 / 右键 / 多选、合成器 @ 引用桥、转移队列状态机、会话列表补齐。界面部分按需装在 chunk 里，四个 `React.lazy` 入口都留在这里 |
 | `lib/client.dialogs.js` | 浏览器半边的按需 chunk：主机编辑 / 目录选择 / 诊断报告三个对话框 |
 | `lib/client.panel.js` | 浏览器半边的按需 chunk：主面板（主机卡片、转发、挂载、自检、命令审计）。它是插件唯一**常驻可见**的界面，但仍然不是启动所需——侧栏行和文件树桥才是 |
+| `lib/client.add-workspace.js` | 浏览器半边的按需 chunk：添加工作区流程（本地 / 远程选择器、远程目录选择、挂载）。宿主会无条件渲染 `directoryFlow` 空洞，所以主包留了个 `FlowSlot`：关闭时直接返回 `null`，只有 `open` 才去取 chunk |
 | `lib/client.transfer-queue.js` | 浏览器半边的按需 chunk：转移队列浮层（队列状态仍在主包，文件面板也在读它） |
 | `lib/client.history.js` | 浏览器半边的按需 chunk：更改请求标签页底部的提交历史页脚 |
 | `lib/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) |
