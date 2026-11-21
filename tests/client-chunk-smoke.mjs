@@ -446,6 +446,11 @@ console.log('\n[6] the boot chunks\' names are republished')
   const live = makeFacade()
   live.facade.mode = 'queue'
   const loadedChunks = []
+  // The same `module.exports` object the chunk's `require(…)` returns. A chunk
+  // destructures it ONCE, in its factory, and keeps the values forever — so
+  // "the export is right after apply" says nothing about what it captured.
+  let bundleExports = null
+  const seamSeenAtFactory = new Map()
   const applySystem = new host.ClientModuleSystem({
     manifest,
     staticModules: {
@@ -462,6 +467,15 @@ console.log('\n[6] the boot chunks\' names are republished')
       // The chunk context needs the same headless globals the bundle gets: a
       // chunk is not just data, it holds code that schedules and reads timers
       // while its factory runs (the kernel's polling helpers do).
+      // Sampled here and not after `apply`: this runs between the chunk being
+      // fetched and its factory executing, which is exactly when it destructures.
+      if (name === 'client.marks.js' && bundleExports !== null) {
+        seamSeenAtFactory.set(name, {
+          REMOTE_MARK_VIEWBOX: bundleExports.REMOTE_MARK_VIEWBOX,
+          API: bundleExports.API,
+          TREE_ROW_SELECTOR: bundleExports.TREE_ROW_SELECTOR,
+        })
+      }
       const chunkContext = { window: { __ModuleLoader__: live.facade }, console, setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {}, queueMicrotask }
       vm.createContext(chunkContext)
       vm.runInContext(readFileSync(path.join(pluginRoot, 'lib', 'client', name), 'utf8'), chunkContext, { filename: name })
@@ -480,6 +494,7 @@ console.log('\n[6] the boot chunks\' names are republished')
   let applyError
   try {
     applied = await applySystem.import(BUNDLE_ID)
+    bundleExports = applied
     const registeredSlots = []
     await applied.apply({
       slots: {
@@ -521,6 +536,21 @@ console.log('\n[6] the boot chunks\' names are republished')
   // value that was actually wrong: `client.marks.js` built every remote mark with
   // an empty viewBox, so the symptom was a squashed glyph with no error anywhere.
   // A stand-in cannot cover a value, so both the order and the republish matter.
+  // The one that matters, and the one that was missing: what the marks chunk
+  // ACTUALLY read. It destructures at factory time, so a correct export later is
+  // irrelevant — this is the value that decided whether every mark got a real
+  // viewBox or `''` (and rendered as a squashed glyph, with no error anywhere).
+  const marksSeam = seamSeenAtFactory.get('client.marks.js')
+  check('the marks chunk was fetched, so its factory-time seam is observable',
+    marksSeam !== undefined, String(marksSeam))
+  if (marksSeam !== undefined) {
+    check('...and it read a REAL viewBox, not the stand-in published at evaluation',
+      typeof marksSeam.REMOTE_MARK_VIEWBOX === 'string' && marksSeam.REMOTE_MARK_VIEWBOX.split(' ').length === 4,
+      JSON.stringify(marksSeam.REMOTE_MARK_VIEWBOX))
+    check('...and a real API table and row selector',
+      marksSeam.API !== undefined && typeof marksSeam.TREE_ROW_SELECTOR === 'string' && marksSeam.TREE_ROW_SELECTOR !== '',
+      `API=${typeof marksSeam.API} TREE_ROW_SELECTOR=${JSON.stringify(marksSeam.TREE_ROW_SELECTOR)}`)
+  }
   check('...and the mark viewBox is a real box, not the empty stand-in',
     typeof applied.REMOTE_MARK_VIEWBOX === 'string' && applied.REMOTE_MARK_VIEWBOX.split(' ').length === 4,
     JSON.stringify(applied.REMOTE_MARK_VIEWBOX))
