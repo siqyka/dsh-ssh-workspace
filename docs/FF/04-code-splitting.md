@@ -97,6 +97,20 @@
     `renderDirectoryFlow(flowOwner)`），而占用组件在关闭时返回 `null`。直接
     `React.lazy` 会让**每次页面加载**取 427 行去渲染一个 `null`。主包的 `FlowSlot`
     先判 `open`，再挂懒组件。
+13. **`apply` 可以是 `async`，数据型段因此能搬走。** `cordis/lib/index.js` 的
+    `_execute` 里 `else if ("then" in effect) return effect.then(safeCollect)`——apply
+    返回 Promise 时被展开，解析值当 disposer 用；同部署的 `dsh-client-locale` 自己就
+    是 `async function apply`。于是 `loadBootChunks()` 用一次 `Promise.all` 取回
+    `client.locale.js` / `client.styles.js` / `client.icons.js`，填进各段的 `let`
+    绑定，**之后**才注册第一个 slot。代价是首屏少 0.72 ms（0.32 + 0.31 + 0.09，
+    全新进程实测）。反面的坑：`await` 之后一切名字都可能还没到，本包已经因此被
+    用户抓到四次（`schemeRules`、`fetchJson`、`BROWSE_LIST_LIMIT`、
+    `refreshRemoteWorkspaceMarks`）。
+14. **三块数据的"叶子"身份要被断言，不能只靠人记得。** 它们不 destructure 主包任何
+    名字，所以对它们要求"必须有 seam"是错的；但对借名字的 chunk 要求必须有 seam
+    又是对的。`tests/support/free-names.mjs` 的 `bundleBorrows` 先剥掉 seam 语句
+    再数外部名字，据此分两类，并在负向对照里验证过（让 `client.styles.js` 用一次
+    `API`，两条断言同时变红）。
 
 ### 1.2 基线（本机实测，供拆完对照）
 
@@ -280,13 +294,22 @@ chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 
 
 | chunk | 导出的组件 | 搬走的渲染代码 | 必须拿到的（留主 bundle） |
 | --- | --- | --- | --- |
+| `lib/client.locale.js` | `NS`、`zh`、`en`、`applyParams`、`makeTranslate`、`provenanceText`、`relativeTimeText` | 850 行 | **无**（叶子：不借主包任何名字） |
+| `lib/client.styles.js` | `injectStyles`、`CSS_ID` | 546 行 | **无**（叶子） |
+| `lib/client.icons.js` | 十四个图标工厂加 `TRAY_BASE_PATH` / `TRAY_ARROW_PATHS` | 228 行 | **无**（叶子，只 `require('react')`） |
 | `lib/client.dialogs.js` | `HostEditor`、`DirectoryBrowser`、`ReportDialog` | 约 510 行 | `API`、`FolderIcon`、`CloseIcon`、`useDialogA11y`、`modalLayer`、`backdropDismiss`、`capabilityNotes`、目录选择器的纯 helper |
-| `lib/client.panel.js` | `RemoteWorkspacePanel` | 1,551 行 | `API`、`fetchJson`、`fetchReportText`、`HostCard`、`RemoteMarkIcon`、`DialogSlot` 与三个对话框、`notifyUser`、`toastError`、`useTransferActionsSlot`、`syncRemoteWorkspaceMarks`、`capabilityNotes` |
-| `lib/client.add-workspace.js` | `AddChooser`、`RemoteWorkspaceDialog`、`AddWorkspaceFlow` | 427 行 | `API`、`fetchJson`、`BROWSE_LIST_LIMIT`、`FLOW_MENU_WIDTH_ROOMY`、`flowMenuPosition`、四个图标、`backdropDismiss`、`modalLayer`、`useDialogA11y`、`useMenuKeyboard`、目录选择器的纯 helper、`refreshRemoteWorkspaceMarks` |
-| `lib/client.transfer-queue.js` | `TransferQueuePanel` | 约 174 行 | `useTransferQueue`、`useDialogA11y`、`backdropDismiss`、队列的 14 个纯 helper |
-| `lib/client.history.js` | `ForgeTabWithHistory` 的渲染体 | 约 210 行 | `ChevronIcon`、`RefreshIcon`、`ourT`（由 apply 注入） |
+| `lib/client.panel.js` | `RemoteWorkspacePanel`、`HostCard` | 1,780 行 | `API`、`fetchJson`、`fetchReportText`、`RemoteMarkIcon`、`relativeTimeText`、`provenanceText`、`DialogSlot` 与三个对话框、`notifyUser`、`toastError`、`useTransferActionsSlot`、`syncRemoteWorkspaceMarks`、`capabilityNotes` |
+| `lib/client.add-workspace.js` | `AddChooser`、`RemoteWorkspaceDialog`、`AddWorkspaceFlow` | 490 行 | `API`、`fetchJson`、`BROWSE_LIST_LIMIT`、`FLOW_MENU_WIDTH_ROOMY`、`flowMenuPosition`、四个图标、`backdropDismiss`、`modalLayer`、`useDialogA11y`、`useMenuKeyboard`、目录选择器的纯 helper、`refreshRemoteWorkspaceMarks` |
+| `lib/client.transfer-queue.js` | `TransferQueuePanel` | 215 行 | `useTransferQueue`、`useDialogA11y`、`backdropDismiss`、队列的 14 个纯 helper |
+| `lib/client.history.js` | `ForgeTabWithHistory` 的渲染体 | 243 行 | `ChevronIcon`、`RefreshIcon`、`ourT`（由 apply 注入） |
 
-合计 **3,097 行**离开主包，`lib/client.js` 从 12,604 行降到 9,938 行（−21%）。
+合计 **3,967 行**离开主包，`lib/client.js` 从 12,604 行降到 8,290 行（−34%，
+500,755 → 386,314 B）。
+
+三份数据 chunk 是**叶子**：它们不 destructure 主包任何名字。`apply` 因此必须是
+`async`——开头 `await loadBootChunks()` 把三块取回并填进各段的 `let` 绑定，**之后**
+才注册第一个 slot。机制见 §3 决策记录与 `docs/optimization-and-future03.md` §1.1
+第 5 条。
 
 主面板与添加工作区两条是实施中途加进来的，它们各自附带一条新约束（详见
 §1.1 第 11、12 条）：`TOAST_DISMISS_MS` 与 `capabilityNotes` 原本住在主面板段里，
@@ -339,9 +362,23 @@ chunk 文件里 `load({ id: '<本插件 id>', chunk: 'client.dialogs.js', factor
 那么 `client.history.js` 性价比最低（只省 210 行却要传两个图标），可以放弃它，
 只做前两个。
 
-**实施结果（2026-11-21）**：五个 chunk 全部落地，`require('<本插件 id>')` 通道在真机与
+**实施结果（2026-11-21）**：八个 chunk 全部落地，`require('<本插件 id>')` 通道在真机与
 `tests/client-chunk-smoke.mjs` 上都成立，所以 `client.history.js` 没有放弃。落地时
-还补了两条方案里没预见到的边界，见 §1.1 第 11、12 条。
+还补了两条方案里没预见到的边界，见 §1.1 第 11、12 条；末轮把字典 / 样式 / 图标
+搬成启动期 chunk 又补了第 13 条（`apply` 可以是 async）。
+
+**末轮（E10）的三条收获**：
+
+1. **`apply` 返回 Promise 是被支持的**，不是本包的私招：`cordis/lib/index.js` 的
+   `_execute` 里 `else if ("then" in effect) return effect.then(safeCollect)`——解析出的
+   值当 disposer 用。同部署的 `dsh-client-locale` 自己就是 `async function apply`。
+2. **三块数据没有 reverse 依赖**，所以它们是叶子：不 destructure 主包任何名字。
+   这让接缝检查必须分两类——借名字的 chunk 必须走文档接缝，叶子被断言"不需要
+   seam，也没长出 seam"（`tests/support/free-names.mjs` 的 `bundleBorrows`）。
+   这条新规则当场抓出 `client.panel.js` 用了 `provenanceText` 却没 destructure。
+3. **`HostCard` 跟着面板走**：它只有面板一个读者。搬的时候要先把名字从面板的
+   seam 列表里删掉，否则同一文件里声明两次——`SyntaxError: Identifier 'HostCard'
+   has already been declared`。
 
 **map 与检查**：文件头那张 map（`lib/client.js:12-66`）现在有 `client-shape-smoke`
 的强校验（解析 banner、要求内容与顺序都一致，`tests/client-shape-smoke.mjs:1286-1351`）。
@@ -504,9 +541,10 @@ node scripts/lint.mjs     # 基线 179 modules；C1 之后 197，现状 215
 5. 真实宿主（浏览器）里：面板正常渲染；打开「新建远程工作区」、打开目录浏览器、
    打开诊断报告、打开传输队列、打开「变更请求」tab，各自首次点击后能加载对应 chunk
    （Network 面板出现 `client.<name>.js?rev=…` 的 200），且首屏 `DOMContentLoaded`
-   **不比拆分前更慢**（实测预期差 0.36 ms 以内，见 §2.5 的实测表——这条是防回归，
-   不是性能指标）。**本轮已实测**：五个 chunk 都在真机上加载，其中主面板与添加工作区
-   两条拆完后由用户实测确认，并因此抓出三个缝合 bug（见 §7）。
+   **不比拆分前更慢**（主包编译 3.60 ms → 2.15 ms，见 §2.5 的实测表——这条是防回归，
+   不是性能指标）。**本轮已实测**：八个 chunk 都在真机上加载，其中主面板与添加工作区
+   两条拆完后由用户实测确认，并因此抓出三个缝合 bug（见 §7）；末轮三份数据 chunk
+   由用户重启后确认面板、字典、图标全部正常。
 6. 每个 chunk 在宿主上**加载失败时是隔离的**：改名一个 chunk 后刷新页面，主界面照常
    渲染，只有该功能不可用（宿主对 chunk 失败的处理与主 bundle 一致，C-02 已实测）。
    注意 C-02 实测的是**主 bundle 里一次 `require.async` 失败**（`failed: client-modules:

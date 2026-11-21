@@ -1,4 +1,4 @@
-# docs/FF —— 四条工作流的方案与任务书
+# docs/FF —— 五条工作流的方案与任务书
 
 > 这个目录放的**不是已完成的功能说明**，而是**待实施的设计方案 + 可直接交给新会话执行的任务书**。
 > 每一条工作流两份文件：`NN-<topic>.md` 是方案（为什么、做什么、验收判据、不做什么），
@@ -11,7 +11,7 @@
 | 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | — | — | **已实施**（`lib/remote-skills.js`，`tests/remote-skills-smoke.mjs` 55 项；说明见 `docs/features.md` 五之三 与 `docs/architecture.md` 的「远端技能发现」一节） |
 | 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | [03-remote-file-editing.md](./03-remote-file-editing.md) | [prompt](./03-remote-file-editing-prompt.md) | 方案 |
 | 04 | 代码拆分（去重 + `tools` / `routes` / `remote-fs` 的 watch 集群 + `client.js` 的懒渲染边界） | [04-code-splitting.md](./04-code-splitting.md) | [prompt](./04-code-splitting-prompt.md) | 完成 |
-| 05 | 同功能模块合并（`tar`+`zip` → `archive`；`match-eval` 并回 `ssh-config` 消环；四组重复函数收进共享模块） | [05-module-merges.md](./05-module-merges.md) | — | 进行中（轨道 A 的 A1–A4 已提交；M1、M2 未开工） |
+| 05 | 同功能模块合并（16 组：`lib/` 76 → 50 个模块，含 `tar`+`zip` → `archive`、`match-eval` 并回 `ssh-config` 消环；不碰 `lib/routes/` 与 `lib/client*.js`） | [05-module-merges.md](./05-module-merges.md) | — | 方案（16 组已定；轨道 A 的 A1–A4 已提交，合并本体未开工） |
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
 
@@ -28,11 +28,13 @@
   围栏、mode 门禁、审计全部原样。它唯一的硬约束是「每步不新增红」，以及
   `client.js` 的 chunk 只能按**懒渲染边界**拆（段间依赖图里有一个 11 段强连通分量）。
   04 与 03 **建议串行**：两者在同一批文件里搬东西，并行会互相踩。
-- **05 是 04 的前置**：04 的轨道 A 要建 `lib/text.js` / `lib/options.js` /
-  `lib/forward-common.js` / `lib/shell-quote.js`，05 把这条已经做了一半的线收尾，
-  并加了 04 没涉及的两处**合文件**（`tar`+`zip` → `archive`；`match-eval` 并回 `ssh-config`）。
-  两者都只搬代码、不改语义，但**都会动 `lib/` 的顶层文件名**，所以 05 与 04 的
-  轨道 C/D 必须串行，且每一步都要重跑 `scripts/doc-numbers.mjs`（模块数会变）。
+- **05 是 04 的延续**：04 的轨道 A 建了 `lib/text.js` / `lib/options.js` /
+  `lib/forward-common.js` / `lib/shell-quote.js` 四个「给一行逻辑开一个文件」的模块，
+  05 的第 1 组再把它们并成一个 `lib/shared.js`，然后按「其实是一件事」给出 16 组
+  合文件方案（`lib/` 76 → 50 个模块，删 26 个文件）。两者都只搬代码、不改语义，
+  但**都会动 `lib/` 的顶层文件名**，所以 05 与 04 的轨道 C/D 必须串行，
+  且每一步都要重跑 `scripts/doc-numbers.mjs`（`modules under lib/` 会从 69 一路降到 43）。
+  05 明确不碰 `lib/routes/` 与 `lib/client*.js`——那两块是用户特意拆的。
 - 各份方案共有一条底线：**替身不得比真宿主宽松**、**远端内容按不可信处理**、
   **默认关闭而不是默认开启**；04 与 05 额外一条：**移动不改语义**。
 

@@ -18,12 +18,15 @@
   用 `ctx.inject(['fs', 'workspaceRegistry'], …)` 恢复重启前登记的远端工作区；
   用 `ctx.inject(['fs', 'webServer'], …)` 注册浏览器半边的 HTTP 路由。
   这些注入都可以晚于本插件出现，安装顺序无关。
-- **客户端半边**（`lib/client.js` 加五个按需加载的 chunk）：由 DSH 客户端的模块加载器
+- **客户端半边**（`lib/client.js` 加八个按需加载的 chunk）：由 DSH 客户端的模块加载器
   （`window.__ModuleLoader__.load({ id, factory })`）直接执行，通过 `slots`
   服务挂载「远程工作区」面板与「添加工作区」菜单，并做工作区标记的 DOM 装饰。
-  三个对话框、主面板、添加工作区流程、转移队列浮层与更改请求页脚分别落在
-  `lib/client.dialogs.js`、`lib/client.panel.js`、`lib/client.add-workspace.js`、
-  `lib/client.transfer-queue.js`、`lib/client.history.js`，首次用到时才取。
+  三份**数据**先搬走，`apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何
+  slot：字典（`lib/client.locale.js`）、样式表（`lib/client.styles.js`）、图标
+  （`lib/client.icons.js`）。四份**交互界面**按需懒加载：三个对话框、主面板、
+  添加工作区流程、转移队列浮层，分别是 `lib/client.dialogs.js`、`lib/client.panel.js`、
+  `lib/client.add-workspace.js`、`lib/client.transfer-queue.js`；更改请求页脚是
+  `lib/client.history.js`。
 
 一次远端读取的路径：模型 read 工具 → `ctx.fs.readText(target)`
 （`target.targetKey` 形如 `ssh://alias/abs/path`）→ 被接管的 `ctx.fs`

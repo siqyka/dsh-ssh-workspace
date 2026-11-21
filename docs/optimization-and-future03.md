@@ -12,7 +12,7 @@
 
 ### 1.1 客户端 chunk 拆分（C-02；原 O-12 的“不做”已被推翻）
 
-**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出五个按需 chunk：`lib/client.dialogs.js`、`lib/client.panel.js`、`lib/client.add-workspace.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
+**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出五个按需 chunk：`lib/client.dialogs.js`、`lib/client.panel.js`、`lib/client.add-workspace.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`；随后又拆出三份**启动期**chunk（`lib/client.locale.js`、`lib/client.styles.js`、`lib/client.icons.js`），由 `apply` 开头的 `await loadBootChunks()` 统一取回。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
 
 宿主 `@deepseek-ai/dsh-client-modules`（`app.asar` 内）的真实能力：
 
@@ -33,9 +33,9 @@
 
 **拆分的运维约束**：chunk 的 URL rev 来自主入口 `lib/client.js` 的文件元数据（`artifactRevision`），chunk 自己的修改**不会**改变这个 rev；宿主又按精确 URL 缓存响应。因此运行中的进程里只改 chunk 文件不会生效——要么重启，要么触碰主入口改变 rev。发布包不受影响（新进程会读新文件），但本地开发必须记住这一点。
 
-**go/no-go**：通道 **GO**（无需构建、无需第二个 `dsh.client` 入口）。真实拆分已于 2026-11-21 落地：五个 chunk 合计 3,097 行离开主包（12,604 → 9,938 行，−21%），每个都包在 `Suspense fallback: null` 里，chunk 取不到只损失它自己。chunk 回连主包的通道（`require('<插件 id>')` 拿到主包 exports）由 `tests/client-chunk-smoke.mjs` 在真实 loader 上证明，不再靠推断。
+**go/no-go**：通道 **GO**（无需构建、无需第二个 `dsh.client` 入口）。真实拆分已于 2026-11-21 落地：八个 chunk 合计 3,967 行离开主包（12,604 → 8,290 行，−34%，500,755 → 386,314 B），每个都包在 `Suspense fallback: null` 里，chunk 取不到只损失它自己。chunk 回连主包的通道（`require('<插件 id>')` 拿到主包 exports）由 `tests/client-chunk-smoke.mjs` 在真实 loader 上证明，不再靠推断。三份数据 chunk 没有 reverse 依赖，是**叶子**：它们不 destructure 主包任何名字，该套件对叶子的要求是“不需要 seam 却也没长出 seam”。
 
-**实测收益（别再夸大）**：`new Function(...)` 编译整个主包 3.60 ms，砍掉三个 chunk 候选后 3.24 ms——**每次页面加载省 0.36 ms**，且必须在全新进程里测（热进程命中 V8 编译缓存会报 0.00 ms）。五个 chunk 拆完后主包少 21% 的字节，量级上仍是**一两毫秒**。所以这条线的理由是**编辑时的阅读上下文**，不是启动时间。
+**实测收益（别再夸大）**：`new Function(...)` 编译主包，8,290 行 / 386,314 B → **2.15 ms**（全新进程，三次同值）；拆前的 9,939 行 / 500,755 B 是 2.78 ms，最初的 12,604 行是 3.60 ms。**每次页面加载省约 1.4 ms**，热进程命中 V8 编译缓存会报 **0.00 ms**，所以每次都要新进程测。注意：这不是“少下载”，懒 chunk 只在用到时才取；量级仍是毫秒，所以这条线的理由是**编辑时的阅读上下文**，不是启动时间。
 
 **拆分边界**：只拆交互后才渲染的部分；被多处同步引用的顶层工具函数不能拆——那会把“懒加载”变成“处处等待”。实测踩到的四条：
 
@@ -43,6 +43,7 @@
 2. **失败隔离要自己给**。`React.lazy` 的 reject 抛给最近的 error boundary，而本包一个都没有；不包 `Suspense fallback: null` 的话 chunk 失败会连累整个面板。
 3. **遮蔽组件不能进 chunk**。更改请求页的 `ForgeTabWithHistory` 是“渲染官方面板”的遮蔽层，它失败就等于整个标签页空白——正是遮蔽要防的事。所以移走的是它下面的页脚，不是它。
 4. **apply 期安装的东西不能进 chunk**。文件树的拖拽 / 右键 / 多选桥在 `apply()` 里同步装在 `document` 上，它们的同步调用图横跨 `Transfers`、`Composer file bridge`、`Host file tree`、`File-panel header actions` 共 27 个函数——任何一个挪进 chunk，拖拽在 chunk 到达前就是坏的。同理 `flowMenuPosition` 虽然只有选择器调用，却读 `lastTriggerRect`（apply 期的 `mousedown` 监听器写的），复制进 chunk 会读到空的模块级绑定。
+5. **`apply` 可以是 async，这就是数据能搬走的原因**。`cordis/lib/index.js` 的 `_execute` 里 `else if ("then" in effect) return effect.then(safeCollect)`——apply 返回 Promise 时被展开，解析出的值当 disposer 用，和返回函数一样。于是 `loadBootChunks()` 可以 `await Promise.all([localeModule(), stylesModule(), iconsModule()])`，**再做任何 slot 注册**。实测代价：主包 2.15 ms，三份 chunk 合计 0.72 ms（0.32 + 0.31 + 0.09），都在首屏注册前串行付出——换来的是主包里少 830 行字典 + 529 行 CSS + 199 行图标。反面的坑要记住：`await` 之后一切都可能还没到，本包已经因为这个坑被用户抓到四次（`schemeRules`、`fetchJson`、`BROWSE_LIST_LIMIT`、`refreshRemoteWorkspaceMarks`）。
 5. **宿主无条件渲染的空洞要自己挡一层**。`directoryFlow` 由工作区选择器无条件渲染，而占用组件在关闭时返回 `null`——直接 `React.lazy` 会让页面一加载就取 427 行去渲染一个 `null`。主包留的 `FlowSlot` 先判 `open`，再挂懒组件。
 
 **触发条件**：`lib/client.js` 继续增长到影响启动、内存或编辑体验时；或下一次本来就要大改界面时顺手做。
@@ -92,7 +93,7 @@
 - 2026-11-09 门禁收口：`run.mjs` 增加 `partial` 第三态（`tests/support/run-state.mjs` + `run-state-smoke`），默认 71 passed / 6 skipped、装配树 74 passed / 1 partial / 2 skipped；`reverse-verify-future` 19/0；F-10 判定收敛、F-11 触发未满足（见 §1.2 / §1.3）。
 - 本机路径直通（`localPassthrough`，issue #4）已落地（2026-11-13）：`lib/passthrough.js` 做词法前缀匹配（默认 `$DSH_HOME/attachments` / `plugins`），`ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 在远端分类前直通本机；剥离 cwd 防递归，未命中路径仍远端，不做 `stat`，写围栏不变；测试见 `tests/local-passthrough-smoke.mjs`。
 - 显式本机 scheme 与「`@` 裸 POSIX 远端优先、miss 回退本机」已落地（2026-11-14，随 0.3.4 发布）：scheme 名与回退开关只存 `passthrough.settings` 一处，解析 / `fs-shim` 折叠 / `@` 提取三缝读同一个值；回退只覆盖点名路径与读动词。规则（≥ 3 字符、保留名表、两个大小写字段）由 `/status.passthrough.schemeRules` 下发，客户端不留第二份。测试见 `tests/local-passthrough-smoke.mjs`（231 项）与 `scripts/reverse-verify-passthrough.mjs`（43 条变异）。
-- C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分已于 2026-11-21 落地，三个 chunk 在 `lib/client.dialogs.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`。
+- C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分已于 2026-11-21 落地成八个 chunk：五个按需（`lib/client.dialogs.js`、`lib/client.panel.js`、`lib/client.add-workspace.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`），三个启动期由 `apply` 的 `await loadBootChunks()` 取回（`lib/client.locale.js`、`lib/client.styles.js`、`lib/client.icons.js`）。
 
 **版本约定**：未明确说“更新版本 / 发布 / 打 tag”时，不改版本号、不发布；发布前按 README 的发布检查表走（`npm run check` 必须全绿）。
 
