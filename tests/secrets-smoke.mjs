@@ -15,7 +15,7 @@ import path from 'node:path'
 
 import { HostConfigStore } from '../lib/store.js'
 import { HostStore } from '../lib/hosts.js'
-import { SecretCodec, isEncrypted, keyPath } from '../lib/secrets.js'
+import { SecretCodec, isEncrypted, keyPath } from '../lib/store.js'
 
 console.log('\n=== secrets smoke ===\n')
 
