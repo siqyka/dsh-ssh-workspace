@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 76 | recursive listing |
+| modules under `lib/` | 73 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
@@ -56,6 +56,7 @@
 | `lib/routes/` | 浏览器半边的 33 条 HTTP 路由，按资源域分开：`routes.js`（组合点 + `ROUTES` 表）负责把五个数组拼成一张表，`hosts` / `workspaces` / `forwards` / `transfers` / `entries` 五个模块各放自己那族 handler，`kit.js` 是围栏与流式响应工具，`transfer-bytes.js` 是浏览器直传 / 直下的字节搬运。入口仍是 `lib/index.js` 里的一次 `makeRoutes()`：hosts / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / mutation-policy / self-check / support-bundle / passthrough-settings |
 | `lib/shell.js` | 远端持久 shell 会话：`cd` / 导出变量 / 后台任务跨调用保留 |
 | `lib/tools.js` | 11 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行） |
+| `lib/status.js` | `ssh_workspace_status` 的三半放在一处：输出 schema（形，375 行无行为）、`renderStatus`（词，措辞本身就是契约——面板与渲染器回答同一个问题）、`statusProvenance`（`live` / `cached` / `stale` 三种来源标注，第四种会抛）。四者外加 `text()` 那个唯一的结果形状都只随彼此变化：**加一个字段就要渲染它并标注它**，少一处答案就错在一个地方；未标注的字段是 bug，不是「大概没问题」的字段 |
 | `lib/remote-skills.js` | 远端技能发现：`ctx.skills` 上注册 `ssh-workspace-remote-skills`（rank 250），扫会话工作区下的 `.dsh/skills` 与 `.agents/skills`。路径全程 `normalizeRemotePath` / `formatRemotePath`——宿主的 `discoverRoot` 用 `node:path.join`，在 Windows 上会把 `ssh://` 拼成 `.\ssh:\...` 而让候选静默消失；frontmatter 自写子集解析（不引入 YAML）；非法候选在返回前滤掉（宿主 `validateCandidate` 是 `throw`，会带走整个会话的技能目录）；`get()` 每次加载正文前重做 `assertFencedRealpath`（`remote-fs.js` 的围栏只挂写路径）。默认关闭，按主机白名单开启，有界，`complete: false` 不缓存 |
 | `lib/peers.js` | 依赖定位与加载：本包 `node_modules` → `DSH_PEER_ROOT` → `DSH_CORE_ROOT` → 各 profile → 部署自带树。`DSH_CORE_ROOT` 在列表里，是因为每个套件与 `tests/run.mjs` 都用它拼 stub 根：不认这个名字，套件就会先造出 stub 树、再被告知 peer 缺失 |
 | `lib/diagnostics.js` | 面向用户的诊断环形缓冲（固定 40 条）：连接 / 断连 / 重连 / 降级 / 上游补丁结论 / 接缝接管 / 归属补偿 / 远端技能发现。宿主无 console exporter 且 `debug` 被默认级别丢弃，所以这些信息只能从这里经由 status 工具与面板路由呈现。文件底部是**唯一的脱敏规则**（`maskText` / `maskAlias` / `maskPath` / `maskLine`）：登录用户名、内网主机名、凭据样式的文件名、`password=` 赋值必须消失，而 `host:port`、路径形状与普通源码文件名保留 |

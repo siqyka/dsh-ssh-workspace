@@ -214,7 +214,7 @@ console.log('\n[an obsolete workaround reaches the status surfaces]')
 // above already proved the engine side of the join.
 {
   const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
-  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status-render.js'), 'utf8')
+  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status.js'), 'utf8')
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'routes.js'), 'utf8')
   check('ssh_workspace_status returns the verdicts', /upstreamWorkarounds: \(engine\.upstreamWorkarounds/u.test(toolsSource))
   check('the panel status route returns them too', /upstreamWorkarounds: engine\.upstreamWorkarounds/u.test(routesSource))
@@ -284,7 +284,7 @@ console.log('\n[a seam that did not install is reported, an absent one is not]')
 // wrapper that never installed.
 {
   const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
-  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status-render.js'), 'utf8')
+  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status.js'), 'utf8')
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'routes.js'), 'utf8')
   const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'support-bundle.js'), 'utf8')
   const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')

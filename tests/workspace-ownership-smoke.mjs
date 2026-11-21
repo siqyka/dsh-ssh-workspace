@@ -746,7 +746,7 @@ console.log('\n[the wiring keeps the two phases in order]')
   check('a failure cannot reject unhandled', /\.catch\(\(\) => \{\}\)/u.test(block))
 
   const tools = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
-  const schemaSource = readFileSync(path.join(pluginRoot, 'lib', 'status-schema.js'), 'utf8')
+  const schemaSource = readFileSync(path.join(pluginRoot, 'lib', 'status.js'), 'utf8')
   check('the status tool declares the ownership object', schemaSource.includes('ownership: {') && !tools.includes('workspace-ownership'))
   check('...and emits it only when measured', tools.split('engine.ownership === undefined ? {} : {').length - 1 >= 2)
   check('the bundle input carries the snapshot', tools.includes('ownershipSnapshotCopy(engine.ownership)'))
@@ -801,7 +801,7 @@ function readOwnershipSchema (source) {
   // The field list lives under `properties`, and that key's own indentation
   // decides where its children sit. This used to be a hard-coded 14 because the
   // schema lived inside `statusTool`; moving the schema into
-  // `lib/status-schema.js` changed the nesting without changing the meaning,
+  // `lib/status.js` changed the nesting without changing the meaning,
   // and a number baked into the assertion would have called that a regression.
   const propertiesLine = /^(\s*)properties: \{$/mu.exec(block)
   if (propertiesLine === null) return null
@@ -833,7 +833,7 @@ console.log('\n[the returned copy cannot drift from the declared schema]')
   // `...stage`) and every status surface, panel included, read it as null.
   const tools = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8').replace(/\r\n/gu, '\n')
   const routes = routeSource(pluginRoot).replace(/\r\n/gu, '\n')
-  const schemaSource = readFileSync(path.join(pluginRoot, 'lib', 'status-schema.js'), 'utf8').replace(/\r\n/gu, '\n')
+  const schemaSource = readFileSync(path.join(pluginRoot, 'lib', 'status.js'), 'utf8').replace(/\r\n/gu, '\n')
 
   const toolSites = tools.split('ownershipSnapshotCopy(engine.ownership)').length - 1
   check('every status surface returns a structural copy', toolSites === 2 && routes.includes('ownershipSnapshotCopy(engine.ownership)'), `${toolSites} tool site(s)`)
