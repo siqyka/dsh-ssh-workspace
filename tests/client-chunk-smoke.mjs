@@ -25,7 +25,7 @@
  * Skips when `DSH_CORE_ROOT` does not hold `@deepseek-ai/dsh-client-modules`.
  */
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
@@ -257,6 +257,57 @@ check('a chunk that never registers is an error, not a silent success',
 // a package id and goes through the graph, which is a different resolution.
 check('require.async needs a "./" prefix for a sibling chunk',
   typeof system.makeRequire(BUNDLE_ID, new Set()).async === 'function')
+
+// ---------------------------------------------------------------------------
+// [5] every shipped chunk binds every bundle name it uses
+// ---------------------------------------------------------------------------
+// The bug this exists for: `client.dialogs.js` called `fetchJson` three times
+// and destructured fourteen names from the bundle — fifteen were needed.
+// Nothing failed at load, because an undeclared identifier only throws when the
+// line RUNS. So the directory picker opened, listed nothing, and told the user
+// "无法加载目录 / fetchJson is not defined": the panel was fine, the chunk was
+// fine, and no test was looking at the seam between them.
+//
+// This is a static diff rather than a render: for every chunk, the names it
+// pulls out of the bundle must cover the bundle's exports that it names as bare
+// identifiers. Local names, parameters and globals are not this check's
+// business — only the seam is.
+console.log('\n[5] every chunk binds what it borrows')
+{
+  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  const assign = /Object\.assign\(exports, \{([\s\S]*?)\n {4}\}\)/u.exec(bundleSource)
+  check('the bundle declares what the chunks may reach for', assign !== null)
+  const exported = new Set()
+  for (const line of (assign?.[1] ?? '').split('\n')) {
+    const name = line.replace(/\/\/.*$/u, '').trim().replace(/,$/u, '')
+    if (/^[A-Za-z_$][\w$]*$/u.test(name)) exported.add(name)
+  }
+  check('...and that list is not empty', exported.size > 0, String(exported.size))
+
+  const chunkFiles = readdirSync(path.join(pluginRoot, 'lib'))
+    .filter(name => /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u.test(name))
+    .sort()
+  check('there is at least one chunk to check', chunkFiles.length > 0, chunkFiles.join(', '))
+
+  for (const file of chunkFiles) {
+    const source = readFileSync(path.join(pluginRoot, 'lib', file), 'utf8')
+    const seam = /const \{([\s\S]*?)\} = require\('@shiqyka\/dsh-ssh-workspace'\)/u.exec(source)
+    check(`${file}: reaches the bundle through the documented seam`, seam !== null)
+    const bound = new Set()
+    for (const line of (seam?.[1] ?? '').split('\n')) {
+      const name = line.replace(/\/\/.*$/u, '').trim().replace(/,$/u, '')
+      if (/^[A-Za-z_$][\w$]*$/u.test(name)) bound.add(name)
+    }
+    const unbound = []
+    for (const name of exported) {
+      if (bound.has(name)) continue
+      const pattern = new RegExp(`(?<![.\\w$])${name.replace(/\$/gu, '\\$')}\\b`, 'u')
+      if (pattern.test(source)) unbound.push(name)
+    }
+    check(`${file}: binds every bundle name it uses`, unbound.length === 0,
+      `not destructured: ${unbound.join(', ')}`)
+  }
+}
 
 if (failures > 0) {
   console.log('\nfailures:')
