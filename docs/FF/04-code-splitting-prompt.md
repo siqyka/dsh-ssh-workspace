@@ -81,7 +81,7 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
    （`routes-smoke.mjs:117`、`mutations-smoke.mjs:122`、`lifecycle-smoke.mjs:78`）。
 8. **chunk 之间不得互相 `require` 兄弟文件。** 宿主只查 seed / loadCache / factories
    （`dsh-client-modules/lib/client.js:833-841`），相对路径的同步 require 必然抛错。
-9. **不改 `lib/patch-*.js` 的文件边界。** 它们按文件在 `upstream-contract.js` 里登记
+9. **不改 `lib/patch/patch-*.js` 的文件边界。** 它们按文件在 `upstream-contract.js` 里登记
    退役判据，移动会打乱信号。
 10. **版本号不动。** 除非明确说「发版」，否则不 `npm version`、不发布。
 
@@ -91,7 +91,7 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
 
 | # | 提交 | 内容 |
 | --- | --- | --- |
-| A1 | `refactor: one POSIX quoter for every remote command` | 新建 `lib/shell-quote.js`；`lib/engine.js:1846` 的 `shellQuote` 改为 re-export（6 个既有 import 一行不动）；删 `lib/shell.js:523` 与 `lib/patch-terminal.js:642` 的本地 `quote` |
+| A1 | `refactor: one POSIX quoter for every remote command` | 新建 `lib/shell-quote.js`；`lib/engine.js:1846` 的 `shellQuote` 改为 re-export（6 个既有 import 一行不动）；删 `lib/shell.js:523` 与 `lib/patch/patch-terminal.js:642` 的本地 `quote` |
 | A2 | `refactor: one port and host validator for both forward directions` | 新建 `lib/forward-common.js`；`lib/forward.js:28,37` 与 `lib/reverse-forward.js:45,54` 改用它 |
 | A3 | `refactor: one option-number coercion helper` | 新建 `lib/options.js`；`lib/reconnect.js:50` 与 `lib/watch-recovery.js:46` 的 `positive` 改用 |
 | A4 | `refactor: one regex escaper` | 新建 `lib/text.js`；`lib/include-chain.js:146`、`lib/shell.js:310`、`lib/ssh-config.js:174` 三处 `escapeRegExp` 改用 |
@@ -266,7 +266,7 @@ npm pack --dry-run
 - 不按 22 个 banner 全量拆 chunk。
 - 不拆 `RemoteFileSystem` 的非 watch 部分（方法体只 976 行，其余是注释）。
 - 不拆 `lib/index.js` 的 `apply`（注入顺序本身就是语义）。
-- 不动 `lib/patch-*.js` 的文件边界。
+- 不动 `lib/patch/patch-*.js` 的文件边界。
 - 不删 `acceptsWithoutOurPatch` / `matchLimitation`。
 - 不建 GitHub issue。
 - 不改版本号、不发布。

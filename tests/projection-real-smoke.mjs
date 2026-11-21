@@ -73,7 +73,7 @@ console.log(`[core: ${coreRoot}]`)
 const { Context } = requireFromCore('@deepseek-ai/cordis')
 const { SessionProjectionRegistry } = await import(pathToFileURL(requireFromCore.resolve('@deepseek-ai/dsh-session-projection')).href)
 const { WorkingDirectoryService } = await import(pathToFileURL(requireFromCore.resolve('@deepseek-ai/dsh-working-directory')).href)
-const { installProjectionRelaxation, uninstallProjectionRelaxation } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-projection.js')).href)
+const { installProjectionRelaxation, uninstallProjectionRelaxation } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-projection.js')).href)
 
 const SSH_CWD = 'ssh://qiyk/home/qiyk/test'
 const LOCAL_CWD = path.resolve(pluginRoot)
@@ -88,7 +88,7 @@ const DELETE_THE_WORKAROUND = [
   '^^^ THIS IS NOT A REGRESSION. Delete the upstream workaround instead:',
   '      1. lib/index.js — the `ctx.inject([\'sessionProjections\'], …)` block with the',
   '         `UPSTREAM WORKAROUND #1` banner, and the patch-projection.js import above it;',
-  '      2. lib/patch-projection.js;',
+  '      2. lib/patch/patch-projection.js;',
   '      3. tests/projection-relax-smoke.mjs and this file (tests/projection-real-smoke.mjs);',
   '         remove `projection-relax` / `projection-real` from tests/run.mjs SUITES;',
   '      4. docs/upstream-workarounds.md, and its rows in docs/README.md, README.md, README.en.md;',
@@ -124,7 +124,7 @@ function probe (ctx, cwd) {
 //    defect STILL EXISTS. It goes red on the DSH release that changes
 //    `refine(isAbsolute)` to `refine((value) => isAbsolute(value))` — and a red
 //    there means the upstream workaround has done its job and must be DELETED
-//    (lib/patch-projection.js, its index.js block, this suite, and
+//    (lib/patch/patch-projection.js, its index.js block, this suite, and
 //    docs/upstream-workarounds.md). It is not a regression.
 //
 //    The failure text says all of that too (DELETE_THE_WORKAROUND below): the

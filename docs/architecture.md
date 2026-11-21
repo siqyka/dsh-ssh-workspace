@@ -48,7 +48,7 @@
 Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔离符号登记，
 会撞键），`ctx.set('fs', …)` 也被拒（只有提供该服务的 fiber 能覆盖它的值）。
 部署本身已经挂了本地后端，所以插件不重新注册服务，而是**给现存的那个
-`ctx.fs` 实例打补丁**（`lib/patch-fs.js`）：
+`ctx.fs` 实例打补丁**（`lib/patch/patch-fs.js`）：
 
 - 远端方法装成实例的**自有属性**（自有属性覆盖原型链，且对已注册的服务
   安装属性不会失败）；
@@ -97,7 +97,7 @@ Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔
 `node:path` 的桥接里，因此它覆盖的是“经过 `ctx.fs` 的文件系统调用”；任何**绕过 `ctx.fs`、
 直接把路径交给子进程**的读取都碰不到它。典型例子是 dsh-ops：它把会话 cwd 原样作为
 `ctx.subprocess.spawn` 的 `cwd` 交给本机 worker（`lib/execution/files.js` 的
-`exchange(subprocess, { argv, cwd, … })`），而 `lib/patch-subprocess.js:223` 的远端桥只放行
+`exchange(subprocess, { argv, cwd, … })`），而 `lib/patch/patch-subprocess.js:223` 的远端桥只放行
 `git` 与 `rg`，于是 worker 被拒并报 `EXECUTOR_UNAVAILABLE`。这不是本插件可以就地补掉的缺口：
 worker 是本地 Windows 可执行文件，`Path::new(root).is_absolute()` + `canonicalize` 消化不了
 `ssh://` 拼写，且它只有本地文件系统访问——「本地进程 + 远端根」是结构性问题。插件因此不假装
@@ -228,7 +228,7 @@ The command did not run; … or run with danger-full-access.
 **命令根本没起来**，本插件的 seam 一次都没被问到。bwrap / Landlock / Seatbelt
 虽然不 realpath，但会把同一个假路径写进 profile，匹配不到任何东西。
 
-`lib/patch-sandbox.js` 用与 `patch-fs.js` 相同的手法接管**已在位的**
+`lib/patch/patch-sandbox.js` 用与 `patch-fs.js` 相同的手法接管**已在位的**
 `ctx.sandbox.confine`：policy 里的 `workspaceRoot` 是 `ssh://` 时，换成一个真实
 存在的本机目录再调原实现，其余字段（`mode` / `sessionId`）原样带过，
 `additionalWritableRoots` 里只剔掉远端项。三个约束值得记下：
@@ -259,7 +259,7 @@ runnerFailureRules }`，调用方据此判定 runner 失败与拒绝信号，所
 
 `ctx.shell` 与 `ctx.fs` 是同一种 seam：部署已挂了本地执行器（Windows 上是
 `dsh-pwsh-sandbox` 包着 `PwshLocalExecutor`），且每上下文只允许一个实现。
-`lib/patch-shell.js` 用与 `patch-fs.js` 相同的手法接管 `execute`：`workdir`
+`lib/patch/patch-shell.js` 用与 `patch-fs.js` 相同的手法接管 `execute`：`workdir`
 以 `ssh://` 开头时改在远端执行，其余 spec 原样转发——本地命令仍走部署自己
 的沙箱围栏。`resolve` 无需包装（它原样透传 `workdir`，而 `node:path.isAbsolute`
 的桥接已让 `ssh://` 通过宿主的「绝对路径」校验）。
@@ -300,7 +300,7 @@ runnerFailureRules }`，调用方据此判定 runner 失败与拒绝信号，所
 
 `ctx.subprocess` 是文件工具两个助手启动短命子进程的 seam：glob/grep 的
 ripgrep 与变更追踪的 git，二者都从会话 header 取 cwd，因此远端工作区上
-spec 里是 `ssh://` 拼写、本机运行时无法使用。`lib/patch-subprocess.js` 用与
+spec 里是 `ssh://` 拼写、本机运行时无法使用。`lib/patch/patch-subprocess.js` 用与
 patch-fs/patch-shell 相同的手法接管 `spawn`：`spec.cwd` 为 `ssh://` 时经
 `engine.acquire()` 复用连接、`client.exec()` 在远端执行；其余 spec 绑定原始
 receiver 原样转发。
@@ -351,7 +351,7 @@ receiver 原样转发。
   `ssh://alias/…` 当相对路径解析（`<cwd>\ssh:\alias\…`），文件名里 `:` 非法，于是程序会以
   chdir 的 ENOENT 结束——即使 spawn 被放行也一样。
 
-`lib/patch-ptc.js` 接管已在位的 `ctx.ptcRuntime.resolve`：先调用提供方原实现，再只把返回 spec
+`lib/patch/patch-ptc.js` 接管已在位的 `ctx.ptcRuntime.resolve`：先调用提供方原实现，再只把返回 spec
 里**远端**的 `cwd` 换成 `patch-sandbox.js` 使用的同一个替身根。这样 spawn 与每次 chdir 读到的
 是同一份本机目录，而 `sandboxPolicy`（连同 `ssh://` 的 `workspaceRoot`）、`program`、`bindings`、
 `stateOwner`、`timeoutMs` 全部原样带过——mode gate 与沙箱补丁依赖那个远端拼写。本地 cwd 的
@@ -435,7 +435,7 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 `历史加载失败：failed to project session … Invalid input（gateway/internal）`——错误链一路
 穿透到 gateway，提示里看不出真正原因。
 
-插件不去改部署自带的 bundle（升级即失效），而是在 `lib/patch-projection.js` 里把**已注册**的那个
+插件不去改部署自带的 bundle（升级即失效），而是在 `lib/patch/patch-projection.js` 里把**已注册**的那个
 单元的两个 schema 换成惰性判定：`ssh://` 直接放行，其余原样交给原 schema。因为每个读路径都经
 `def.stateSchema.parse` / `def.wire.viewSchema.parse`，替换这两个成员即覆盖 `restore`、
 `viewCheckpoint`、`snapshot`、`cachedSnapshot`、`hydrate` 与变更推送。`register` 同时被包一层，
@@ -513,7 +513,7 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 
 ### 2. 接管 `ctx.subprocess.spawnTerminal`
 
-`lib/patch-terminal.js`：部署自带的持久 bash/pwsh 工具（`dsh-terminal-bash` 后端）
+`lib/patch/patch-terminal.js`：部署自带的持久 bash/pwsh 工具（`dsh-terminal-bash` 后端）
 最终经 `ctx.subprocess.spawnTerminal(spec)` 要一个 PTY，而那是**本机原语**。不接管
 时，`ssh://` 的 cwd 会让它要么失败、要么在本机对着一个只存在于远端的路径启动
 shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满足后端契约的

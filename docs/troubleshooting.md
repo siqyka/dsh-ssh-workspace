@@ -39,7 +39,7 @@ Windows 把它当驱动器相对路径拼到进程 cwd 上，自然 ENOENT。这
 `session.header.cwd` 的 `ssh://` 拼写，而 `ctx.sandbox.confine()` 在本插件接管
 `ctx.subprocess` / `ctx.shell` **之前**就跑了，把那个拼写当主机路径 realpath。
 
-**0.3.5 起由 `lib/patch-sandbox.js` 修掉**：交接给沙箱提供方之前，把 policy 里的
+**0.3.5 起由 `lib/patch/patch-sandbox.js` 修掉**：交接给沙箱提供方之前，把 policy 里的
 远端根换成一个真实存在的本机替身目录，其余字段（模式、会话 id）原样带过。
 如果你在更新的宿主上仍然看到这句话，说明插件的这个补丁没装上——查
 `ssh_workspace_status` 与启动日志里有没有
@@ -112,7 +112,7 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 
 `refine(isAbsolute)` 传给 zod 的是**函数值**——模块 `import { isAbsolute } from "node:path"` 在服务构造那一刻持有的那个函数。插件随后替换 `node:path.isAbsolute` 并调用 `syncBuiltinESMExports()`，那只能让**读取绑定**的调用方（会话头校验、`fs-local` 等）看到补丁；已经被当作值捕获的 schema 仍在调用原始 `isAbsolute`，对 `ssh://host/path` 返回 `false`，于是校验失败。
 
-插件的加载顺序永远晚于 `working-directory`（它在 roster 里排在前面），也**不应该**去改部署自带的 bundle，所以修复放在插件侧：`lib/patch-projection.js` 把该单元已注册的 `stateSchema` / `wire.viewSchema` 换成一个惰性判定（`ssh://` 直接放行，其余仍走原 schema）。这条判定覆盖了 `restore` / `viewCheckpoint` / `snapshot` / `cachedSnapshot` / `hydrate` 与变更推送全部读路径。
+插件的加载顺序永远晚于 `working-directory`（它在 roster 里排在前面），也**不应该**去改部署自带的 bundle，所以修复放在插件侧：`lib/patch/patch-projection.js` 把该单元已注册的 `stateSchema` / `wire.viewSchema` 换成一个惰性判定（`ssh://` 直接放行，其余仍走原 schema）。这条判定覆盖了 `restore` / `viewCheckpoint` / `snapshot` / `cachedSnapshot` / `hydrate` 与变更推送全部读路径。
 
 放宽的范围只有 `ssh://` 这一个形态：相对路径、空字符串照旧被拒，`null` 照旧通过，其它投影单元完全不动。
 
@@ -207,7 +207,7 @@ cannot read "ssh://myserver/Users/me/.dsh/attachments/v1/files/…": not found
 | 带 `workdir` 的 `ops_bash` | `invalid workdir: must be an existing directory` |
 
 **为什么**：dsh-ops 把会话 cwd 原样交给本机的 `dsh-ops-worker.exe`（`lib/execution/files.js`
-的 `exchange(subprocess, { argv, cwd, … })`），而 `lib/patch-subprocess.js:223`
+的 `exchange(subprocess, { argv, cwd, … })`），而 `lib/patch/patch-subprocess.js:223`
 的远端桥只放行 `git` 与 `rg`。worker 是本地 Windows 可执行文件，它的
 `Path::new(root).is_absolute()` + `canonicalize` 也消化不了 `ssh://` 拼写——**这不是拼写
 问题，是「本地进程 + 远端根」的结构性错配**，且它不走 `ctx.fs`，所以直通管不到。
@@ -256,7 +256,7 @@ fail closed。**自救**：用显式前缀拼出真实大小写，`local:/Volume
 `unwrapSandboxArgv` 以前只认 `node*` / POSIX launcher，于是这条命令没被剥掉包装、
 直接碍在白名单上（白名单只开放 `git` / `rg`，而 `argv[0]` 是桌面应用）。
 
-**修复**：`lib/patch-subprocess.js` 的前缀识别多了第三种真实形状——与本进程
+**修复**：`lib/patch/patch-subprocess.js` 的前缀识别多了第三种真实形状——与本进程
 `process.execPath` **同名同身份**的打包可执行文件（另加 `electron` / `electron.exe` 用于未打包
 的 Electron 开发版）。识别的边界不变：**必须在 `--` 之前看到沙箱命名空间**才当包装。
 因此用户自己的 `git -- status`、`node script.js -- git …` 不会被误剥，名字取巧的
@@ -281,7 +281,7 @@ Node worker 执行。worker 是**本机进程**（打包版里它就是 `DeepSee
    `process.chdir(cwd)`；Windows 把 `ssh://qiyk/…` 当相对路径（`<cwd>\ssh:\qiyk\…`），而文件名
    里不允许 `:`，程序会以 chdir 的 ENOENT 结束。
 
-修复点是 `ctx.ptcRuntime.resolve()` 返回的 `spec.cwd`：`lib/patch-ptc.js` 把它换成本机替身目录
+修复点是 `ctx.ptcRuntime.resolve()` 返回的 `spec.cwd`：`lib/patch/patch-ptc.js` 把它换成本机替身目录
 （与沙箱那层是同一个替身根），spawn 与每次求值前的 chdir 一起修好。程序里**调用的工具仍
 在远端执行**——工具拿的是会话的远端目录，不是 worker 的 cwd。
 

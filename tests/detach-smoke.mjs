@@ -51,8 +51,8 @@ process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean
 const { HostConfigStore, workspacesOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
 const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
 const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { installRemoteShell } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-shell.js')).href)
-const { RemoteTerminalRouter } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-terminal.js')).href)
+const { installRemoteShell } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-shell.js')).href)
+const { RemoteTerminalRouter } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-terminal.js')).href)
 const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFileURL(path.join(pluginRoot, 'lib/protocol.js')).href)
 
 // ---------------------------------------------------------------------------

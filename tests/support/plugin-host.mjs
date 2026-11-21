@@ -20,7 +20,7 @@
  *
  * The local filesystem half runs on real `node:fs`. The remote half is the
  * plugin's own `RemoteFileSystem`, installed onto the local half by
- * `patch-fs.js` — so a suite exercises the real routing, the real fences and
+ * `patch/patch-fs.js` — so a suite exercises the real routing, the real fences and
  * the real publish sequence rather than a copy of them.
  *
  * Zero dependencies: plain `node:` modules only, like the rest of `tests/`.
@@ -32,7 +32,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { installRemoteFileSystem, uninstallRemoteFileSystem } from '../../lib/patch-fs.js'
+import { installRemoteFileSystem, uninstallRemoteFileSystem } from '../../lib/patch/patch-fs.js'
 
 /** Methods a dsh-fs backend is expected to answer. */
 const BACKEND_METHODS = [

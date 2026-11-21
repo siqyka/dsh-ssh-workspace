@@ -55,7 +55,7 @@ process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean
 const gate = await import(pathToFileURL(path.join(pluginRoot, 'lib/mode-gate.js')).href)
 const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
 const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { installRemoteShell } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-shell.js')).href)
+const { installRemoteShell } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-shell.js')).href)
 
 const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMessage } = gate
 
@@ -706,7 +706,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // So the gate sits in the router, the one point both paths converge on, and
 // resolves the session from `spec.env.DSH_SESSION_ID` (both callers stamp it).
 {
-  const { RemoteTerminalRouter } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-terminal.js')).href)
+  const { RemoteTerminalRouter } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-terminal.js')).href)
 
   const modeOf = { current: 'read-only' }
   const session = { id: 's1', header: { cwd: 'ssh://alpha/home/dev/proj' } }

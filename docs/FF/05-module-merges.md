@@ -111,7 +111,7 @@ lib/routes/routes.js -> lib/routes/forwards.js -> lib/routes/routes.js       ┘
 - 没有枢纽（引用数并列）→ **起一个说清「这一族是什么」的新名**（`shared` / `archive` /
   `status` / `transfer-rules` / `report`）。名字必须是**功能名**，不是 `utils`。
 - 唯一例外：`patch-projection.js` 必须保留原名——`lib/upstream-contract.js:50` 按文件登记
-  它的退役判据，`scripts/doc-numbers.mjs` 又按 `lib/patch-*.js` 数补丁数（现 7）。
+  它的退役判据，`scripts/doc-numbers.mjs` 又按 `lib/patch/patch-*.js` 数补丁数（现 7）。
 
 汇总表（「外引」= 组外 `import` 语句条数 / 涉及文件数；「变异」= 钉在组内文件名上的变异条数；
 「测试」= 按文件名引用组内成员的套件与脚本数）：
@@ -349,7 +349,7 @@ FF-04 时代这条被写成「不做」，理由是生命周期不同；本轮�
 
 | 项 | 事实 |
 | --- | --- |
-| 外引（3 条 / 2 文件） | `lib/index.js:32`（`ShellManager`）+ `lib/index.js:39`（`installShellDiscovery`）、`lib/patch-terminal.js:74`（另有 `lib/tools.js:279` 与 `patch-terminal.js:153/506` 是 JSDoc `import('./…')` 类型引用） |
+| 外引（3 条 / 2 文件） | `lib/index.js:32`（`ShellManager`）+ `lib/index.js:39`（`installShellDiscovery`）、`lib/patch/patch-terminal.js:74`（另有 `lib/tools.js:279` 与 `patch-terminal.js:153/506` 是 JSDoc `import('./…')` 类型引用） |
 | 套件 | `shell-smoke:28`、`tool-results-smoke:59`、`remote-shells-smoke:34` |
 | 变异 | `scripts/reverse-verify-shell-cwd.mjs:21/27/33/39/45`（5 条） |
 | 文档 | `docs/architecture.md`（含「3. 接管 `ctx.terminalController.shells()`」一节）、`docs/features.md`、`docs/ui.md`、`docs/optimization-and-future03.md`、`CHANGELOG.md` |
@@ -386,18 +386,18 @@ FF-04 时代这条被写成「不做」，理由是生命周期不同；本轮�
 **代价注意**：`command-policy` 是「减速带」，`lib/mode-gate.js` 是「围栏」，两者**不合**（§3.1）。
 合进 `tools.js` 之后，注释里要明确「确认策略只作用于工具发起的命令，围栏在 mode-gate」。
 
-### 2.15 第 15 组：`patch-projection` + `path-binding` → `lib/patch-projection.js`（709 行）
+### 2.15 第 15 组：`patch-projection` + `path-binding` → `lib/patch/patch-projection.js`（709 行）
 
 `path-binding.js` 就是 `patch-projection.js` 的**退役探针**：后者问「上游修好没有」，
 前者读上游的注册表来判断「这条补丁还需不需要装」。两者原本就是一对。
 
 | 项 | 事实 |
 | --- | --- |
-| 内部边 | `lib/patch-projection.js:77` → `path-binding.js` |
-| 外引 | `lib/index.js:41`（`installProjectionRelaxation`）、`lib/patch-subprocess.js:76`（`BRIDGE`） |
+| 内部边 | `lib/patch/patch-projection.js:77` → `path-binding.js` |
+| 外引 | `lib/index.js:41`（`installProjectionRelaxation`）、`lib/patch/patch-subprocess.js:76`（`BRIDGE`） |
 | 套件（3 个 / 4 处） | `projection-real-smoke:76`（+ `:90/91/127` 是注释与文案）、`projection-relax-smoke:65` + `:455`（`path-binding.js` 的 `BRIDGE`）、`upstream-contract-smoke:97`；`diagnostics-smoke:167` 只是注释提到这个名字，不用改 |
 | 变异 | **零** |
-| **必须保留文件名** | `lib/upstream-contract.js:50` 的 `file: 'patch-projection.js'`；`tests/upstream-contract-smoke.mjs:56-61` 双向断言「每个 patch 文件都有契约 / 每个契约都对应真实文件」，且 `scripts/doc-numbers.mjs` 按 `lib/patch-*.js` 数补丁数（7 不变） |
+| **必须保留文件名** | `lib/upstream-contract.js:50` 的 `file: 'patch/patch-projection.js'`（§9.6 之后带目录）；`tests/upstream-contract-smoke.mjs:56-61` 双向断言「每个 patch 文件都有契约 / 每个契约都对应真实文件」，且 `scripts/doc-numbers.mjs` 按 `lib/patch/patch-*.js` 数补丁数（7 不变） |
 
 ### 2.16 第 16 组：`diagnostics` + `redact` → `lib/diagnostics.js`（347 行）
 
@@ -424,7 +424,7 @@ FF-04 时代这条被写成「不做」，理由是生命周期不同；本轮�
 | --- | --- |
 | `lib/routes/` 八个文件 | 用户指定「特意拆分」，且 `ROUTES` 常量在 `lib/routes/routes.js:86`、五个子模块反向 `import { ROUTES } from './routes.js'` 造成 5 个环，处理它需要额外一次「把 `ROUTES` 搬进 `routes/kit.js`」——不在本方案范围内 |
 | `lib/client/` 13 个文件（1 主包 + 12 chunk）| 用户指定「client.js 相关的」不动；它刚从顶层搬进这个目录（`0c3dc23` 起 7 个提交），两套 client 断言、chunk 文件名正则与 `scripts/client-map.mjs` 都钉在当前形状上（§1 起点提示） |
-| 七个 `lib/patch-*.js` 互并 | `lib/upstream-contract.js` 按**文件**登记退役判据，`scripts/doc-numbers.mjs` 按 `lib/patch-*.js` 数补丁数（7）。合并会同时打乱退役信号与门禁数字 |
+| 七个 `lib/patch/patch-*.js` 互并 | `lib/upstream-contract.js` 按**文件**登记退役判据，`scripts/doc-numbers.mjs` 按 `lib/patch/patch-*.js` 数补丁数（7）。合并会同时打乱退役信号与门禁数字 |
 | `lib/index.js` | `tests/upstream-contract-smoke.mjs:112-134` 用 `indexOf('installRemote…')` 钉安装顺序，而 `installRemoteShell` 会先命中 `lib/index.js:38` 的 import 行；动这个文件等于动那条顺序断言 |
 | `diagnostics` 与 `diagnosis` 互并 | 名字像、职责相反：前者只记事实（环形缓冲、`KINDS`），后者只下判断（`STATE`、`diagnose()`）。前者被 10 个模块引用、后者 3 个，合并会把判断逻辑拖进引擎/转发/重连全链路。本方案里它们分属第 16 组与第 10 组，各合各的 |
 | `mode-gate` 与 `command-policy` 互并 | 一个是**围栏**（判错等于越权写远端），一个是**减速带**（`rm -rf` 前要确认）。`mode-gate` 被 5 个模块引用（含 3 个 `patch-*`），合并会让补丁模块平白依赖确认策略 |
@@ -479,7 +479,7 @@ node scripts/check-doc-links.mjs
 | 目标名优先沿用「被外部引用最多的成员」 | 外引站点是合并的主要成本。`engine` 9 条静态 import 加 15 个文件的 JSDoc 类型引用、`hosts` 只有 2 条但 14 个套件、`store` 只有 1 条但 13 个套件——沿用原名能把改动压到「删成员 + 改内部 import」 |
 | 没有枢纽才起新名，且必须是功能名 | `shared` / `archive` / `status` / `transfer-rules` / `report`。起 `utils.js` 会让下一个人往里丢任何东西 |
 | `capabilities.js` 不进第 10 组 | `tests/capabilities-report-smoke.mjs:124` 精确排除「拥有词汇表的那个文件」；并进 984 行的报告面等于把检查削弱到无意义，且实测 `tput` / `tar` 会误判为「被调用」（§2.10） |
-| `patch-projection.js` 保留原名 | `lib/upstream-contract.js:50` 的 `file:` 字段 + `scripts/doc-numbers.mjs` 的补丁计数（7） |
+| `patch-projection.js` 保留原名 | `lib/upstream-contract.js:50` 的 `file:` 字段 + `scripts/doc-numbers.mjs` 的补丁计数（7）；§9.6 的搬家只改了目录，basename 没动 |
 | `hosts` 三件套一起合，而不是只合两件 | include 展开与 Jump 链都以 `Host` 段为输入，只合两件会把第三件留成「既像解析器又像使用者」的中间态 |
 | 第 1 组先做 | 它 9 条外引里有 8 条落在本方案其他组的成员里（§2.1）；先做等于把后面 5 个组的内部 import 一次性理顺 |
 | 「移动不改语义」 | 本方案只搬文件、改 import 与文件名引用。`git diff` 里除了被移动的代码本体，应该只有 import/export 行、文件头注释、以及被重命名后的路径字符串。任何顺手重构都不属于本方案 |
@@ -662,6 +662,34 @@ node scripts/check-doc-links.mjs
 平铺的 36 个名字）；唯一值得的一组仍是 7 个 `patch-*.js` → `lib/patch/`，成本 12 条对外
 import + 7 处套件锚点 + **0 条变异锚点** + 30 处文档引用。收紧只是让「搬完之后绿灯」这件事
 本身有意义。
+
+### 9.6 七个补丁搬进 `lib/patch/`（§9.5 之后唯一值得的一组）
+
+四处收紧落地后（`c0b0471`），按 §9.5 的结论只搬了这一组：七个 `patch-*.js` 进 `lib/patch/`，
+**basename 一个都没改**——`lib/upstream-contract.js` 按文件登记退役判据、`docs/upstream-workarounds.md`
+按文件名认人，改名会打乱退役信号，而这里要的只是「补丁族有自己的目录」。
+
+| 项 | 实际改动 |
+| --- | --- |
+| 移动 | `git mv` 七个文件 → `lib/patch/`，内容除 import 行与 JSDoc 类型路径外**一字未动** |
+| 组内 import | 3 条同族引用保持 `./patch-*.js`（`patch-ptc` → `patch-sandbox`、`patch-subprocess` → `patch-projection`、`patch-terminal` → `patch-subprocess`） |
+| 对外 import | 8 条：`lib/index.js` 7 条 + `lib/fs-shim.js` 1 条，`./patch-*.js` → `./patch/patch-*.js` |
+| JSDoc 类型路径 | 15 条（`import('../engine.js')` 之类）跟着上一层目录走 |
+| 契约表 | `lib/upstream-contract.js` 的 7 个 `file:` 改成 `'patch/patch-*.js'`——契约的路径与递归清单同形，否则 `missingFiles()` 会把 7 条全判 stale |
+| 套件锚点 | 14 个套件 / 18 处路径；两种拼写都存在（`'lib/patch-x.js'` 与 `'lib', 'patch-x.js'`），脚本两种都覆盖 |
+| 变异锚点 | **0 条**（这是这组便宜的根本原因） |
+| 文档 | 39 处 `lib/patch-*.js` 路径引用 + 5 处族级拼写 `lib/patch-*.js` → `lib/patch/patch-*.js` |
+| 门禁数字 | `modules under lib/` 仍 **57**（搬家不改数量）；`upstream patch modules` 仍 **7**，但生成表的 `source` 列自己变成 `lib/patch/patch-*.js`——§9.5 的 `patchModules()` 让它跟着实际位置走，没有手改 |
+
+**这一步就是 §9.5 的验收**：`doc-numbers --check` 第一次跑出的差异只有 `source` 列那一格
+（数字没变、路径变了），`upstream-contract-smoke` 49 项、`capabilities-report-smoke` 60 项
+全绿，`graph-cycles` 仍是 5 个环（全部是 `lib/routes/` 那族）。如果没有 §9.5，同样这次搬家会
+得到「补丁数 0」「契约全 stale」「排除规则失配」三种**不会指出搬家**的红，以及一个更糟的
+情况——契约检查在空集上绿灯通过。
+
+**没有搬别的**：顶层还有 29 个文件（36 − 7），按能力域再分 5–8 个目录约 740 处引用点，
+收益只是「平铺的名字少一些」；而每个新目录都要回答「这个文件属于哪个域」，`engine.js`
+（2,173 行）同时是连接池、命令通道、审计环与快照，分不清就是分错。结论与 §9.5 相同。
 
 ## 相关
 

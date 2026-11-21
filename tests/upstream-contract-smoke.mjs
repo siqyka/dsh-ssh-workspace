@@ -110,7 +110,7 @@ for (const contract of CONTRACTS) {
 
 console.log('\n[5] the projection workaround is wired to a real probe')
 {
-  const source = sourceOf('patch-projection.js')
+  const source = sourceOf('patch/patch-projection.js')
   check('the workaround declares a stable id',
     /export const WORKAROUND_ID = 'UPSTREAM-/u.test(source), 'no WORKAROUND_ID')
   check('the workaround can report "already fixed"',

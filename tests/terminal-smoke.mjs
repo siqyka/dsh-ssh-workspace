@@ -33,7 +33,7 @@ const {
   RemoteTerminalRouter,
   installRemoteTerminal,
   uninstallRemoteTerminal,
-} = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-terminal.js')).href)
+} = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-terminal.js')).href)
 
 let passed = 0
 let failures = 0
@@ -323,7 +323,7 @@ console.log('\n=== terminal smoke ===\n')
 // available: a successful open logs at info level and a failure rejects.
 console.log('\n[no trace I/O on the terminal path]')
 {
-  const source = readFileSync(path.join(pluginRoot, 'lib', 'patch-terminal.js'), 'utf8')
+  const source = readFileSync(path.join(pluginRoot, 'lib', 'patch', 'patch-terminal.js'), 'utf8')
   check('the terminal module does no synchronous file I/O at all',
     !source.includes('appendFileSync') && !source.includes('node:fs'))
   check('the removed trace file, its path and its env switches are gone',

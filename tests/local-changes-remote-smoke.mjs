@@ -13,7 +13,7 @@
  * not exist on this machine, failed, and the card was empty.
  *
  * The rule that admits a plain path is deliberately narrow (see
- * `resolvePlainRemoteRoute` in lib/patch-subprocess.js):
+ * `resolvePlainRemoteRoute` in lib/patch/patch-subprocess.js):
  *
  *   route a POSIX-absolute plain path to a remote host only when it lies under
  *   exactly one mounted remote root, that root's host is still usable, and the
@@ -67,7 +67,7 @@ function check (label, ok, detail) {
 
 let bridge
 try {
-  bridge = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-subprocess.js')).href)
+  bridge = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-subprocess.js')).href)
 } catch (error) {
   console.log('\n=== local-changes-remote smoke ===\n')
   console.log(`  SKIP  the plugin's own dependencies are not resolvable here: ${error instanceof Error ? error.message : String(error)}`)

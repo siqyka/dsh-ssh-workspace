@@ -150,7 +150,7 @@
 | `ops_bash`（带 `workdir`） | 否 | `invalid workdir` |
 
 dsh-ops 把**会话 cwd 原样**交给本机的 `dsh-ops-worker.exe`；`ssh://` cwd 在
-`lib/patch-subprocess.js` 的远端桥上只放行 `git` 与 `rg`，worker 因此被拒。worker 是本地
+`lib/patch/patch-subprocess.js` 的远端桥上只放行 `git` 与 `rg`，worker 因此被拒。worker 是本地
 Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 `ssh://` 拼写——这是
 「本地进程 + 远端根」的结构性错配，不是拼写问题，也不是授权拒绝；**重试与换本机 shell 都无用**。
 替代入口：读远端用 `ssh_workspace_exec` / `ssh_workspace_shell`，读本机文件用
@@ -249,7 +249,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 **还有一层在它们之前**：宿主的每条命令通路都先跑 `ctx.sandbox.confine(argv, policy, signal)`，之后才到
 `ctx.shell` / `ctx.subprocess`。它拿到的 `workspaceRoot` 同样是那个 `ssh://` 拼写，而 Windows ACL 提供方
 按**主机路径**解析它——`realpath` 抛 `ENOENT` 后 fail-closed，命令一条都不起来（文案是
-`windows-acl workspace and temp directory resolution failed`）。`lib/patch-sandbox.js` 因此先接管
+`windows-acl workspace and temp directory resolution failed`）。`lib/patch/patch-sandbox.js` 因此先接管
 `ctx.sandbox.confine`：只把 policy 里的远端根换成本机真实存在的替身目录，`mode` 与 `sessionId` 原样带过，
 **不动 `sandboxPolicy.resolve`**——上表中「会话工作区」那一列的收窄正是拿那个拼写做比较的。
 

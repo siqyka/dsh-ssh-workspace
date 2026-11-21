@@ -62,7 +62,7 @@ const {
   relaxDefinition,
   installProjectionRelaxation,
   uninstallProjectionRelaxation,
-} = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-projection.js')).href)
+} = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-projection.js')).href)
 
 const SSH_CWD = 'ssh://qiyk/home/qiyk/test'
 const LOCAL_CWD = path.resolve(pluginRoot)
@@ -452,7 +452,7 @@ function rejects (schema, value) {
 //     reproduced without the real fs-shim (which would drag in the peers).
 // ---------------------------------------------------------------------------
 {
-  const { BRIDGE } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-projection.js')).href)
+  const { BRIDGE } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-projection.js')).href)
   const originalIsAbsolute = path.isAbsolute
   /** A predicate that accepts ssh://, like the one fs-shim installs. */
   const patchedIsAbsolute = (candidate) => typeof candidate === 'string'

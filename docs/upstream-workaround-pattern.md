@@ -217,8 +217,8 @@ upstream workaround OBSOLETE: UPSTREAM-1-working-directory-isAbsolute — ...
 | 项 | 状态 |
 | --- | --- |
 | 登记的补丁数 | **1**（`UPSTREAM-1-working-directory-isAbsolute`） |
-| 探测状态 | 六态（`PROBE`），见 `lib/patch-projection.js` |
-| 退役判据 | 接受 **且** 证明读了 `isAbsolute` 绑定（`lib/patch-projection.js` 的 `observePathBindingReads`） |
+| 探测状态 | 六态（`PROBE`），见 `lib/patch/patch-projection.js` |
+| 退役判据 | 接受 **且** 证明读了 `isAbsolute` 绑定（`lib/patch/patch-projection.js` 的 `observePathBindingReads`） |
 | 退役信号通道 | `ssh_workspace_status` 的 `upstreamWorkarounds` 字段 + `upstream` 事件 |
 | 反向测试 | `tests/projection-real-smoke.mjs` 第一节（真实宿主 schema，红 = 删补丁） |
 | 手工验证开关 | `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS=1` |

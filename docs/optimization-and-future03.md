@@ -102,7 +102,7 @@
 
 | 方向 | 理由 | 何时可重开 |
 | --- | --- | --- |
-| 整体重写为 TypeScript / 引入构建 | 会打断七个运行时补丁（`lib/patch-*.js`）与单入口 bundle；类型收益可以先用 JSDoc + 局部 `// @ts-check` 拿，不值得一次性翻修 | 模块拆分后补丁只剩一两处时 |
+| 整体重写为 TypeScript / 引入构建 | 会打断七个运行时补丁（`lib/patch/patch-*.js`）与单入口 bundle；类型收益可以先用 JSDoc + 局部 `// @ts-check` 拿，不值得一次性翻修 | 模块拆分后补丁只剩一两处时 |
 | 自实现完整 `ssh_config` 语义 | 语义面大，错误解析比不支持更危险；采用“明确子集 + 显式报告/审计” | 上游提供可依赖的解析库，或用户能接受“解析不了就拒绝”的硬失败 |
 | 远端命令沙箱 | 需要远端内核能力（namespace / seccomp 等），插件无法从一条 SSH 连接里证明隔离；假装沙箱比不提供更危险 | 宿主提供 execution world 边界（见第 3 节第 4 条） |
 | 盲目缓存 / 并发预取 | 没测量前加缓存只会让失效更难推理；O-22 的测量工具未校准 | 先有可复现的延迟测量，再谈缓存 |
@@ -119,7 +119,7 @@
 
 | 条目 | 宿主现状 | 上游解决后本插件可退什么 |
 | --- | --- | --- |
-| 终端 backend 丢弃 `request.cwd` | `dsh-api-terminal-controller/lib/index.js:981` `spawn(agent, owner, request, signal)`；`:983` `const cwd = await workingDirectory.ensure(agent, signal)`；`:986-996` 把该 `cwd` 传给 `subprocess.spawnTerminal(...)`；`:1001` `info.cwd` 同值。`request.cwd` 在函数内 **0 次读取**。工具层其实已经正确下传：`dsh-tool-terminal/lib/index.js:303-307` `const cwd = await ctx.workingDirectory.ensure(owner, exec.signal)`，`cwd: args.cwd === void 0 ? cwd : resolve(cwd, args.cwd)` | `lib/patch-terminal.js:317-356` 的 cwd 补丁与 `lib/patch-projection.js:90` 的 `RELAXED_KEY`。两者现在都承重：`ssh://` cwd 能进终端全靠它们 |
+| 终端 backend 丢弃 `request.cwd` | `dsh-api-terminal-controller/lib/index.js:981` `spawn(agent, owner, request, signal)`；`:983` `const cwd = await workingDirectory.ensure(agent, signal)`；`:986-996` 把该 `cwd` 传给 `subprocess.spawnTerminal(...)`；`:1001` `info.cwd` 同值。`request.cwd` 在函数内 **0 次读取**。工具层其实已经正确下传：`dsh-tool-terminal/lib/index.js:303-307` `const cwd = await ctx.workingDirectory.ensure(owner, exec.signal)`，`cwd: args.cwd === void 0 ? cwd : resolve(cwd, args.cwd)` | `lib/patch/patch-terminal.js:317-356` 的 cwd 补丁与 `lib/patch/patch-projection.js:90` 的 `RELAXED_KEY`。两者现在都承重：`ssh://` cwd 能进终端全靠它们 |
 | 宿主文件树没有选择/批量 API | `dsh-client-ui-sidebar-files/lib/client.js`（0.2.1-rc.2，1,025 行）：`selected` / `selection` 0 命中；`ctrlKey` / `shiftKey` / `metaKey` 0 命中（只有命令快捷键的 `modifiers`）。宿主仍输出 `data-files-entry` / `data-files-path`（`:498-499` 目录、`:522-523` 文件、`:542-543` other，`:667` 声明），本插件的装饰式桥接依赖它们 | `.sshwsp-tree-row-selected` + `aria-selected` + roving tabindex + document 捕获监听 + `selectReduce` 的手势拆分。注意：宿主已从 2,251 行缩到 1,025 行，桥接必须按当前 DOM 重新复核一遍 |
 | 工具上下文没有 cwd / world / 进度通道 | `dsh-tool-cordis/lib/types/api-catalog.js:8172` `ToolExecutionInput { callId; rootCallId?; name; schema?; arguments; agent?; parent?; signal }`；`:8244` `ToolRunContext extends ToolExecution { deferContext(context: UserMessage): void; concludeTurn(): void }`。插件只能用 `exec.signal`（`lib/tools.js:1385-1387`） | F-02 的“传输进度进入工具输出”可以接宿主进度通道，而不是现在的查队列；前台工具也能显示进度，而不是只有终态 |
 | execution world / 配额没有 provider seam | `dsh-api-terminal-controller/lib/index.js:969-980` `execution(agent)` 只 `agent.ctx.get` `subprocess` / `sandboxPolicy` / `workingDirectory`，没有可替换的 provider。上限仍只有每会话终端数：`:753` `maxTerminals: z.number().step(1).min(1).default(8)`、`:843` `terminal/limit-reached`；没有连接/传输配额抽象。`shells()` 内部走 `subprocess.resolveExecutable` / `terminalEnvironment`，这两个方法同样没有 seam，插座只包了 `spawn` 与 `spawnTerminal` | F-05 的“多工作区配额”可以交给宿主，插件不必自己维护计数器；远端命令沙箱也才有讨论的前提。插件目前以 own-property 接管 `terminalController.shells()` 实现远端 shell 发现（`lib/shell.js` 下半）；上游一旦给 `execution world` 一个 provider seam（或让 `resolveExecutable` / `terminalEnvironment` 支持远端），就把发现改成注册 provider 并删掉这处接管 |

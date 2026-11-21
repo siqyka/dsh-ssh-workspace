@@ -46,7 +46,7 @@ const {
   uninstallRemoteSandbox,
   localizePolicy,
   substituteWorkspaceRoot,
-} = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'patch-sandbox.js')).href)
+} = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'patch', 'patch-sandbox.js')).href)
 
 let passed = 0
 let failures = 0
@@ -97,7 +97,7 @@ console.log('\n[substitute root]')
   // leave one standing ACE behind per command. A `?fresh` import re-runs the
   // module body with a new `substituteRoot` initialiser.
   const fresh = await import(
-    pathToFileURL(path.join(pluginRoot, 'lib', 'patch-sandbox.js')).href + '?fresh=1'
+    pathToFileURL(path.join(pluginRoot, 'lib', 'patch', 'patch-sandbox.js')).href + '?fresh=1'
   )
   check('the substitute root is stable across module evaluation (not random per process or per call)',
     fresh.substituteWorkspaceRoot() === root,
@@ -309,7 +309,7 @@ console.log('\n[the real provider boundary, when the assembled tree is here]')
 
 console.log('\n[the module does not touch what it must not]')
 {
-  const source = readFileSync(path.join(pluginRoot, 'lib', 'patch-sandbox.js'), 'utf8')
+  const source = readFileSync(path.join(pluginRoot, 'lib', 'patch', 'patch-sandbox.js'), 'utf8')
   // The module DOCUMENTS why `sandboxPolicy.resolve` is not touched, so a bare
   // string match would be satisfied by the explanation itself. What must be
   // absent is a DEPENDENCY on that service.

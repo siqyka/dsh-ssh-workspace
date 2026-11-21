@@ -21,7 +21,7 @@
 | `lib/tools.js` | 2,250 行 | `statusTool`（`lib/tools.js:850`）**606 行**；其余 10 个工具 92–186 行 |
 | `lib/remote-fs.js` | 2,597 行 | `RemoteFileSystem` 类体 1,517 行，其中方法体合计 **976 行** |
 | `lib/index.js` | 855 行 | `apply`（`lib/index.js:269`）**584 行**，占全文件 68% |
-| `lib/patch-subprocess.js` | 1,298 行 | `RemoteSubprocessRouter.spawn`（`:998`）**237 行** |
+| `lib/patch/patch-subprocess.js` | 1,298 行 | `RemoteSubprocessRouter.spawn`（`:998`）**237 行** |
 
 `client.js` 的 22 段实测行数：
 
@@ -151,7 +151,7 @@
 | `requirePort` | `lib/forward.js:28`、`lib/reverse-forward.js:45` | 新建 `lib/forward-common.js` |
 | `normalizedHost` | `lib/forward.js:37`、`lib/reverse-forward.js:54` | 同上 |
 | `positive` | `lib/reconnect.js:50`、`lib/watch-recovery.js:46` | 新建 `lib/options.js` |
-| `quote` | `lib/patch-terminal.js:642`、`lib/shell.js:523` | 与 `engine.js:1846` 的 `shellQuote` 同体，统一到 `lib/shell-quote.js` |
+| `quote` | `lib/patch/patch-terminal.js:642`、`lib/shell.js:523` | 与 `engine.js:1846` 的 `shellQuote` 同体，统一到 `lib/shell-quote.js` |
 
 `quote` 这一组要小心：`engine.js` 的 `shellQuote` 已被 6 个模块引用
 （`fs-shim.js`、`patch-shell.js`、`patch-subprocess.js`、`remote-fs.js`、
@@ -589,7 +589,7 @@ node scripts/lint.mjs     # 基线 179 modules；C1 之后 197，现状 215
 | 按 22 个 banner 全量拆 chunk | 段间存在一个 11 段强连通分量，全量拆会把内核复制进每个 chunk 或引入跨 chunk 同步依赖（后者宿主不支持） |
 | 拆 `RemoteFileSystem` 的非 watch 部分 | 2,597 行里方法体只有 976 行，其余是注释；按行数拆它是拿风险换可读性 |
 | 拆 `lib/index.js` 的 `apply`（584 行） | 它是 Cordis 的注入编排，顺序本身是语义；拆成函数不减少阅读量，反而藏起顺序 |
-| 动 `lib/patch-*.js` | 它们是上游补丁，一行对应一个宿主缺陷，`upstream-contract.js` 按文件登记退役判据；移动会打乱退役信号 |
+| 动 `lib/patch/patch-*.js` | 它们是上游补丁，一行对应一个宿主缺陷，`upstream-contract.js` 按文件登记退役判据；移动会打乱退役信号 |
 | 删除 `acceptsWithoutOurPatch` / `matchLimitation` | 零引用更像「该接未接」；删除会把功能缺口伪装成清理完成 |
 | 建 GitHub issue | 用户选择只落仓库文档 |
 

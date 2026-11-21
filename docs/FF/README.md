@@ -11,7 +11,7 @@
 | 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | — | — | **已实施**（`lib/remote-skills.js`，`tests/remote-skills-smoke.mjs` 55 项；说明见 `docs/features.md` 五之三 与 `docs/architecture.md` 的「远端技能发现」一节） |
 | 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | [03-remote-file-editing.md](./03-remote-file-editing.md) | [prompt](./03-remote-file-editing-prompt.md) | 方案 |
 | 04 | 代码拆分（去重 + `tools` / `routes` / `remote-fs` 的 watch 集群 + `client.js` 的懒渲染边界） | [04-code-splitting.md](./04-code-splitting.md) | [prompt](./04-code-splitting-prompt.md) | 完成 |
-| 05 | 同功能模块合并（16 组：`lib/` 83 → 57 个模块，含 `tar`+`zip` → `archive`、`match-eval` 并回 `ssh-config` 消环；不碰 `lib/routes/` 与 `lib/client/`） | [05-module-merges.md](./05-module-merges.md) | 16 个提交（`2c43d33` … `2897a21`） | **已实施**（环 6 → 5，套件 / 路由 / 工具 / 补丁数不变；§9.5 另收了「搬家会让四处检查静默变松」的修正） |
+| 05 | 同功能模块合并（16 组：`lib/` 83 → 57 个模块，含 `tar`+`zip` → `archive`、`match-eval` 并回 `ssh-config` 消环；不碰 `lib/routes/` 与 `lib/client/`） | [05-module-merges.md](./05-module-merges.md) | 16 个提交（`2c43d33` … `2897a21`） | **已实施**（环 6 → 5，套件 / 路由 / 工具 / 补丁数不变；§9.5 收了「搬家会让四处检查静默变松」的四处修正，§9.6 才把七个补丁搬进 `lib/patch/`） |
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
 

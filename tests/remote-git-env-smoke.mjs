@@ -11,7 +11,7 @@
  * "fatal: not a git repository", and the panel reports the checkout as non-Git
  * ("当前目录不是 Git 仓库"). The regression suite below pins the bridge's
  * behaviour; the design rationale lives in the source comments of
- * lib/patch-subprocess.js.
+ * lib/patch/patch-subprocess.js.
  *
  * Runs without DSH_CORE_ROOT: the bridge only needs a subprocess service
  * double and an engine double, because nothing here opens a real SSH channel.
@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createHost } from './support/plugin-host.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { installRemoteSubprocess } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch-subprocess.js')).href)
+const { installRemoteSubprocess } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-subprocess.js')).href)
 
 let passed = 0
 let failures = 0

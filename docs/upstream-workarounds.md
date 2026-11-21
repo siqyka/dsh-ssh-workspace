@@ -60,7 +60,7 @@ const directorySchema = z$1.string().min(1).refine((value) => isAbsolute(value))
 
 ### 插件侧补丁
 
-`lib/patch-projection.js` 把**已注册**单元的两个 schema 换成惰性判定（`ssh://` 直接
+`lib/patch/patch-projection.js` 把**已注册**单元的两个 schema 换成惰性判定（`ssh://` 直接
 放行，其余交还原 schema），并用一层 `register` 包装覆盖「插件先加载、单元后注册」的顺序。
 放宽范围只有 `ssh://` 一种形态：相对路径、空字符串照旧被拒，`null` 照旧通过，
 其它投影单元完全不动。安装点在 `lib/index.js` 的
@@ -83,7 +83,7 @@ const directorySchema = z$1.string().min(1).refine((value) => isAbsolute(value))
 >
 > 判别式因此是：探测时把 `node:path.isAbsolute` 换成一次性的记账包装，
 > 看 schema 是否**调用了它**。捕获了函数值的 schema 永远不会碰这个属性；
-> 真正读了绑定的才会。见 `lib/patch-projection.js` 底部的 `observePathBindingReads`。
+> 真正读了绑定的才会。见 `lib/patch/patch-projection.js` 底部的 `observePathBindingReads`。
 
 这个结论**不走 `ctx.logger`**——本部署没有 console exporter，`info` 进一个无人读取的环形缓冲，
 `debug` 更是低于所有默认级别。所以它落在两个真正能到达的地方：
@@ -138,7 +138,7 @@ DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS=1   # 重启 DSH
 
 1. `lib/index.js`：删掉带 `UPSTREAM WORKAROUND #1` 框注的
    `ctx.inject(['sessionProjections'], …)` 块，以及顶部 `patch-projection.js` 的 import；
-2. 删 `lib/patch-projection.js`；
+2. 删 `lib/patch/patch-projection.js`；
 3. 删 `tests/projection-relax-smoke.mjs`、`tests/projection-real-smoke.mjs`，
    并从 `tests/run.mjs` 的 `SUITES` 里去掉 `projection-relax`、`projection-real`；
 4. 删本页，并从 [docs/README.md](./README.md)、根 `README.md` / `README.en.md`

@@ -51,7 +51,7 @@ const { RemoteFileSystem } = await import(pathToFileURL(nodePath.join(pluginRoot
 const { installBuiltinBridge, uninstallBuiltinBridge } =
   await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/fs-shim.js')).href)
 const { installRemoteFileSystem, uninstallRemoteFileSystem } =
-  await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/patch-fs.js')).href)
+  await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/patch/patch-fs.js')).href)
 
 const ALIAS = 'passthroughhost'
 const REMOTE_ROOT = '/home/dev/proj'

@@ -247,8 +247,8 @@ function quietEngine () {
   // Every command-channel open site goes through the same seam; the connect
   // config must never carry the flag again.
   const engineSource = readFileSync(path.join(pluginRoot, 'lib/engine.js'), 'utf8')
-  const shellSource = readFileSync(path.join(pluginRoot, 'lib/patch-shell.js'), 'utf8')
-  const subprocessSource = readFileSync(path.join(pluginRoot, 'lib/patch-subprocess.js'), 'utf8')
+  const shellSource = readFileSync(path.join(pluginRoot, 'lib/patch/patch-shell.js'), 'utf8')
+  const subprocessSource = readFileSync(path.join(pluginRoot, 'lib/patch/patch-subprocess.js'), 'utf8')
   check('connectConfig no longer assigns a connect-level agentForward',
     !engineSource.includes('config.agentForward'), 'config.agentForward still assigned')
   check('the snapshot exec passes the record wish to its channel',
