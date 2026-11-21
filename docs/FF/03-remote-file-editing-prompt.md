@@ -17,9 +17,9 @@
 | `@deepseek-ai/dsh-api-workspace-files` README | 「**本服务不提供修改操作**」；方法只有 stat / read / readBytes / list / search / changes |
 | 同上，`statOf()` | `absolutePath: this.ctx.fs.processPath(target)` —— 远端目标在这里就是 `ssh://alias/path` 拼写，本地目标是本地绝对路径。**同一个字段** |
 | `@deepseek-ai/dsh-client-ui-sidebar-documentpreview` `contract.ts` | `sidebar.right.tab.document.actions` 是已声明的 `kind: 'list'`、`scope: 'session'` 子 slot，owner 为 `{ absolutePath: string }`，渲染在预览自有控件之后 |
-| `lib/client.js:12237` | 我们已在 `sidebar.right.tab.files.actions` 注册过组件（`FilePanelTransferActions`），注册写法照抄 |
-| `lib/client.js` `modalLayer(children)` | portal 到 `document.body` 的助手；**不 portal 会被侧栏 `.scrollArea` 的 wheel hand-off 吞掉滚轮** |
-| `lib/client.js` `.sshwsp-dialog-fill` | 已有布局：头部与表单 `flex: 0 0 auto`，正文是唯一滚动容器 |
+| `lib/client/client.js:12237` | 我们已在 `sidebar.right.tab.files.actions` 注册过组件（`FilePanelTransferActions`），注册写法照抄 |
+| `lib/client/client.js` `modalLayer(children)` | portal 到 `document.body` 的助手；**不 portal 会被侧栏 `.scrollArea` 的 wheel hand-off 吞掉滚轮** |
+| `lib/client/client.js` `.sshwsp-dialog-fill` | 已有布局：头部与表单 `flex: 0 0 auto`，正文是唯一滚动容器 |
 | `lib/remote-fs.js:1070` | `async writeText (target, content, expected, signal, sandboxPolicy)` |
 | `lib/remote-fs.js:1104` | `async editText (target, edit, expected, signal, sandboxPolicy)` |
 | `lib/remote-fs.js:117` | `versionOf(stats)` 返回 `FsVersion('ino:size:mtime')` —— **没有亚秒精度**，同秒同大小改动查不出来 |
@@ -124,8 +124,8 @@ slots.inject('sidebar.right.tab.document.actions', () => slots.register({
 | 键 | 做法 |
 | --- | --- |
 | `Ctrl/Cmd+S` | `event.preventDefault()` 后保存；不拦截会弹浏览器「另存网页」。已确认项目里没有别的 `Ctrl+S` 绑定 |
-| `Esc` | **不要自己挂**。复用 `useDialogA11y`（`lib/client.js:1961`），它在捕获阶段处理 Esc 与焦点环，`busyRef` 会在保存中屏蔽 Esc |
-| `Tab` | **必须在 textarea 的 `onKeyDown` 里拦**，否则 `useDialogA11y` 的焦点环（`lib/client.js:1997-2010`）会让 Tab 跳出编辑器 |
+| `Esc` | **不要自己挂**。复用 `useDialogA11y`（`lib/client/client.js:1961`），它在捕获阶段处理 Esc 与焦点环，`busyRef` 会在保存中屏蔽 Esc |
+| `Tab` | **必须在 textarea 的 `onKeyDown` 里拦**，否则 `useDialogA11y` 的焦点环（`lib/client/client.js:1997-2010`）会让 Tab 跳出编辑器 |
 
 `Tab` 的正确写法（保住浏览器撤销栈）：
 

@@ -1,5 +1,5 @@
 /**
- * Render one component out of `lib/client.js` without a DOM.
+ * Render one component out of `lib/client/client.js` without a DOM.
  *
  * ## Why this exists
  *

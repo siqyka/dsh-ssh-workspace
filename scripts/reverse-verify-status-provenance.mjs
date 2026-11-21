@@ -51,7 +51,7 @@ const MUTATIONS = [
     name: 'the panel stops rendering the freshness line',
     // The panel moved into its own chunk; the freshness line went with it, so
     // the anchor follows the code rather than the file it used to live in.
-    file: 'lib/client.panel.js',
+    file: 'lib/client/client.panel.js',
     find: '        provenanceText(t, status.provenance?.capabilities) !== undefined && jsx(\'div\', {',
     replace: '        false && jsx(\'div\', {',
     suites: ['tests/client-shape-smoke.mjs'],

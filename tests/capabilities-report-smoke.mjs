@@ -108,14 +108,20 @@ check(
 console.log('\n[every promised capability is actually wired]')
 
 {
-  const { readdirSync, readFileSync } = await import('node:fs')
+  const { readFileSync } = await import('node:fs')
+  const { modulePaths } = await import('./support/lib-modules.mjs')
   const libDir = path.join(pluginRoot, 'lib')
   // `tar.js` is excluded from BOTH scans, and the reason is the same one that
   // makes its `tar` row honest: it WRITES the archive format itself, so the host
   // needs no `tar` binary. Its file name and its error messages ("a tar entry")
   // are about the format, not about a command anything runs.
-  const sources = readdirSync(libDir)
-    .filter(name => name.endsWith('.js') && name !== 'capabilities.js' && name !== 'tar.js')
+  //
+  // The walk is recursive on purpose: `lib/routes/` and `lib/client/` hold real
+  // modules, and a top-level listing would silently stop covering them the
+  // moment a file moved into one — the same drift that made `doc-numbers` count
+  // 79 modules instead of 63 after the browser half moved into its own folder.
+  const sources = modulePaths(libDir)
+    .filter(name => !/^(?:capabilities|tar)\.js$/u.test(name))
     .map(name => readFileSync(path.join(libDir, name), 'utf8'))
     .join('\n')
   for (const spec of TOOL_CAPABILITIES) {

@@ -1,7 +1,7 @@
 /**
  * The shared selection reducer, driven as a pure state machine.
  *
- * `lib/client.js` is a single browser bundle with no build step, so the rules
+ * `lib/client/client.js` is a single browser bundle with no build step, so the rules
  * live in a marked region of the shipped file and this suite slices them out and
  * runs them. That is the same rule `transfer-queue-smoke` follows: a retyped
  * copy would prove nothing about the code the browser actually gets.

@@ -138,14 +138,14 @@ POST /api/dsh-ssh-workspace/edit-text
 
 | 挂点 | 可行性 | 判断 |
 | --- | --- | --- |
-| `sidebar.right.tab.document.actions`（预览头部动作位，owner `{ absolutePath }`） | 宿主已声明；我们已在用同族的 `sidebar.right.tab.files.actions`（`lib/client.js:12237`） | **采用** |
+| `sidebar.right.tab.document.actions`（预览头部动作位，owner `{ absolutePath }`） | 宿主已声明；我们已在用同族的 `sidebar.right.tab.files.actions`（`lib/client/client.js:12237`） | **采用** |
 | `sidebar.files.tree` 的行 `accessory` | 需要接管宿主整棵树（host-owned，`tests/support/tree-dom.mjs` 头注释就是在说这件事） | 否，成本高且与宿主实现耦合 |
 
 具体：
 
 - 注册一个「编辑」按钮（`slots.inject('sidebar.right.tab.document.actions', …)`），
   **仅当** `owner.absolutePath` 存在、能定位会话、`read-text` 探测为文本且 ≤ 2 MiB 时渲染；
-- 点击打开大尺寸对话框，**必须用 `modalLayer` 包裹**（`lib/client.js` 的 portal 助手，
+- 点击打开大尺寸对话框，**必须用 `modalLayer` 包裹**（`lib/client/client.js` 的 portal 助手，
   见 `docs/ui.md`「三个对话框的遮罩关闭」与弹窗一节：侧栏 `.scrollArea` 的 wheel hand-off 会吞掉滚轮，
   `.composerSeat` 的 `will-change: transform` 会改写 `position: fixed` 的包含块）；
 - 布局复用 `.sshwsp-dialog-fill`：头部（文件名 + 状态）与工具条 `flex: 0 0 auto`，
@@ -170,8 +170,8 @@ POST /api/dsh-ssh-workspace/edit-text
 | 键 | 处理 | 注意 |
 | --- | --- | --- |
 | `Ctrl/Cmd+S` | `preventDefault()` 后保存 | 不拦截会触发浏览器「另存网页」。已确认本项目**没有**其它 `Ctrl+S` 绑定，不冲突 |
-| `Esc` | 复用 `useDialogA11y`（`lib/client.js:1961`） | 它在**捕获阶段**统一处理 Esc 与焦点环；`busyRef` 会在保存中屏蔽 Esc，正好符合「保存中不许关」。**不要再挂一个自己的 Esc**，否则会与它抢 |
-| `Tab` | **必须在 textarea 的 `onKeyDown` 里拦** | `useDialogA11y` 把 Tab 绑成了焦点环（`lib/client.js:1997-2010`）：不拦的话在正文里按 Tab 会**跳出编辑器**，无法输入缩进。写代码按 Tab 缩进是刚需 |
+| `Esc` | 复用 `useDialogA11y`（`lib/client/client.js:1961`） | 它在**捕获阶段**统一处理 Esc 与焦点环；`busyRef` 会在保存中屏蔽 Esc，正好符合「保存中不许关」。**不要再挂一个自己的 Esc**，否则会与它抢 |
+| `Tab` | **必须在 textarea 的 `onKeyDown` 里拦** | `useDialogA11y` 把 Tab 绑成了焦点环（`lib/client/client.js:1997-2010`）：不拦的话在正文里按 Tab 会**跳出编辑器**，无法输入缩进。写代码按 Tab 缩进是刚需 |
 
 `Tab` 的拦法（保住撤销栈，与 dsh-remote 同款）：
 

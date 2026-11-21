@@ -7,7 +7,7 @@
  * means "let each item open its own save dialog" — ten rows, ten dialogs.
  *
  * Two things had to change for one dialog to be enough, and both are pinned
- * here as SHIPPED code, lifted out of `lib/client.js` the same way the other
+ * here as SHIPPED code, lifted out of `lib/client/client.js` the same way the other
  * client suites do it (a retyped copy would prove nothing about what the
  * browser gets):
  *

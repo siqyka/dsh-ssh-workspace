@@ -30,7 +30,7 @@
 
 ## 浏览目录对话框
 
-点主机卡片的「浏览目录」打开 `DirectoryBrowser`（`lib/client.dialogs.js`）。它与「新建远程工作区」里的目录选择**不是同一个组件**（后者是 `RemoteWorkspaceDialog`，只列目录、只为选路径），因此两者能力不同：
+点主机卡片的「浏览目录」打开 `DirectoryBrowser`（`lib/client/client.dialogs.js`）。它与「新建远程工作区」里的目录选择**不是同一个组件**（后者是 `RemoteWorkspaceDialog`，只列目录、只为选路径），因此两者能力不同：
 
 - 顶部：返回上级、当前绝对路径；这一条是 `position: sticky` 的，列表再长也不跟着滚走（`.sshwsp-browser` 用 `overflow: clip` 而不是 `hidden`：`hidden` 会让它成为一个从不滚动的滚动容器，sticky 子元素就黏在它身上，看起来完全没生效）；
 - 列表：**只有目录行，且目录行就是按钮**（请求带 `dirs=1`，服务端在施加上限**之前**就滤掉文件，所以 `total` 与 `truncated` 数的是选择器真正显示的行）。目录行**双击**进入下一级；键盘激活（`Enter` / `Space` 产生的 `detail === 0` 点击）同样进入，没有鼠标也能用。这里**不提供上传、下载或选择**：没有大小列、没有勾选框、批量条或行内传输按钮；
@@ -93,7 +93,7 @@
 
 ## 远程工作区标记
 
-远程工作区不以文件夹图标示人，而是显示 SSH 标记。DSH 的行图标没有插件插槽，实现为 **DOM 装饰**（`lib/client.js` 的 "Remote-workspace marks" 段），三条原则：
+远程工作区不以文件夹图标示人，而是显示 SSH 标记。DSH 的行图标没有插件插槽，实现为 **DOM 装饰**（`lib/client/client.js` 的 "Remote-workspace marks" 段），三条原则：
 
 - **React 安全**：从不删除或搬迁 React 拥有的节点——仅通过内联 `style` 隐藏文件夹字形（React 不会重写这些节点的 `style`），在旁插入自带 `data-sshwsp-mark` 的 svg。
 - **自愈**：`MutationObserver` 监听 `document.body`，React 重建行节点后自动重新施加替换；工作区不再远程时同样自动还原。
@@ -354,7 +354,7 @@ verdict):` 一节）、在工具返回值里（`diagnosis.notes`）。**看不�
 ### 自检分区默认关闭
 
 面板上原本有一节「远程环境自检」，每台探测过的主机一张卡片，外加一个「自检」按钮。
-**这一节现在不渲染了**，由 `lib/client.panel.js` 里的 `SHOW_SELF_CHECK_SECTION = false` 控制。
+**这一节现在不渲染了**，由 `lib/client/client.panel.js` 里的 `SHOW_SELF_CHECK_SECTION = false` 控制。
 
 **是关掉的一棵活树，不是注释。** 两者的区别在于本仓库的测试方式：`client-shape-smoke`
 几乎全部断言都是对 bundle 文本做 grep，把 JSX 注释掉会让**所有**相关断言继续绿着，
@@ -515,7 +515,7 @@ unavailable)` 把"补丁不需要装"和"我不知道补丁装没装"写成了�
 
 拼写规则与 `@` 补全一致：树根即会话 cwd 时用**工作区相对路径**（`/` 分隔），否则保留绝对拼写；含空格按引号语法（目录保留开引号）。带控制字符或双引号的路径拒绝插入。
 
-实现要点（`lib/client.js` 的 "Composer file bridge" 段）：行的 `draggable` 标记并入 DOM 装饰的同一趟 pass（`MutationObserver` 触发、rAF 合并）；拖拽只写入自定义 MIME、**不写 `text/plain`**，因此不触发输入框的文本粘贴，也不会与 DSH 的「拖入文件」浮层冲突；文档级 capture 监听 `dragover`/`drop` 判定输入卡并转发手势。**载荷是版本化 JSON**（`{v:1, items:[{path,isDir}], root}`）而不是单条路径：`dragstart` 用 `resolveTargets` + `treeSelectedItems` 得到整批目标，点在选中之外时先按 `point` 手势收拢；`drop` 先用当前事件 `dropOffsetFromEvent` 重算落点（不缓存 dragover 的值），再只调一次 `addPathsToTask(..., card, at)`。坐标映射（chip=1、managed `<br>`=0、段落间一个 `\n`、嵌套元素递归）与视觉光标各只有一处实现；光标是 `document.body` 下的单例 `#sshwsp-drop-caret`，不写 `<style>`、不动宿主样式表。浮动菜单的定位、首项聚焦、Esc / Tab、外点、滚动 / resize / 失焦全部收在 `openMenuAt` 一处，行菜单与本地空白菜单共用它。手势面向**主会话**的输入框（文件树跟随主会话，二者工作区根一致时用相对拼写）；多输入框不承诺精确路由，按上面的退化表回退追加。
+实现要点（`lib/client/client.js` 的 "Composer file bridge" 段）：行的 `draggable` 标记并入 DOM 装饰的同一趟 pass（`MutationObserver` 触发、rAF 合并）；拖拽只写入自定义 MIME、**不写 `text/plain`**，因此不触发输入框的文本粘贴，也不会与 DSH 的「拖入文件」浮层冲突；文档级 capture 监听 `dragover`/`drop` 判定输入卡并转发手势。**载荷是版本化 JSON**（`{v:1, items:[{path,isDir}], root}`）而不是单条路径：`dragstart` 用 `resolveTargets` + `treeSelectedItems` 得到整批目标，点在选中之外时先按 `point` 手势收拢；`drop` 先用当前事件 `dropOffsetFromEvent` 重算落点（不缓存 dragover 的值），再只调一次 `addPathsToTask(..., card, at)`。坐标映射（chip=1、managed `<br>`=0、段落间一个 `\n`、嵌套元素递归）与视觉光标各只有一处实现；光标是 `document.body` 下的单例 `#sshwsp-drop-caret`，不写 `<style>`、不动宿主样式表。浮动菜单的定位、首项聚焦、Esc / Tab、外点、滚动 / resize / 失焦全部收在 `openMenuAt` 一处，行菜单与本地空白菜单共用它。手势面向**主会话**的输入框（文件树跟随主会话，二者工作区根一致时用相对拼写）；多输入框不承诺精确路由，按上面的退化表回退追加。
 
 ## 从系统拖入文件（上传）
 
@@ -593,7 +593,7 @@ unavailable)` 把"补丁不需要装"和"我不知道补丁装没装"写成了�
 - 尺寸与滚动：宽 **400**（窄视口下不超过视口宽度减 16）、最大高 320，内部列表滚动；不因一条长文件名把面板撑出屏幕。
 - 绘制顺序：排队 / 运行中的项在上、按到达顺序；已结算（完成 / 失败 / 取消）的项在下且**最新在前**。store 仍按到达顺序调度（`queueDrain` 依赖它），只有列表的绘制顺序变了——此前始终按到达顺序追加，下载几次之后最新一行落在 320px 可视区之外，打开浮层看到的是最老的行，容易被读成「这次下载没有记录」。
 - 每行：方向**图标**（`UploadIcon` 托盘上箭头 / `DownloadIcon` 托盘下箭头，运行中变蓝）+ 名称（按码点截断，`title` 给全名）+ 百分比或字节 + 取消按钮。下载在跑时方向图标外面套一圈：灰色轨道 + 蓝色弧线（`TransferProgressIcon`）——已知总量按比例填充，未知总量（目录归档）转一段固定 30% 的弧，**排队中只有空环、不转**。同一个环也出现在文件面板头部；行内下载入口在下载期间禁用，避免同一路径被排两次。
-- 图标而非字符的取舍：`↓` / `↑` 是字体字形，字重随宿主主题漂移，也画不进同一个环；因此下载、上传与菜单图标改为 svg 线条。下载与上传共用 `TRAY_ARROW_PATHS` 的一组托盘箭头（见 `lib/client.js` 的 `DownloadIcon` / `UploadIcon` / `TransferProgressIcon`），行内按钮与菜单的传输项用同一组路径。菜单里其余动作各用独立图形：添加到任务（对话气泡 + 号）、复制路径（双页）、重命名（铅笔）、删除（垃圾桶），不再按文件 / 文件夹类型套图标。**只有知道总量才画百分比**（单文件下载的 `content-length`、上传的本地文件大小）；目录归档没有总量，只报已传字节，不画 0% 也不画假的进度。失败行直接列出原因，不折叠。
+- 图标而非字符的取舍：`↓` / `↑` 是字体字形，字重随宿主主题漂移，也画不进同一个环；因此下载、上传与菜单图标改为 svg 线条。下载与上传共用 `TRAY_ARROW_PATHS` 的一组托盘箭头（见 `lib/client/client.js` 的 `DownloadIcon` / `UploadIcon` / `TransferProgressIcon`），行内按钮与菜单的传输项用同一组路径。菜单里其余动作各用独立图形：添加到任务（对话气泡 + 号）、复制路径（双页）、重命名（铅笔）、删除（垃圾桶），不再按文件 / 文件夹类型套图标。**只有知道总量才画百分比**（单文件下载的 `content-length`、上传的本地文件大小）；目录归档没有总量，只报已传字节，不画 0% 也不画假的进度。失败行直接列出原因，不折叠。
 - 速度与进度条：名称下一条浅蓝色进度条（`aria-hidden`，数字仍由文本给出）——已知总量按百分比填充，已完成填满，目录归档没有总量时用横向扫描动画，**不画 0% 或 100% 冒充**；失败 / 取消的填充转灰，表示字节停在哪里而不是方向。运行中的行同时显示速度（`45% · 1.2 MB/s · 23.4 MB`）；速率由队列状态机按动作时钟采样并平滑，**两次采样不足 250 ms 不更新**、**停顿超过 5 s 归零重测**（不把停顿平均成一个很慢的速度），结束时不再显示速度。
 - 底部：常驻「刷新或关闭页面会中断传输」（刷新不会在后台继续），以及「清除已完成」——只在有终态项时可用；进行中的项不会被清除。
 - 空态：远程目录列表里，队列为空时入口照常渲染，浮层显示「暂无传输」；浮层开着而队列被清空也保持打开，不再自动关闭——入口常驻之后，空队列是一个可查看的状态，而不是「面板该消失了」。

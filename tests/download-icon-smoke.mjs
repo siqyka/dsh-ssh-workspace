@@ -10,7 +10,7 @@
  * other verb, so a copy or delete row cannot be mistaken for a file-type row.
  *
  * Source greps alone would pass on a drawing that never renders, so this suite
- * lifts the shipped icon factory out of `lib/client.js`, runs it against a
+ * lifts the shipped icon factory out of `lib/client/client.js`, runs it against a
  * minimal React double, and asserts on the tree it actually builds: viewBox,
  * stroke style, the three tray paths, the ring's arc length for a known
  * percentage, the spinning arc for an unknown one, and the clamp that keeps a

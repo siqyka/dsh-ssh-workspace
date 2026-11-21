@@ -21,8 +21,8 @@ import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
-const clientPath = path.join(root, 'lib', 'client.js')
-const backupPath = path.join(root, 'lib', 'client.js.reverse-backup')
+const clientPath = path.join(root, 'lib', 'client', 'client.js')
+const backupPath = path.join(root, 'lib', 'client', 'client.js.reverse-backup')
 
 const SUITES = ['tree-blank-menu', 'client-shape']
 
@@ -52,7 +52,7 @@ function runSuite (name) {
 function mutate (label, from, to) {
   const original = readFileSync(clientPath, 'utf8')
   if (!original.includes(from)) {
-    return { label, applied: false, reason: 'anchor not found in lib/client.js' }
+    return { label, applied: false, reason: 'anchor not found in lib/client/client.js' }
   }
   writeFileSync(clientPath, original.replace(from, to))
   try {
@@ -71,7 +71,7 @@ function mutate (label, from, to) {
 console.log('\n=== reverse verification: blank-menu panel boundary ===\n')
 
 if (!existsSync(clientPath)) {
-  console.error('lib/client.js is missing')
+  console.error('lib/client/client.js is missing')
   process.exit(2)
 }
 
@@ -82,7 +82,7 @@ if (!existsSync(clientPath)) {
 // make every "RED" below meaningless (and ship the mutation if nobody looked).
 if (existsSync(backupPath)) {
   writeFileSync(clientPath, readFileSync(backupPath))
-  console.log('recovered lib/client.js from a previous run\'s backup')
+  console.log('recovered lib/client/client.js from a previous run\'s backup')
 }
 
 copyFileSync(clientPath, backupPath)
@@ -104,7 +104,7 @@ const restoreNow = () => {
     writeFileSync(clientPath, readFileSync(backupPath))
     unlinkSync(backupPath)
   } catch (error) {
-    console.error(`could not restore lib/client.js: ${error.message}`)
+    console.error(`could not restore lib/client/client.js: ${error.message}`)
     console.error(`the original is still at ${backupPath} — copy it back by hand`)
   }
 }

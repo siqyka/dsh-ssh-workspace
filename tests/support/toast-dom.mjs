@@ -1,5 +1,5 @@
 /**
- * Shared harness for the DOM-level toasts in `lib/client.js`.
+ * Shared harness for the DOM-level toasts in `lib/client/client.js`.
  *
  * Suites need the REAL `notifyUser` / `transferNotice` rather than a retyped
  * copy — a copy proves nothing about the code that ships. The slice is
@@ -38,7 +38,7 @@ export function endOfBlock (source, open) {
 /**
  * Lift the toast controller out of the browser bundle.
  *
- * @param {string} source - text of `lib/client.js`.
+ * @param {string} source - text of `lib/client/client.js`.
  * @returns {{ms: number, build: Function}} the shipped seven-second figure,
  *   and a factory that binds the helpers to a DOM, a clock and a window.
  */

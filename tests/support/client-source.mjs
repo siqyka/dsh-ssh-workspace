@@ -1,11 +1,12 @@
 /**
  * The browser half's source text, wherever its parts currently live.
  *
- * `lib/client.js` is one 12,603-line `window.__ModuleLoader__.load(...)` call
- * today. The Host supports splitting it into chunks that sit beside it
- * (`client.<name>.js`, same directory, registered through
- * `require.async('./client.<name>.js')`), and the parts that are only needed
- * once a dialog opens are the ones worth moving there.
+ * The browser half lives in `lib/client/`: a main bundle `client.js` plus the
+ * chunks beside it. The Host supports splitting it into chunks that sit beside
+ * the owner (`client.<name>.js`, same directory, registered through
+ * `require.async('./client.<name>.js')`, and served from `dirname(clientPath)`),
+ * and the parts that are only needed once a dialog opens are the ones worth
+ * moving there.
  *
  * A suite that asserts "the row menu offers rename" is asking about the client
  * half, not about a file. Reading the concatenation keeps that question intact
@@ -28,6 +29,9 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
+/** The browser half lives in its own directory; the Host serves a chunk from beside its owner. */
+const CLIENT_DIR = path.join('lib', 'client')
+
 /** A chunk is `client.<something>.js` beside `client.js`, per the Host's CLIENT_CHUNK. */
 const CHUNK_RE = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u
 
@@ -40,7 +44,7 @@ const CHUNK_RE = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u
 export function clientChunkNames (pluginRoot) {
   let entries
   try {
-    entries = readdirSync(path.join(pluginRoot, 'lib'))
+    entries = readdirSync(path.join(pluginRoot, CLIENT_DIR))
   } catch {
     return []
   }
@@ -54,9 +58,9 @@ export function clientChunkNames (pluginRoot) {
  * @returns {string} the concatenated source, with CRLF normalized to LF.
  */
 export function clientSource (pluginRoot) {
-  const parts = [readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')]
+  const parts = [readFileSync(path.join(pluginRoot, CLIENT_DIR, 'client.js'), 'utf8')]
   for (const name of clientChunkNames(pluginRoot)) {
-    parts.push(readFileSync(path.join(pluginRoot, 'lib', name), 'utf8'))
+    parts.push(readFileSync(path.join(pluginRoot, CLIENT_DIR, name), 'utf8'))
   }
   return parts.join('\n').replace(/\r\n/gu, '\n')
 }
@@ -69,7 +73,7 @@ export function clientSource (pluginRoot) {
  * @returns {string} that part's source, with CRLF normalized to LF.
  */
 export function clientPartSource (pluginRoot, name = 'client.js') {
-  return readFileSync(path.join(pluginRoot, 'lib', name), 'utf8').replace(/\r\n/gu, '\n')
+  return readFileSync(path.join(pluginRoot, CLIENT_DIR, name), 'utf8').replace(/\r\n/gu, '\n')
 }
 
 export default { clientSource, clientChunkNames, clientPartSource }

@@ -16,7 +16,7 @@
 
 | 位置 | 规模 | 结构 |
 | --- | --- | --- |
-| `lib/client.js` | **12,603 行 / 627,867 B** | 单 `window.__ModuleLoader__.load({id, factory})`；22 个 banner 段 |
+| `lib/client/client.js` | **12,603 行 / 627,867 B** | 单 `window.__ModuleLoader__.load({id, factory})`；22 个 banner 段 |
 | `lib/routes.js` | **3,765 行** | `makeRoutes`（`lib/routes.js:911`）单函数 **1,856 行**；33 条路由，全部 `kind: 'exact'` |
 | `lib/tools.js` | 2,250 行 | `statusTool`（`lib/tools.js:850`）**606 行**；其余 10 个工具 92–186 行 |
 | `lib/remote-fs.js` | 2,597 行 | `RemoteFileSystem` 类体 1,517 行，其中方法体合计 **976 行** |
@@ -59,7 +59,7 @@
    （`dsh-client-modules/lib/client.js:839-845`）→ `importChunk`（`:849-874`）；
    chunk 文件里写 `load({ id: '<本插件 id>', chunk: 'client.x.js', factory })`
    （`:699-711`）。宿主自己就在用：`dsh-client-ui-sidebar-terminal` 有
-   `lib/client.terminal.js`（13,517 行）由 `React.lazy` + `Suspense` 懒加载；
+   `lib/client/client.terminal.js`（13,517 行）由 `React.lazy` + `Suspense` 懒加载；
    `dsh-client-ui-sidebar-documentpreview` 有 `client.pdf.js` / `client.excel.js` /
    `client.frontmatter-fields.js` 三个 chunk。
 3. **chunk 文件名受正则约束**：`CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/`
@@ -67,7 +67,7 @@
    （`:940`）。chunk **必须与 `client.js` 同目录**（即 `lib/`），不能放子目录。
 4. **chunk 的 URL rev 来自主入口的文件元数据**，改 chunk 本身不抬 rev；宿主按精确 URL
    缓存（`docs/optimization-and-future03.md` §1.1 已实测）。本地开发改 chunk 要么重启，
-   要么触碰 `lib/client.js`。
+   要么触碰 `lib/client/client.js`。
 5. **chunk 可以同步 `require` 本插件自己的 id**：`require('<plugin-id>')` 经
    `stripClientSuffix` 后命中 `factories`，走 `materialize(id)`（`client.js:836`）。
    这是 chunk 共享主 bundle 内核的**唯一**通道。**已实测成立**（E2：真机 + 
@@ -124,7 +124,7 @@
 | --- | --- |
 | `node scripts/check-doc-links.mjs` | 25 个 markdown 文件全部通过 |
 | `node scripts/doc-numbers.mjs --check` | `docs/development.md` 是最新的 |
-| `node --check lib/client.js`（逐文件） | 通过 |
+| `node --check lib/client/client.js`（逐文件） | 通过 |
 | `node scripts/lint.mjs` | 179 个模块解析通过；**但它非递归，看不到 `lib/routes/`（见 2.3）** |
 | `node tests/run.mjs`（设 `DSH_CORE_ROOT`） | **93 passed / 2 partial / 3 skipped / 0 failed**（98 套件） |
 | 逐套件直跑（`DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules`） | `routes-smoke` 276/0、`remote-fs-smoke` 67/0、`transfer-smoke` 114/0、`tool-results-smoke` 33/0、`client-shape-smoke` **337/0** |
@@ -300,16 +300,16 @@ chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 
 
 | chunk | 导出的组件 | 搬走的渲染代码 | 必须拿到的（留主 bundle） |
 | --- | --- | --- | --- |
-| `lib/client.locale.js` | `NS`、`zh`、`en`、`applyParams`、`makeTranslate`、`provenanceText`、`relativeTimeText` | 850 行 | **无**（叶子：不借主包任何名字） |
-| `lib/client.styles.js` | `injectStyles`、`CSS_ID` | 546 行 | **无**（叶子） |
-| `lib/client.icons.js` | 十四个图标工厂加 `TRAY_BASE_PATH` / `TRAY_ARROW_PATHS` | 228 行 | **无**（叶子，只 `require('react')`） |
-| `lib/client.dialogs.js` | `HostEditor`、`DirectoryBrowser`、`ReportDialog` | 约 510 行 | `API`、`FolderIcon`、`CloseIcon`、`useDialogA11y`、`modalLayer`、`backdropDismiss`、`capabilityNotes`、目录选择器的纯 helper |
-| `lib/client.panel.js` | `RemoteWorkspacePanel`、`HostCard` | 1,780 行 | `API`、`fetchJson`、`fetchReportText`、`RemoteMarkIcon`、`relativeTimeText`、`provenanceText`、`DialogSlot` 与三个对话框、`notifyUser`、`toastError`、`useTransferActionsSlot`、`syncRemoteWorkspaceMarks`、`capabilityNotes` |
-| `lib/client.add-workspace.js` | `AddChooser`、`RemoteWorkspaceDialog`、`AddWorkspaceFlow` | 490 行 | `API`、`fetchJson`、`BROWSE_LIST_LIMIT`、`FLOW_MENU_WIDTH_ROOMY`、`flowMenuPosition`、四个图标、`backdropDismiss`、`modalLayer`、`useDialogA11y`、`useMenuKeyboard`、目录选择器的纯 helper、`refreshRemoteWorkspaceMarks` |
-| `lib/client.transfer-queue.js` | `TransferQueuePanel` | 215 行 | `useTransferQueue`、`useDialogA11y`、`backdropDismiss`、队列的 14 个纯 helper |
-| `lib/client.history.js` | `ForgeTabWithHistory` 的渲染体 | 243 行 | `ChevronIcon`、`RefreshIcon`、`ourT`（由 apply 注入） |
+| `lib/client/client.locale.js` | `NS`、`zh`、`en`、`applyParams`、`makeTranslate`、`provenanceText`、`relativeTimeText` | 850 行 | **无**（叶子：不借主包任何名字） |
+| `lib/client/client.styles.js` | `injectStyles`、`CSS_ID` | 546 行 | **无**（叶子） |
+| `lib/client/client.icons.js` | 十四个图标工厂加 `TRAY_BASE_PATH` / `TRAY_ARROW_PATHS` | 228 行 | **无**（叶子，只 `require('react')`） |
+| `lib/client/client.dialogs.js` | `HostEditor`、`DirectoryBrowser`、`ReportDialog` | 约 510 行 | `API`、`FolderIcon`、`CloseIcon`、`useDialogA11y`、`modalLayer`、`backdropDismiss`、`capabilityNotes`、目录选择器的纯 helper |
+| `lib/client/client.panel.js` | `RemoteWorkspacePanel`、`HostCard` | 1,780 行 | `API`、`fetchJson`、`fetchReportText`、`RemoteMarkIcon`、`relativeTimeText`、`provenanceText`、`DialogSlot` 与三个对话框、`notifyUser`、`toastError`、`useTransferActionsSlot`、`syncRemoteWorkspaceMarks`、`capabilityNotes` |
+| `lib/client/client.add-workspace.js` | `AddChooser`、`RemoteWorkspaceDialog`、`AddWorkspaceFlow` | 490 行 | `API`、`fetchJson`、`BROWSE_LIST_LIMIT`、`FLOW_MENU_WIDTH_ROOMY`、`flowMenuPosition`、四个图标、`backdropDismiss`、`modalLayer`、`useDialogA11y`、`useMenuKeyboard`、目录选择器的纯 helper、`refreshRemoteWorkspaceMarks` |
+| `lib/client/client.transfer-queue.js` | `TransferQueuePanel` | 215 行 | `useTransferQueue`、`useDialogA11y`、`backdropDismiss`、队列的 14 个纯 helper |
+| `lib/client/client.history.js` | `ForgeTabWithHistory` 的渲染体 | 243 行 | `ChevronIcon`、`RefreshIcon`、`ourT`（由 apply 注入） |
 
-合计 **3,967 行**离开主包，`lib/client.js` 从 12,604 行降到 8,290 行（−34%，
+合计 **3,967 行**离开主包，`lib/client/client.js` 从 12,604 行降到 8,290 行（−34%，
 500,755 → 386,314 B）。
 
 三份数据 chunk 是**叶子**：它们不 destructure 主包任何名字。`apply` 因此必须是
@@ -324,7 +324,7 @@ chunk 只导出**组件**，内核与所有同步 helper 留在主 bundle，经 
 再挂懒组件——否则每次页面加载都会取 427 行去渲染一个 `null`。
 
 `Remote-workspace marks` **不拆**：它是 apply 期安装的 `MutationObserver`（`installRemoteWorkspaceMarks`
-`lib/client.js:4718`，8 行），没有渲染时机可用；它的渲染部分被 `Main panel` 与
+`lib/client/client.js:4718`，8 行），没有渲染时机可用；它的渲染部分被 `Main panel` 与
 `Composer file bridge` 双向引用，拆出去只会把内核拉进 chunk。
 
 `Composer file bridge` 同样**不拆**：`installTreeDragBridge`（174 行）与
@@ -392,7 +392,7 @@ chunk 文件里 `load({ id: '<本插件 id>', chunk: 'client.dialogs.js', factor
    因为名字确实"带过来了"，只是值是空的。只有真跑一次 `apply` 再渲染导出的图标
    才看得出来。
 
-**map 与检查**：文件头那张 map（`lib/client.js:12-66`）现在有 `client-shape-smoke`
+**map 与检查**：文件头那张 map（`lib/client/client.js:12-66`）现在有 `client-shape-smoke`
 的强校验（解析 banner、要求内容与顺序都一致，`tests/client-shape-smoke.mjs:1286-1351`）。
 拆成多文件后，这张 map 升格为**整个客户端半边的 part 表**，由新的
 `scripts/client-map.mjs` 维护并检查三件事：每个 part 的 banner 都在表里、
@@ -449,23 +449,23 @@ chunk 文件里 `load({ id: '<本插件 id>', chunk: 'client.dialogs.js', factor
     `tests/support/client-source.mjs`（按 part 表拼接主 bundle + chunk），
     把 28 个套件的 29 处 `readFileSync(...client.js)` 换成它。**源码零改动，全绿。**
 17. `chore(client): verify a chunk can require the main bundle` —— 加
-    `lib/client.probe.js` 探针 + 一次 `require.async`，在真机确认
+    `lib/client/client.probe.js` 探针 + 一次 `require.async`，在真机确认
     `require('<本插件 id>')` 可取到主 bundle 导出（宿主 `client.js:836` 的
     `factories.has` 分支）。结论写进本页 §1.1 第 5 条。
 18. `chore(client): remove the chunk probe` —— 回滚探针，只留结论。
 19. `refactor(client): one declared part list, checked` ⛔ —— 新建
     `scripts/client-map.mjs`，接进 `npm run check`；`client-shape-smoke` 的 map
     断言改为调用它。
-20. `refactor(client): load the dialogs from a chunk` ⛔ —— `lib/client.dialogs.js`（699 行）。
+20. `refactor(client): load the dialogs from a chunk` ⛔ —— `lib/client/client.dialogs.js`（699 行）。
     三个渲染点（`:4424` `ReportDialog`、`:4432` `DirectoryBrowser`、`:4441` `HostEditor`）
     各包一层 `Suspense` + 带兜底的 `lazy`。
 21. `refactor(client): split the transfer-queue state from its panel` —— 文件内切分：
     状态机（`useTransferQueue`、`enqueueUploads` 等）留在主 bundle，只把
     `TransferQueuePanel`（`:8375-8440`，66 行）的渲染剥出来。
 22. `refactor(client): load the transfer-queue panel from a chunk` ⛔ ——
-    `lib/client.transfer-queue.js`；渲染点 `:10176`。
+    `lib/client/client.transfer-queue.js`；渲染点 `:10176`。
 23. `refactor(client): load the change-request tab from a chunk` ⛔ ——
-    `lib/client.history.js`（588 行）。**E2 探针失败时可放弃这一步**：它只省 588 行，
+    `lib/client/client.history.js`（588 行）。**E2 探针失败时可放弃这一步**：它只省 588 行，
     却要按 props 传两个图标，性价比最低；前两个 chunk 不受影响。
 24. `docs: the client half is more than one file` —— 同步
     `docs/architecture.md:21,750`、`docs/development.md:25,62,119,120`、
@@ -545,11 +545,11 @@ node scripts/lint.mjs     # 基线 179 modules；C1 之后 197，现状 215
    93 passed / 2 partial / 3 skipped / 0 failed；**现状 94 passed / 2 partial /
    3 skipped / 0 failed**，多出的 1 个是 E2 新增的 `client-chunk-smoke`）。
 2. `node scripts/lint.mjs` 通过，且它**真的覆盖**新增的 `lib/routes/*.js`
-   （C1 递归后从 179 变成 197，现状 215 个模块）与 `lib/client.*.js`。
+   （C1 递归后从 179 变成 197，现状 215 个模块）与 `lib/client/`。
 3. `node scripts/check-doc-links.mjs` 与 `node scripts/doc-numbers.mjs --check` 通过；
    `docs/development.md` 的生成表里 `HTTP routes` 仍是 **33**、`model-facing tools`
    仍是 **11**，`modules under lib/` 的变化与实际文件数一致。
-4. `npm pack --dry-run` 的产物包含 `lib/routes/*.js` 与 `lib/client.*.js`。
+4. `npm pack --dry-run` 的产物包含 `lib/routes/*.js` 与 `lib/client/*.js`。
 5. 真实宿主（浏览器）里：面板正常渲染；打开「新建远程工作区」、打开目录浏览器、
    打开诊断报告、打开传输队列、打开「变更请求」tab，各自首次点击后能加载对应 chunk
    （Network 面板出现 `client.<name>.js?rev=…` 的 200），且首屏 `DOMContentLoaded`
@@ -562,7 +562,7 @@ node scripts/lint.mjs     # 基线 179 modules；C1 之后 197，现状 215
    注意 C-02 实测的是**主 bundle 里一次 `require.async` 失败**（`failed: client-modules:
    bundle script … failed to load`，值是失败字符串）。`React.lazy` 那条路不一样：
    promise reject 会让 React **抛错到最近的 error boundary**，而本 bundle 目前
-   **没有 error boundary，也没有 `Suspense`**（`lib/client.js` 全文 0 命中）。
+   **没有 error boundary，也没有 `Suspense`**（`lib/client/client.js` 全文 0 命中）。
    所以每个懒组件必须自带兜底：
    - `Suspense` 的 `fallback: null`（照抄 `dsh-client-ui-sidebar-terminal:174`）；
    - `React.lazy(() => require.async(…).then(m => ({default: m.X}), () => ({default: Fallback})))`
@@ -591,7 +591,7 @@ node scripts/lint.mjs     # 基线 179 modules；C1 之后 197，现状 215
 | `React.lazy` 失败不隔离 | 提交 20 / 22 / 23 | 每个懒组件自带 `Suspense` + 带兜底的 `lazy`（见 §5 第 6 条）；C-02 的结论不能外推 |
 | **chunk 漏解构一个名字** | 任何一次搬段之后 | 实际踩到三次：`fetchJson`、`BROWSE_LIST_LIMIT`、`schemeRules`（后者在服务端，同一类失败）。前两次都是「加载不报错、点开目录才炸」。处置不是靠人看，而是 `tests/support/free-names.mjs`：真 tokenizer（剥注释 / 字符串 / 正则，但**递归进模板 `${…}`**）+ 粗粒度作用域，把「主包声明过、chunk 用到、却既没解构也没自声明」的名字全报出来 |
 | **搬段时把主包要用的名字一起搬走** | 搬主面板时 | 实际踩到两次：`TOAST_DISMISS_MS`（`armToast` 在读）与 `capabilityNotes`（dialogs chunk 在读）原本住在「Main panel」段里。段一搬，主包就少两个绑定——`node --check` 通过、加载通过，点开对话框才炸。处置：搬段前先算「这段声明了哪些名字、段外谁在用」，把有外部读者的先搬出去 |
-| chunk 的 rev 缓存让本地改动不生效 | 提交 20 之后的本地开发 | 已在 §1.1 第 4 条写明：改 chunk 需重启或触碰 `lib/client.js` |
+| chunk 的 rev 缓存让本地改动不生效 | 提交 20 之后的本地开发 | 已在 §1.1 第 4 条写明：改 chunk 需重启或触碰 `lib/client/client.js` |
 | `lib/routes/*.js` 逃过语法检查 | 提交 C2 之后 | C1 先把 `scripts/lint.mjs` 改递归；验收第 2 条要求覆盖数变成 190 |
 | watch 集群一个提交内拆不完 | 提交 16 | 就地停止，结论写进 `optimization-and-future03.md`，不硬推 |
 | 28 个切片套件在搬段时红一片 | 提交 16 之后 | 提交 16 先把读取收敛到 resolver；之后每次搬段只改 resolver 的 part 表 |

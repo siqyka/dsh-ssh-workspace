@@ -3,7 +3,7 @@
  *
  * Two gestures the user asked for by name, and both live in the host file tree
  * — a DOM this plugin does not own. So they are pinned the same way the
- * selection bridge is: the real code is lifted out of `lib/client.js` and run
+ * selection bridge is: the real code is lifted out of `lib/client/client.js` and run
  * against a DOM double shaped like the host's tree.
  *
  * What is being protected:

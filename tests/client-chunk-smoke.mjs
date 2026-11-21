@@ -163,7 +163,7 @@ const system = new host.ClientModuleSystem({
 const collected = []
 const bundleContext = { window: { __ModuleLoader__: { load: (registration) => collected.push(registration) } } }
 vm.createContext(bundleContext)
-vm.runInContext(readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8'), bundleContext, { filename: 'lib/client.js' })
+vm.runInContext(readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.js'), 'utf8'), bundleContext, { filename: 'lib/client/client.js' })
 
 console.log('\n[2] the main bundle under the real loader')
 check('it registers exactly one module', collected.length === 1, String(collected.length))
@@ -281,20 +281,20 @@ check('require.async needs a "./" prefix for a sibling chunk',
 // cries wolf on correct code is a check that gets deleted.
 console.log('\n[5] every chunk carries what it borrows')
 {
-  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.js'), 'utf8')
   const available = bundleNames(bundleSource)
   const exported = exportedNames(bundleSource)
   check('the bundle makes names available to its chunks', available.size > 0, String(available.size))
   check('the exports block is smaller than "everything declared"', exported.size > 0 && exported.size < available.size,
     `${exported.size} exported of ${available.size} declared — equal would mean the check below cannot fail`)
 
-  const chunkFiles = readdirSync(path.join(pluginRoot, 'lib'))
+  const chunkFiles = readdirSync(path.join(pluginRoot, 'lib', 'client'))
     .filter(name => /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u.test(name))
     .sort()
   check('there is at least one chunk to check', chunkFiles.length > 0, chunkFiles.join(', '))
 
   for (const file of chunkFiles) {
-    const source = readFileSync(path.join(pluginRoot, 'lib', file), 'utf8')
+    const source = readFileSync(path.join(pluginRoot, 'lib', 'client', file), 'utf8')
     // A chunk that borrows nothing is a leaf (`client.styles.js` is CSS text,
     // `client.icons.js` is glyph factories, `client.locale.js` is tables). It
     // has nothing to carry across, so demanding a seam of it would push an
@@ -336,7 +336,7 @@ console.log('\n[5] every chunk carries what it borrows')
 // `apply` the exported glyph is the real one.
 console.log('\n[6] the boot chunks\' names are republished')
 {
-  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.js'), 'utf8')
   const bootBody = /async function loadBootChunks \(\) \{([\s\S]*?)\n {4}\}/u.exec(bundleSource)?.[1] ?? ''
   const republishBody = /function republishBootNames \(\) \{([\s\S]*?)\n {4}\}/u.exec(bundleSource)?.[1] ?? ''
   check('loadBootChunks and republishBootNames both exist',
@@ -398,7 +398,7 @@ console.log('\n[6] the boot chunks\' names are republished')
       // A chunk's script executes against the LIVE facade — the module system.
       const chunkContext = { window: { __ModuleLoader__: live.facade }, console }
       vm.createContext(chunkContext)
-      vm.runInContext(readFileSync(path.join(pluginRoot, 'lib', name), 'utf8'), chunkContext, { filename: name })
+      vm.runInContext(readFileSync(path.join(pluginRoot, 'lib', 'client', name), 'utf8'), chunkContext, { filename: name })
     },
   })
   const bundleRegistrations = []
@@ -407,7 +407,7 @@ console.log('\n[6] the boot chunks\' names are republished')
     console, setTimeout: () => 0, clearTimeout: () => {}, queueMicrotask,
   }
   vm.createContext(applyBundleContext)
-  vm.runInContext(bundleSource, applyBundleContext, { filename: 'lib/client.js' })
+  vm.runInContext(bundleSource, applyBundleContext, { filename: 'lib/client/client.js' })
   live.facade.load(bundleRegistrations[0])
 
   let applied

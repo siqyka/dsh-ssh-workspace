@@ -12,7 +12,7 @@
 
 ### 1.1 客户端 chunk 拆分（C-02；原 O-12 的“不做”已被推翻）
 
-**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出五个按需 chunk：`lib/client.dialogs.js`、`lib/client.panel.js`、`lib/client.add-workspace.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`；随后又拆出三份**启动期**chunk（`lib/client.locale.js`、`lib/client.styles.js`、`lib/client.icons.js`），由 `apply` 开头的 `await loadBootChunks()` 统一取回。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
+**状态**：**已实施**（2026-11-21，分支 `refactor/code-splitting`）。主包拆出五个按需 chunk：`lib/client/client.dialogs.js`、`lib/client/client.panel.js`、`lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`、`lib/client/client.history.js`；随后又拆出三份**启动期**chunk（`lib/client/client.locale.js`、`lib/client/client.styles.js`、`lib/client/client.icons.js`），由 `apply` 开头的 `await loadBootChunks()` 统一取回。**不要**再引用 O-12 那句“必须声明第二个 `dsh.client` 入口或引入构建步骤”——它只对了一半。
 
 宿主 `@deepseek-ai/dsh-client-modules`（`app.asar` 内）的真实能力：
 
@@ -24,14 +24,14 @@
 | 注册 | `:704` 校验 `registration.chunk` | chunk 里写 `load({ id, chunk: 'client.extra.js', factory })` |
 | 取用 | `:852-877` `chunkUrl(...)` + `loadBundle` | 按插件目录同名文件取，不扫描、不预构建 |
 
-**最小验证（2026-11-09 已做，探针已回滚）**：新增只含 `load({ id, chunk: 'client.probe.js', factory })` 的 `lib/client.probe.js`（141 B / 5 行），并在主 bundle 末尾调一次 `require.async('./client.probe.js')`。实测宿主（`127.0.0.1:14419`，PID 5228）返回：
+**最小验证（2026-11-09 已做，探针已回滚）**：新增只含 `load({ id, chunk: 'client.probe.js', factory })` 的 `lib/client/client.probe.js`（141 B / 5 行），并在主 bundle 末尾调一次 `require.async('./client.probe.js')`。实测宿主（`127.0.0.1:14419`，PID 5228）返回：
 
 - `GET /plugins/@shiqyka/dsh-ssh-workspace/client.probe.js?rev=6b5903a36189` → **200** `text/javascript`；资源计时 `startTime=289ms`、`duration=0.8ms`，而导航 `DOMContentLoaded=47ms` / `load=537ms`——chunk 在主界面可交互之后才加载，**未阻塞首屏**；
 - 页面内表达式 `window.__SSHWSP_CHUNK_PROBE__` → **`chunk-ok`**；没有 `duplicate factory registration`，也没有 `bundle … loaded without registering`；探针期间主 bundle 498,632 B / 10,013 行（含探针钩子；回滚后 498,178 B / 10,000 行），chunk 原始 141 B / 5 行（宿主组合包装后的响应体 185 B）；
 - 负对照：把 chunk 改名为 `client.probe.off.js` 后仅刷新页面仍返回缓存的 200（宿主 `chunkResponse` 按精确 URL 缓存）。改为主 bundle `touch` 抬升 rev 到 `d89372bf3d03` 再刷新，得到 **404**（`transferSize=300`、`encodedBodySize=0`），探针值变成 `failed: client-modules: bundle script plugins/@shiqyka/dsh-ssh-workspace/client.probe.js?rev=d89372bf3d03 failed to load`，主界面照常渲染——失败是隔离的，不会阻塞主 bundle；
-- 回滚：`git checkout -- lib/client.js`、删除 `lib/client.probe.js`，`git status` 干净。
+- 回滚：`git checkout -- lib/client/client.js`、删除 `lib/client/client.probe.js`，`git status` 干净。
 
-**拆分的运维约束**：chunk 的 URL rev 来自主入口 `lib/client.js` 的文件元数据（`artifactRevision`），chunk 自己的修改**不会**改变这个 rev；宿主又按精确 URL 缓存响应。因此运行中的进程里只改 chunk 文件不会生效——要么重启，要么触碰主入口改变 rev。发布包不受影响（新进程会读新文件），但本地开发必须记住这一点。
+**拆分的运维约束**：chunk 的 URL rev 来自主入口 `lib/client/client.js` 的文件元数据（`artifactRevision`），chunk 自己的修改**不会**改变这个 rev；宿主又按精确 URL 缓存响应。因此运行中的进程里只改 chunk 文件不会生效——要么重启，要么触碰主入口改变 rev。发布包不受影响（新进程会读新文件），但本地开发必须记住这一点。
 
 **go/no-go**：通道 **GO**（无需构建、无需第二个 `dsh.client` 入口）。真实拆分已于 2026-11-21 落地：八个 chunk 合计 3,967 行离开主包（12,604 → 8,290 行，−34%，500,755 → 386,314 B），每个都包在 `Suspense fallback: null` 里，chunk 取不到只损失它自己。chunk 回连主包的通道（`require('<插件 id>')` 拿到主包 exports）由 `tests/client-chunk-smoke.mjs` 在真实 loader 上证明，不再靠推断。三份数据 chunk 没有 reverse 依赖，是**叶子**：它们不 destructure 主包任何名字，该套件对叶子的要求是“不需要 seam 却也没长出 seam”。
 
@@ -47,7 +47,7 @@
 6. **宿主无条件渲染的空洞要自己挡一层**。`directoryFlow` 由工作区选择器无条件渲染，而占用组件在关闭时返回 `null`——直接 `React.lazy` 会让页面一加载就取 427 行去渲染一个 `null`。主包留的 `FlowSlot` 先判 `open`，再挂懒组件。
 7. **启动 chunk 的名字要在 `apply` 里重发布一次**。`Object.assign(exports, …)` 拷的是**值**，而它在模块求值时就执行了——那时三块数据还没取回，导出里全是 `() => null` 这类占位。chunk 只解构一次，拿到占位符就永远是占位符，画面空白且**零报错**。所以 `loadBootChunks()` 末尾必须调 `republishBootNames()` 重新拷那十二个名字。这条是末轮自己写出来的 bug，靠"真跑一次 `apply` 再渲染导出的图标"才抓到：静态 grep 看不出"值被拷早了"。
 
-**触发条件**：`lib/client.js` 继续增长到影响启动、内存或编辑体验时；或下一次本来就要大改界面时顺手做。
+**触发条件**：`lib/client/client.js` 继续增长到影响启动、内存或编辑体验时；或下一次本来就要大改界面时顺手做。
 
 ### 1.2 配置解析的统一词法层（F-10）
 
@@ -94,7 +94,7 @@
 - 2026-11-09 门禁收口：`run.mjs` 增加 `partial` 第三态（`tests/support/run-state.mjs` + `run-state-smoke`），默认 71 passed / 6 skipped、装配树 74 passed / 1 partial / 2 skipped；`reverse-verify-future` 19/0；F-10 判定收敛、F-11 触发未满足（见 §1.2 / §1.3）。
 - 本机路径直通（`localPassthrough`，issue #4）已落地（2026-11-13）：`lib/passthrough.js` 做词法前缀匹配（默认 `$DSH_HOME/attachments` / `plugins`），`ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 在远端分类前直通本机；剥离 cwd 防递归，未命中路径仍远端，不做 `stat`，写围栏不变；测试见 `tests/local-passthrough-smoke.mjs`。
 - 显式本机 scheme 与「`@` 裸 POSIX 远端优先、miss 回退本机」已落地（2026-11-14，随 0.3.4 发布）：scheme 名与回退开关只存 `passthrough.settings` 一处，解析 / `fs-shim` 折叠 / `@` 提取三缝读同一个值；回退只覆盖点名路径与读动词。规则（≥ 3 字符、保留名表、两个大小写字段）由 `/status.passthrough.schemeRules` 下发，客户端不留第二份。测试见 `tests/local-passthrough-smoke.mjs`（231 项）与 `scripts/reverse-verify-passthrough.mjs`（43 条变异）。
-- C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分已于 2026-11-21 落地成八个 chunk：五个按需（`lib/client.dialogs.js`、`lib/client.panel.js`、`lib/client.add-workspace.js`、`lib/client.transfer-queue.js`、`lib/client.history.js`），三个启动期由 `apply` 的 `await loadBootChunks()` 取回（`lib/client.locale.js`、`lib/client.styles.js`、`lib/client.icons.js`）。
+- C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分已于 2026-11-21 落地成八个 chunk：五个按需（`lib/client/client.dialogs.js`、`lib/client/client.panel.js`、`lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`、`lib/client/client.history.js`），三个启动期由 `apply` 的 `await loadBootChunks()` 取回（`lib/client/client.locale.js`、`lib/client/client.styles.js`、`lib/client/client.icons.js`）。
 
 **版本约定**：未明确说“更新版本 / 发布 / 打 tag”时，不改版本号、不发布；发布前按 README 的发布检查表走（`npm run check` 必须全绿）。
 

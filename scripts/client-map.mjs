@@ -1,8 +1,8 @@
 /**
  * The map at the top of the browser bundle, checked against the bundle.
  *
- * `lib/client.js` is one 12,603-line factory, and the numbered map in its first
- * 68 lines is the only navigation aid it has. That map had drifted to ten
+ * `lib/client/client.js` is one ~8,300-line factory, and the numbered map in its
+ * first lines is the only navigation aid it has. That map had drifted to ten
  * entries while the file held eighteen sections: two entries named banners that
  * do not exist, the rest were renamed, and six real sections were missing.
  *
@@ -41,7 +41,7 @@ const CHUNK_RE = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u
  * @returns {Array<{name: string, source: string}>} the parts.
  */
 export function clientParts () {
-  const directory = path.join(root, 'lib')
+  const directory = path.join(root, 'lib', 'client')
   const names = ['client.js', ...readdirSync(directory).filter(name => CHUNK_RE.test(name)).sort()]
   return names.map(name => ({ name, source: readFileSync(path.join(directory, name), 'utf8').replace(/\r\n/gu, '\n') }))
 }

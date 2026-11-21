@@ -125,8 +125,8 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
 
 console.log('\n[host half]')
 check('lib/index.js exists', existsSync(path.join(packageRoot, 'lib/index.js')))
-check('lib/client.js is excluded from the host entry points',
-  pkg.exports?.['.']?.default !== './lib/client.js', JSON.stringify(pkg.exports?.['.']))
+check('the browser bundle is excluded from the host entry points',
+  pkg.exports?.['.']?.default !== pkg.exports?.['./client']?.default, JSON.stringify(pkg.exports?.['.']))
 
 console.log('\n[five-row list cap]')
 // Each long list is a scrolling viewport, not a truncation: dropping rows

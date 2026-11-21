@@ -21,7 +21,7 @@
  *
  * The shipped functions, not a retyped copy: `resolveTargets`,
  * `countDeleteContents` (with its real `listRemoteForCount`), `requestRowDelete`,
- * `requestBatchDownload` and `downloadRows` are read out of `lib/client.js` and
+ * `requestBatchDownload` and `downloadRows` are read out of `lib/client/client.js` and
  * driven with doubles for `document`, `fetch`, the folder picker and the
  * dialog. A copy would prove nothing about what the browser runs.
  *

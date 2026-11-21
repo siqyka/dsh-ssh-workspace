@@ -133,28 +133,28 @@ const MUTATIONS = [
     // DOM to run. Saying that plainly beats pretending the behavioural test
     // covers a wiring change it cannot see.
     name: 'the tree-row upload goes back to two separate toasts',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "      transferQueueNotice = { handle: transferNotice(line), ids: new Set(items.map(item => item.id)), line }",
     replace: "      notifyUser(toastError(line))\n      transferQueueNotice = null",
     suite: 'archive',
   },
   {
     name: 'a completion notice survives navigation',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "function TransferQueuePanel ({ anchor, onClose, t }) {\n      const queue = useTransferQueue()",
     replace: "function TransferQueuePanel ({ anchor, onClose, t }) {\n      const queue = transferQueueState",
     suite: 'archive',
   },
   {
     name: 'the upload reports the LOCAL file size instead of what landed',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "        const landed = typeof parsed?.bytes === 'number' && Number.isFinite(parsed.bytes) ? parsed.bytes : file.size",
     replace: "        const landed = file.size",
     suite: 'archive',
   },
   {
     name: 'the completion line is moved behind the modal backdrop as a toast',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "    function TransferQueuePanel ({ anchor, onClose, t }) {",
     replace: "    function TransferQueueInline () {}\n    function TransferQueuePanel ({ anchor, onClose, t }) {",
     suite: 'archive',
@@ -164,14 +164,14 @@ const MUTATIONS = [
     // round trip, so a picker asked for afterwards fails exactly on the large
     // transfers where a destination matters.
     name: 'the destination is chosen AFTER the bytes arrive',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return",
     replace: "      await Promise.resolve()\n      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return",
     suite: 'archive',
   },
   {
     name: 'a cancelled picker still fetches the file',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "      const target = await pickFileTarget(suggested)\n      if (target.kind === 'canceled') return",
     replace: "      const target = await pickFileTarget(suggested)",
     suite: 'archive',
@@ -180,21 +180,21 @@ const MUTATIONS = [
     // Closing instead of aborting publishes a truncated file under the name the
     // user chose, which reads as a successful download.
     name: 'a failed write CLOSES the file instead of aborting it',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: '        try { await writable.abort() } catch { /* already closed */ }',
     replace: '        try { await writable.close() } catch { /* already closed */ }',
     suite: 'archive',
   },
   {
     name: 'the fallback claims a save it cannot observe',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "      'transfer.downloadStarted': '已开始下载 {name}（{size}），保存位置由浏览器决定',",
     replace: "      'transfer.downloadStarted': '已下载 {name}（{size}）',",
     suite: 'archive',
   },
   {
     name: 'a picker refusal is collapsed into a cancel',
-    file: 'lib/client.js',
+    file: 'lib/client/client.js',
     find: "        if (err?.name === 'AbortError') return { kind: 'canceled' }\n        return { kind: 'unsupported' }",
     replace: "        return { kind: 'canceled' }",
     suite: 'archive',
@@ -251,7 +251,7 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const after = ['lib/tar.js', 'lib/tree-filter.js', 'lib/transfer.js', 'lib/client.js']
+const after = ['lib/tar.js', 'lib/tree-filter.js', 'lib/transfer.js', 'lib/client/client.js']
   .map(name => [name, damagedCount(readFileSync(path.join(root, name), 'utf8'))])
   .filter(([, count]) => count > 0)
 if (after.length > 0) {

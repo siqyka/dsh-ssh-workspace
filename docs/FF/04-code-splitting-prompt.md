@@ -6,7 +6,7 @@
 
 ## 0. 一句话目标
 
-把 `lib/client.js`（12,603 行）、`lib/routes.js` 的 `makeRoutes`（1,856 行单函数）、
+把 `lib/client/client.js`（12,603 行）、`lib/routes.js` 的 `makeRoutes`（1,856 行单函数）、
 `lib/tools.js` 的 `statusTool`（606 行）、`lib/remote-fs.js` 的 watch 集群，以及四处
 逐字重复的小工具函数拆开；**行为、错误码、HTTP 状态码、工具输出 schema、`ssh://`
 围栏语义一律不变**。
@@ -15,12 +15,12 @@
 
 | 事实 | 值 |
 | --- | --- |
-| `lib/client.js` | 12,603 行 / 627,867 B，22 个 banner 段，单 `factory` |
+| `lib/client/client.js` | 12,603 行 / 627,867 B，22 个 banner 段，单 `factory` |
 | `lib/routes.js` | 3,765 行；`makeRoutes`（`:911`）1,856 行；33 条路由全 `kind: 'exact'` |
 | `lib/tools.js` | 2,250 行；`statusTool`（`:850`）606 行，内部三段：schema 855–1233、render 1234–1339、execute 1341–1452 |
 | `lib/remote-fs.js` | 2,597 行；`RemoteFileSystem` 61 个方法、方法体合计 976 行 |
 | `lib/index.js` | 855 行；`apply`（`:269`）584 行 |
-| 测试 | 101 个套件文件，98 个在 `tests/run.mjs` 的 `SUITES`；**28 个套件**、**29 处**读 `lib/client.js` |
+| 测试 | 101 个套件文件，98 个在 `tests/run.mjs` 的 `SUITES`；**28 个套件**、**29 处**读 `lib/client/client.js` |
 | 文档计数器 | `scripts/doc-numbers.mjs`：`countRoutes` 只读 `lib/routes.js`（`:129`），`countTools` 只读 `lib/tools.js`（`:130`），`countModules` 只数 `lib/*.js`（`:119`） |
 
 **环境**：必须设 `DSH_CORE_ROOT`，否则 `lib/peers.js:146` 解析不到 peer 包：
@@ -62,14 +62,21 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
    客户端轨道先把 29 处 `readFileSync` 收敛到 resolver（提交 E1）。
 4. **不新增「文件里有某个字符串」式断言。** 仓库现有的文本切片断言是已知技术债
    （`docs/optimization-and-future03.md` O-14 记过同类问题），本辑不添新的。
-5. **`lib/client.*.js` 必须平铺在 `lib/`。** 宿主按 `dirname(meta.clientPath)` 解析
-   chunk（`dsh-client-modules/lib/index.js:955`），且文件名须匹配
+5. **chunk 必须与主包同目录。** 宿主按 `dirname(meta.clientPath)` 解析 chunk
+   （`dsh-client-modules/lib/index.js:955`），且文件名须匹配
    `/^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/`（`:170`），`client.node.js` 被明确拒绝（`:940`）。
-6. **路由模块放 `lib/routes/` 子目录。** 三处 `readdirSync(lib)` 的非递归扫描
-   （`upstream-contract-smoke.mjs:43`、`capabilities-report-smoke.mjs:117`、
-   `local-passthrough-smoke.mjs:509`）与 `doc-numbers.countModules` 因此不用动。
-   **但 `scripts/lint.mjs:41` 也是非递归的**，所以 C1 必须先把它改成递归，
-   否则 `lib/routes/*.js` 永远不被 `node --check` 检查（现在 190 个模块只查 179 个）。
+   所以**目录只能整块搬**：把主包换到 `lib/client/client.js` 并把
+   `exports["./client"]` 指过去之后，chunk 才跟得进去（宿主从 `exports["./client"]`
+   推 `clientPath`，不需要服务端改动）。平铺在 `lib/` 里也行，但那样 `lib/` 顶部
+   堆九个 `client.*.js`；现状是前者。
+6. **路由模块放 `lib/routes/`，浏览器半边放 `lib/client/`。** 三处
+   `readdirSync(lib)` 的非递归扫描（`upstream-contract-smoke.mjs:43`、
+   `capabilities-report-smoke.mjs:117`、`local-passthrough-smoke.mjs:509`）与
+   `doc-numbers.countModules` **原本不用动**，但两个子目录都出现之后必须改成递归
+   ——否则那三处会静默漏掉子目录里的模块，而 `doc-numbers` 的数字会莫名从
+   63 跳到 79（顶层只剩 63 个）。共用的递归遍历在 `tests/support/lib-modules.mjs`。
+   **`scripts/lint.mjs:41` 也是非递归的**，所以 C1 必须先把它改成递归，
+   否则子目录里的模块永远不被 `node --check` 检查（当时 190 个模块只查 179 个）。
 7. **`ROUTES` 与 `makeRoutes` 继续从 `lib/routes.js` 导出。** 三个套件从这里取它们
    （`routes-smoke.mjs:117`、`mutations-smoke.mjs:122`、`lifecycle-smoke.mjs:78`）。
 8. **chunk 之间不得互相 `require` 兄弟文件。** 宿主只查 seed / loadCache / factories
@@ -153,13 +160,13 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
 | # | 提交 | 内容 |
 | --- | --- | --- |
 | E1 ⛔ | `test(client): read the client half through one resolver` | 新建 `tests/support/client-source.mjs`（按 part 表拼接主 bundle + chunk）；把 28 个套件的 29 处 `readFileSync(...client.js)` 换成它。**源码零改动，基线不变** |
-| E2 | `chore(client): verify a chunk can require the main bundle` | 加 `lib/client.probe.js` 探针 + 一次 `require.async`，在真机确认 `require('<本插件 id>')` 能取到主 bundle 导出（宿主 `dsh-client-modules/lib/client.js:836` 的 `factories.has` 分支）。结论写进方案 §1.1 第 5 条 |
+| E2 | `chore(client): verify a chunk can require the main bundle` | 加 `lib/client/client.probe.js` 探针 + 一次 `require.async`，在真机确认 `require('<本插件 id>')` 能取到主 bundle 导出（宿主 `dsh-client-modules/lib/client.js:836` 的 `factories.has` 分支）。结论写进方案 §1.1 第 5 条 |
 | E3 | `chore(client): remove the chunk probe` | 回滚探针，只留结论 |
 | E4 ⛔ | `refactor(client): one declared part list, checked` | 新建 `scripts/client-map.mjs`，接进 `npm run check`；`tests/client-shape-smoke.mjs:1286-1351` 的 map 断言改为调用它 |
-| E5 ⛔ | `refactor(client): load the dialogs from a chunk` | 新建 `lib/client.dialogs.js`，导出 `HostEditor` / `DirectoryBrowser` / `ReportDialog`（约 699 行） |
+| E5 ⛔ | `refactor(client): load the dialogs from a chunk` | 新建 `lib/client/client.dialogs.js`，导出 `HostEditor` / `DirectoryBrowser` / `ReportDialog`（约 699 行） |
 | E6 | `refactor(client): split the transfer-queue state from its panel` | 文件内切分：`useTransferQueue` 等状态留在主 bundle，只把 `TransferQueuePanel`（`:8375-8440`，66 行）的渲染剥出来（为 E7 准备） |
-| E7 ⛔ | `refactor(client): load the transfer-queue panel from a chunk` | 新建 `lib/client.transfer-queue.js`，导出 `TransferQueuePanel` |
-| E8 ⛔ | `refactor(client): load the change-request tab from a chunk` | 新建 `lib/client.history.js`，导出 `ForgeTabWithHistory` 的渲染体（约 588 行） |
+| E7 ⛔ | `refactor(client): load the transfer-queue panel from a chunk` | 新建 `lib/client/client.transfer-queue.js`，导出 `TransferQueuePanel` |
+| E8 ⛔ | `refactor(client): load the change-request tab from a chunk` | 新建 `lib/client/client.history.js`，导出 `ForgeTabWithHistory` 的渲染体（约 588 行） |
 | E9 | `docs: the client half is more than one file` | 同步 `docs/architecture.md:21,750`、`docs/development.md:25,62,119,120`、`docs/optimization-and-future03.md` §1.1（C-02 改为「已实施」）、`CHANGELOG.md` 未发布段，并重跑 `node scripts/doc-numbers.mjs` |
 
 E8 可以在 E2 探针失败时放弃：它只省 588 行，却要按 props 传两个图标，性价比最低。
@@ -173,7 +180,7 @@ const LoadedDialogs = React.lazy(async () => ({
   default: (await require.async('./client.dialogs.js')).Dialogs,
 }))
 
-// lib/client.dialogs.js 里
+// lib/client/client.dialogs.js 里
 window.__ModuleLoader__.load({
   id: '@shiqyka/dsh-ssh-workspace',
   chunk: 'client.dialogs.js',
@@ -200,9 +207,9 @@ window.__ModuleLoader__.load({
 
 | chunk | 导出 | 原行数 | 必须拿到（留主 bundle） |
 | --- | --- | --- | --- |
-| `lib/client.dialogs.js` | `HostEditor`、`DirectoryBrowser`、`ReportDialog` | ~699 | `API`、`FolderIcon`、`CloseIcon`、`useDialogA11y`、`modalLayer`、`backdropDismiss`、`capabilityNotes` |
-| `lib/client.transfer-queue.js` | `TransferQueuePanel` | ~66（`:8375-8440`） | `useTransferQueue`、`useDialogA11y`、`backdropDismiss`、`transferQueueBody` |
-| `lib/client.history.js` | `ForgeTabWithHistory` 渲染体 | ~588 | `ChevronIcon`、`RefreshIcon`、apply 注入的 `t` |
+| `lib/client/client.dialogs.js` | `HostEditor`、`DirectoryBrowser`、`ReportDialog` | ~699 | `API`、`FolderIcon`、`CloseIcon`、`useDialogA11y`、`modalLayer`、`backdropDismiss`、`capabilityNotes` |
+| `lib/client/client.transfer-queue.js` | `TransferQueuePanel` | ~66（`:8375-8440`） | `useTransferQueue`、`useDialogA11y`、`backdropDismiss`、`transferQueueBody` |
+| `lib/client/client.history.js` | `ForgeTabWithHistory` 渲染体 | ~588 | `ChevronIcon`、`RefreshIcon`、apply 注入的 `t` |
 
 `Remote-workspace marks` **不拆**：它是 apply 期装的 `MutationObserver`（`installRemoteWorkspaceMarks`
 `:5471`），没有渲染时机可用。
@@ -243,7 +250,7 @@ npm pack --dry-run
    各自首次点击后 Network 出现 `client.<name>.js?rev=…` 的 **200**。
 3. **逐个 chunk** 改名后刷新：主界面照常渲染，只有该功能不可用。
    `React.lazy` 的 promise reject 会抛到最近的 error boundary，而本 bundle **没有
-   error boundary 也没有 `Suspense`**（`lib/client.js` 全文 0 命中）。所以每个懒组件
+   error boundary 也没有 `Suspense`**（`lib/client/client.js` 全文 0 命中）。所以每个懒组件
    必须自己兜底，两件事一起做：
    - `Suspense` 的 `fallback: null`（照抄 `dsh-client-ui-sidebar-terminal:174`）；
    - `React.lazy(() => require.async(…).then(m => ({default: m.X}), () => ({default: Fallback})))`

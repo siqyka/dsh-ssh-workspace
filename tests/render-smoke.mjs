@@ -5,7 +5,7 @@
  *
  * A harness that only gets used by tests it was written for proves nothing:
  * both halves can be wrong together. So this suite renders a component that
- * already ships -- `SelfCheckList` in `lib/client.js`, which turns a capability
+ * already ships -- `SelfCheckList` in `lib/client/client.js`, which turns a capability
  * probe into the panel's advisory rows -- and asserts on the ELEMENT TREE the
  * real function produced. No grep of the source is involved in the behavioural
  * checks.

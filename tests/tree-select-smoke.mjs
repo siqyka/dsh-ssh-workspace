@@ -5,7 +5,7 @@
  * a selection model, so it decorates host rows through classes of its own and
  * acts through document-level capture listeners. That makes "does it work?"
  * a question about DOM behaviour, not about source text — so this suite lifts
- * the SHIPPED bridge out of `lib/client.js`, binds it to a DOM double shaped
+ * the SHIPPED bridge out of `lib/client/client.js`, binds it to a DOM double shaped
  * like the host's tree (a `[data-files-body]` container holding
  * `li[data-files-entry][data-files-path]` rows with a button inside), and
  * dispatches real click and keydown events through it.

@@ -31,7 +31,7 @@
       "default": "./lib/protocol.js"
     },
     "./client": {
-      "default": "./lib/client.js"
+      "default": "./lib/client/client.js"
     },
     "./package.json": "./package.json"
   },

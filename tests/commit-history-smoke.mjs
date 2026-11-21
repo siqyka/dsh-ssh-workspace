@@ -12,7 +12,7 @@
  *     with a fake `ctx` and a fake subprocess; no server, no SSH host. Importing
  *     routes.js needs the DSH peer packages, so this suite builds the same
  *     `tests/.peer-stubs` tree the runner does when DSH_CORE_ROOT is unset.
- *  3. `lib/client.js` — the slot registration and the strip's structure. There
+ *  3. `lib/client/client.js` — the slot registration and the strip's structure. There
  *     is no browser in this environment, so these are source assertions: the
  *     shadow uses the official tab's key and a lower priority, it registers no
  *     tab TYPE and no title entry (there is exactly one tab, with the official

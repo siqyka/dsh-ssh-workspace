@@ -137,12 +137,31 @@ export function routeSources () {
 }
 
 /**
- * Count the modules under `lib/`.
+ * Count the modules under `lib/`, subdirectories included.
  *
+ * `lib/client/` and `lib/routes/` hold real modules; counting only the top level
+ * would make the figure fall whenever a file moved into one of them, which is
+ * exactly the kind of drift this table exists to prevent.
+ *
+ * @param {string} [directory] - the directory to walk; defaults to `lib/`.
  * @returns {number} module count.
  */
-export function countModules () {
-  return fs.readdirSync(path.join(root, 'lib')).filter(name => name.endsWith('.js')).length
+export function countModules (directory = path.join(root, 'lib')) {
+  let total = 0
+  let entries
+  try {
+    entries = fs.readdirSync(directory, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      total += countModules(path.join(directory, entry.name))
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      total += 1
+    }
+  }
+  return total
 }
 
 /**
@@ -166,7 +185,7 @@ export function renderNumbers (options = {}) {
     `| HTTP routes | ${routes} | \`lib/routes.js\` + \`lib/routes/\` |`,
     `| model-facing tools | ${tools} | \`lib/tools.js\` |`,
     `| upstream patch modules | ${patches} | \`lib/patch-*.js\` |`,
-    `| modules under \`lib/\` | ${modules} | directory listing |`,
+    `| modules under \`lib/\` | ${modules} | recursive listing |`,
     `| test suites | ${suites.length} | \`tests/run.mjs\` |`,
   ]
   if (typeof options.assertions === 'number' && Number.isInteger(options.assertions)) {

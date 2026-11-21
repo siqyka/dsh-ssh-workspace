@@ -14,7 +14,7 @@
  *
  * A grep for `jsx('button'` is green on the broken build; the missing token is
  * a six-letter `return` in a long body. So this suite lifts the SHIPPED
- * callback out of `lib/client.js` by brace matching, binds its free
+ * callback out of `lib/client/client.js` by brace matching, binds its free
  * identifiers to recording stubs, and calls it for both kinds of entry.
  *
  * ## One kind of row

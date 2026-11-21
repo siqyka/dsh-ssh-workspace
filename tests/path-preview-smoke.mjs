@@ -23,7 +23,7 @@
  * can see `usePathDraftPreview` and cannot see whether it schedules a listing,
  * whether it narrows without one, or whether the settled state re-lists its
  * parent forever. So the shipped helpers and the shipped hook are lifted out of
- * `lib/client.js` by brace matching and driven by a minimal hooks runtime with
+ * `lib/client/client.js` by brace matching and driven by a minimal hooks runtime with
  * a fake clock. The assertions are about the calls the hook makes, and the
  * negative control proves the calls section can fail.
  *

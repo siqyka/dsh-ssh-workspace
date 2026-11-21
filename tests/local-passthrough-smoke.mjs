@@ -11,13 +11,14 @@
  * Run: node tests/local-passthrough-smoke.mjs
  */
 
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import nodePath from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createHost } from './support/plugin-host.mjs'
 import { routeSource } from './support/route-source.mjs'
+import { modulePaths } from './support/lib-modules.mjs'
 
 const pluginRoot = nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -507,8 +508,7 @@ console.log('\n[7] source wiring and single implementation')
   check('the router stores a matcher on construction',
     remote.includes('this.passthrough = options.passthrough'))
 
-  const definitions = readdirSync(nodePath.join(pluginRoot, 'lib'))
-    .filter(name => name.endsWith('.js'))
+  const definitions = modulePaths(nodePath.join(pluginRoot, 'lib'))
     .filter(name => /export function buildPassthrough|function expandPrefix/gu.test(
       readFileSync(nodePath.join(pluginRoot, 'lib', name), 'utf8'),
     ))

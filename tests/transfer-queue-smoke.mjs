@@ -3,7 +3,7 @@
  *
  * ## Why this suite lifts code out of the bundle
  *
- * `lib/client.js` is a single browser bundle with no build step: its parts are
+ * `lib/client/client.js` is a single browser bundle with no build step: its parts are
  * not importable modules. The queue's interesting half was therefore written as
  * a pure reducer — no clock, no DOM, no translation, no `fetch` — and this
  * suite slices that region out of the SHIPPED file and runs it. A retyped copy

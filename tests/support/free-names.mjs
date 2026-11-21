@@ -324,7 +324,7 @@ export function localNames (source) {
  * reaches for one of those without the block listing it is exactly the bug —
  * `BROWSE_LIST_LIMIT` shipped that way).
  *
- * @param {string} bundleSource - `lib/client.js`.
+ * @param {string} bundleSource - `lib/client/client.js`.
  * @returns {Set<string>} available names.
  */
 export function bundleNames (bundleSource) {
@@ -355,7 +355,7 @@ export function bundleNames (bundleSource) {
  * handler — so adding a workspace would have thrown only after the workspace
  * was already created.
  *
- * @param {string} bundleSource - `lib/client.js`.
+ * @param {string} bundleSource - `lib/client/client.js`.
  * @returns {Set<string>} names the exports block lists.
  */
 export function exportedNames (bundleSource) {
