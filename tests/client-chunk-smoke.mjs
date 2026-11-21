@@ -323,6 +323,125 @@ console.log('\n[5] every chunk carries what it borrows')
 }
 
 
+// ---------------------------------------------------------------------------
+// [6] the names the boot chunks own are republished, not frozen as stand-ins
+// ---------------------------------------------------------------------------
+// `Object.assign(exports, …)` copies VALUES, and it runs while the module is
+// being evaluated — long before `apply`. Every name that lives in a boot chunk
+// is a stand-in at that moment: `() => null` for a glyph, `() => undefined` for
+// the provenance line. A chunk that destructured the exports before `apply`
+// ran would hold those stand-ins forever and draw nothing, with no error
+// anywhere. `republishBootNames()` exists for exactly that, and this asserts
+// both halves: that it covers every name it has to, and that after a real
+// `apply` the exported glyph is the real one.
+console.log('\n[6] the boot chunks\' names are republished')
+{
+  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'client.js'), 'utf8')
+  const bootBody = /async function loadBootChunks \(\) \{([\s\S]*?)\n {4}\}/u.exec(bundleSource)?.[1] ?? ''
+  const republishBody = /function republishBootNames \(\) \{([\s\S]*?)\n {4}\}/u.exec(bundleSource)?.[1] ?? ''
+  check('loadBootChunks and republishBootNames both exist',
+    bootBody !== '' && republishBody !== '', `boot=${bootBody.length} republish=${republishBody.length}`)
+
+  /** The names in one `{ a, b, c }` destructuring assignment of the boot body. */
+  const filled = new Set()
+  for (const match of bootBody.matchAll(/\(\{([\s\S]*?)\} = (?:locale|styles|icons)\)/gu)) {
+    for (const piece of match[1].split(',')) {
+      const name = piece.trim().split(':').pop()?.trim() ?? ''
+      if (/^[A-Za-z_$][\w$]*$/u.test(name)) filled.add(name)
+    }
+  }
+  const listed = (body) => {
+    const names = new Set()
+    const block = /Object\.assign\(exports, \{([\s\S]*?)\n\s*\}\)/u.exec(body)?.[1] ?? ''
+    for (const line of block.split('\n')) {
+      const name = line.replace(/\/\/.*$/u, '').trim().replace(/,$/u, '')
+      if (/^[A-Za-z_$][\w$]*$/u.test(name)) names.add(name)
+    }
+    return names
+  }
+  const exportedNamesHere = listed(bundleSource)
+  const republished = listed(republishBody)
+  check('the boot load fills in some names', filled.size > 0, String(filled.size))
+  check('republishBootNames lists some names', republished.size > 0, String(republished.size))
+
+  // Only the ones a chunk can actually reach matter: a boot name that is not
+  // exported is invisible to chunks and needs no republishing.
+  const mustRepublish = [...filled].filter(name => exportedNamesHere.has(name))
+  const missing = mustRepublish.filter(name => !republished.has(name))
+  check('every exported boot name is republished after it is filled in',
+    missing.length === 0,
+    `exported and filled in by loadBootChunks but never republished: ${missing.join(', ')}`)
+  // Declaring the function is not the fix; calling it is. The dynamic check
+  // below catches a missing call too, but this one names the reason.
+  check('...and loadBootChunks actually calls it',
+    /republishBootNames\(\)/u.test(bootBody), 'the call is gone, so the exports keep the stand-ins')
+
+  // ...and the dynamic half, on the real loader: after `apply`, the exported
+  // glyph draws something. `document` is absent here, so the apply-time
+  // installers take their headless branch; `setTimeout` is a no-op so the
+  // session catch-up does not schedule work, and the check can exit.
+  const live = makeFacade()
+  live.facade.mode = 'queue'
+  const loadedChunks = []
+  const applySystem = new host.ClientModuleSystem({
+    manifest,
+    staticModules: {
+      react: reactStub(),
+      'react-dom': { createPortal: (node) => node, render: () => {}, createRoot: () => ({ render: () => {} }) },
+      'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'Fragment' },
+    },
+    registrationTarget: live.facade,
+    bootstrapModule: { id: '@deepseek-ai/dsh-client-modules', exports: {} },
+    loadBundle: async (url) => {
+      const name = url.split('/').pop().split('?')[0]
+      loadedChunks.push(name)
+      // A chunk's script executes against the LIVE facade — the module system.
+      const chunkContext = { window: { __ModuleLoader__: live.facade }, console }
+      vm.createContext(chunkContext)
+      vm.runInContext(readFileSync(path.join(pluginRoot, 'lib', name), 'utf8'), chunkContext, { filename: name })
+    },
+  })
+  const bundleRegistrations = []
+  const applyBundleContext = {
+    window: { __ModuleLoader__: { load: (registration) => bundleRegistrations.push(registration) } },
+    console, setTimeout: () => 0, clearTimeout: () => {}, queueMicrotask,
+  }
+  vm.createContext(applyBundleContext)
+  vm.runInContext(bundleSource, applyBundleContext, { filename: 'lib/client.js' })
+  live.facade.load(bundleRegistrations[0])
+
+  let applied
+  let applyError
+  try {
+    applied = await applySystem.import(BUNDLE_ID)
+    const registeredSlots = []
+    await applied.apply({
+      slots: {
+        inject: (_name, factory) => factory(),
+        register: (declaration) => { registeredSlots.push(declaration.name); return () => {} },
+      },
+      locale: { register: () => () => {}, bind: () => undefined },
+      effect: (fn) => fn(),
+    })
+    applied.registeredSlots = registeredSlots
+  } catch (error) {
+    applyError = error
+  }
+  check('apply completes against the real loader and the real chunks',
+    applyError === undefined, applyError?.message)
+  check('...after fetching exactly the three boot chunks',
+    loadedChunks.sort().join(',') === 'client.icons.js,client.locale.js,client.styles.js',
+    loadedChunks.join(', '))
+  const glyph = applyError === undefined ? applied.CloseIcon({}) : undefined
+  check('...and the exported glyph is the real one, not the module-scope stand-in',
+    glyph !== null && glyph !== undefined && glyph.type === 'svg',
+    JSON.stringify(glyph)?.slice(0, 120))
+  check('...while the stand-in would have drawn nothing',
+    typeof applied.CloseIcon === 'function' && String(applied.CloseIcon).includes('size'),
+    String(applied.CloseIcon).slice(0, 60))
+}
+
+
 if (failures > 0) {
   console.log('\nfailures:')
   console.log(`  ${failures} assertion(s) failed`)
