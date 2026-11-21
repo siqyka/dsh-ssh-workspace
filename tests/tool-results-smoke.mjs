@@ -55,7 +55,7 @@ const { workspaceTools, defineTool, drainProjectionDrops } = await import(pathTo
 const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
 const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
 const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
-const { CommandAudit } = await import(pathToFileURL(path.join(pluginRoot, 'lib/audit.js')).href)
+const { CommandAudit } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
 const { ShellManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/shell.js')).href)
 const { projectValue, validateValue } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tool-schema.js')).href)
 

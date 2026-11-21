@@ -16,7 +16,7 @@
  *
  * A case may carry `also: [{file, from, to}]` when one behaviour is implemented
  * in two places. The shared password fallback in `diagnostics.js` masks the same
- * `DB_PASSWORD=` that `audit.js` masks, so breaking only one of them is
+ * `DB_PASSWORD=` that the command audit masks, so breaking only one of them is
  * invisible to the suite. All applied mutations are restored in reverse order,
  * each with its own byte-for-byte check.
  *
@@ -108,7 +108,7 @@ const CASES = [
   },
   {
     label: 'F-07: redaction stops masking an Authorization header',
-    file: 'lib/audit.js',
+    file: 'lib/engine.js',
     from: "  text = text.replace(\n    /(authorization\\s*:\\s*)(?:bearer|basic|token)\\s+[A-Za-z0-9._~+/=-]+/giu,\n    (_match, header) => `${header}<redacted>`,\n  )",
     to: "  void (/(authorization\\s*:\\s*)(?:bearer|basic|token)\\s+[A-Za-z0-9._~+/=-]+/giu)",
     suite: 'audit-smoke.mjs',
@@ -117,7 +117,7 @@ const CASES = [
   },
   {
     label: 'F-07: redaction stops masking an environment assignment',
-    file: 'lib/audit.js',
+    file: 'lib/engine.js',
     from: "    /([A-Za-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key))(\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
     to: "    /(\\bpassword\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
     // The shared fallback in `diagnostics.js` still masks `DB_PASSWORD=` when

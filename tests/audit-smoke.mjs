@@ -28,7 +28,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { CommandAudit, AUDIT_CAPACITY, redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/audit.js')).href)
+const { CommandAudit, AUDIT_CAPACITY, redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
 const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
 
 let passed = 0
