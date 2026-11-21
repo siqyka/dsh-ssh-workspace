@@ -18,7 +18,7 @@ import { createHost } from './support/plugin-host.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { RULE_SETS, DEFAULT_POLICY, normalizePolicy, matchRule, needsConfirmation, approvalUnavailableMessage } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'command-policy.js')).href)
+  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tools.js')).href)
 
 let passed = 0
 let failures = 0

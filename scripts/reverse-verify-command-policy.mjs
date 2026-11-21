@@ -15,37 +15,37 @@ const SUITES = ['tests/command-policy-smoke.mjs', 'tests/command-confirm-smoke.m
 const MUTATIONS = [
   {
     name: 'the default policy is ON (nobody asked for it)',
-    file: 'lib/command-policy.js',
+    file: 'lib/tools.js',
     find: "  mode: 'off',\n  /** When mode is 'rules', which rule sets apply. */",
     replace: "  mode: 'all',\n  /** When mode is 'rules', which rule sets apply. */",
   },
   {
     name: 'a policy naming no usable rule stays "on"',
-    file: 'lib/command-policy.js',
+    file: 'lib/tools.js',
     find: "  if (rules.length === 0) return { mode: 'off', rules: [...DEFAULT_POLICY.rules] }",
     replace: "  if (rules.length === 0) return { mode: 'rules', rules: [] }",
   },
   {
     name: 'a malformed regex disables the whole rule',
-    file: 'lib/command-policy.js',
+    file: 'lib/tools.js',
     find: "    } catch {\n      // A malformed rule must not silently disable the rest of the policy.\n      continue\n    }",
     replace: "    } catch {\n      return undefined\n    }",
   },
   {
     name: '"all" mode is ignored',
-    file: 'lib/command-policy.js',
+    file: 'lib/tools.js',
     find: "  if (policy?.mode === 'all') {",
     replace: "  if (false) {",
   },
   {
     name: 'an unanswerable confirmation proceeds instead of refusing',
-    file: 'lib/command-policy.js',
+    file: 'lib/tools.js',
     find: "    return approvalUnavailableMessage('unavailable', verdict)\n  }\n  let outcome",
     replace: "    return undefined\n  }\n  let outcome",
   },
   {
     name: 'a rejected approval runs the command anyway',
-    file: 'lib/command-policy.js',
+    file: 'lib/tools.js',
     find: "  return `the remote command was not approved, so it did not run (${verdict.reason})`",
     replace: "  return undefined",
   },

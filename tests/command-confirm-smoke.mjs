@@ -22,7 +22,7 @@ const pluginRoot = path.resolve(here, '..')
 process.env.DSH_PEER_ROOT = [process.env.DSH_PEER_ROOT, path.join(pluginRoot, 'tests/.peer-stubs')]
   .filter(Boolean).join(path.delimiter)
 
-const { confirmRemoteCommand, normalizePolicy } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'command-policy.js')).href)
+const { confirmRemoteCommand, normalizePolicy } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tools.js')).href)
 
 let passed = 0
 let failures = 0
@@ -168,7 +168,7 @@ console.log('\n[8] a malformed regex is skipped, not fatal')
   // `matchRule` compiles each pattern inside a try. The failure mode this pins
   // is the opposite: catching the error and returning "no match" for the WHOLE
   // rule, which would silently disable every other pattern in it.
-  const { matchRule } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'command-policy.js')).href)
+  const { matchRule } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tools.js')).href)
   const broken = {
     label: 'broken',
     substrings: ['frobnicate'],
