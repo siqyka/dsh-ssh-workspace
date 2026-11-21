@@ -2258,5 +2258,66 @@ async function postChunk (route, body, chunks = []) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Every route answers with a fully composed plugin.
+//
+// This is the regression test for a bug the rest of this file could not see:
+// `/status` called `schemeRules()`, which lived in `routes.js`'s import list
+// and was not imported by the module the handler moved into. Every other check
+// here drives routes whose deps are undefined or absent, so the branch that
+// called it never ran, and 276 green assertions coexisted with a route that
+// threw `ReferenceError` on every real request — the Host turns that into a
+// bare 400, which is what a user sees as "the panel reads nothing".
+//
+// The fix is the shape of this check: give EVERY route a fully populated deps
+// object and call it. A missing import cannot hide behind an undefined
+// dependency, because there are no undefined dependencies.
+{
+  const full = makeRoutes({
+    engine: Object.assign(fakeUploadEngine(new Map(), new Set()), {
+      store: { listing: () => ({ rows: [], skipped: [] }), rows: () => [] },
+      pool: new Map(),
+      generations: new Map(),
+      generationOf: () => ({ generation: 0 }),
+      describeGeneration: () => '',
+    }),
+    router: {
+      listRoots: () => [],
+      listDisabled: () => [],
+      roots: [],
+      readdir: async () => [],
+      lstat: async () => ({ isDirectory: () => true, isFile: () => false }),
+    },
+    forwards: { list: () => [], open: async () => ({}), close: () => false },
+    reverseForwards: { list: () => [], open: async () => ({}), close: () => false },
+    savedForwards: { list: () => [], settings: () => ({ autoStart: false }) },
+    passthroughSettings: { settings: () => ({ enabled: true, scheme: 'local' }), warning: () => null },
+    shells: { list: () => [], run: async () => ({}), close: () => 0 },
+    remoteSkills: { describe: () => ({ hosts: [] }) },
+    ctx: { get: () => undefined },
+  })
+
+  const expected = Object.keys(ROUTES).length
+  check('every route is registered with a handler',
+    full.length === expected && full.every(route => typeof route.handler === 'function'),
+    `${full.length} route(s), expected ${expected}`)
+
+  // A GET with no parameters is the cheapest request every route can be given.
+  // Routes that need a parameter answer 400; what must NOT happen is a throw,
+  // because the Host converts a throw into an empty 400 and the user is told
+  // nothing at all.
+  const threw = []
+  for (const route of full) {
+    const { res } = fakeRes()
+    try {
+      await route.handler(fakeReq({ url: route.path, headers: { host: 'localhost:4074' } }), res)
+    } catch (error) {
+      threw.push(`${route.path} -> ${error.message}`)
+    }
+  }
+  check('no route throws when every dependency is composed', threw.length === 0,
+    threw.join(' | '))
+}
+
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)
