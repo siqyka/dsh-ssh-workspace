@@ -14,7 +14,7 @@
 | HTTP routes | 33 | `lib/routes/` |
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch-*.js` |
-| modules under `lib/` | 78 | recursive listing |
+| modules under `lib/` | 77 | recursive listing |
 | test suites | 99 | `tests/run.mjs` |
 | passing assertions (sampled) | 5037 | measured 2026-11-21 |
 
@@ -44,7 +44,7 @@
 | `lib/capabilities.js` | 远端环境自检：7 项工具与 4 项环境事实一次往返问完，三态 `present` / `absent` / `unknown` 不能合并——`unknown` 不带安装提示 |
 | `lib/config-audit.js` | `~/.ssh/config` 审计：本插件读了什么、故意不支持什么，`ignored` / `lost` / `refused` 三种判定不合并，挂在 `HostStore.listing()` 每行的 `unsupported` 上 |
 | `lib/audit.js` | 远端命令审计：容量 200 的有界环，脱敏**在写入时**发生而不是导出时补第二次。它不是沙箱：远端命令以登录用户权限运行，这里只能记录 |
-| `lib/reconnect.js` | 断线后的后台重连策略（纯逻辑、注入时钟）：指数退避 1s → 60s 封顶、抖动只向下、`cancel` 之后永不拨号（「断开」是终态） |
+| `lib/reconnect.js` | 断线后的后台重连策略（纯逻辑、注入时钟）：指数退避 1s → 60s 封顶、抖动只向下、`cancel` 之后永不拨号（「断开」是终态）。文件底部是**变更监视的重试阶梯**（`watchFailureVerdict` / `watchRecoveryDelay`，1s → 30s 封顶）：只在「连接确实断了且重连循环还在跑」时重试，健康链路上的失败照常上报——它以前是 `lib/watch-recovery.js`，与这里问的是同一个问题，且判定直接读调度器的 `loop.phase` |
 | `lib/support-bundle.js` | 诊断报告：自包含、已脱敏的一份可贴文本，**组装而非采集**、不做任何上传。标识符保留 `support-bundle` 拼写（路由 / 字段 / 模块名都是契约面） |
 | `lib/upstream-contract.js` | 补丁的宿主契约成表：每个 `patch-*.js` 声明它碰的宿主符号与退役判据，由 `upstream-contract-smoke` 双向校验。它回答的是「我挂的形状还在吗」，不是「上游修好了吗」 |
 | `lib/secrets.js` | 凭据存储：密码 / 私钥口令的读写与清除，与 `hosts` 分区分离 |

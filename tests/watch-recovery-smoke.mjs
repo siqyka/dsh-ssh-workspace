@@ -46,7 +46,7 @@ if (!coreRoot) {
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
 const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
-const { watchFailureVerdict, watchRecoveryDelay } = await import(pathToFileURL(path.join(pluginRoot, 'lib/watch-recovery.js')).href)
+const { watchFailureVerdict, watchRecoveryDelay } = await import(pathToFileURL(path.join(pluginRoot, 'lib/reconnect.js')).href)
 
 let passed = 0
 let failures = 0
