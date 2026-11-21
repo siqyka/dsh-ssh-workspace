@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { readConfigWithIncludes, expandGlob, MAX_INCLUDE_DEPTH } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'include-chain.js')).href)
+  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts.js')).href)
 const { sectionsOf, selects } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'ssh-config.js')).href)
 
 let passed = 0

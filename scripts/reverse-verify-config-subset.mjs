@@ -16,13 +16,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MUTATIONS = [
   {
     name: 'included files are appended at the END instead of spliced in place',
-    file: 'lib/include-chain.js',
+    file: 'lib/hosts.js',
     find: '          for (const included of matched) out.push(read(included, depth + 1))',
     replace: '          for (const included of matched) trailing.push(read(included, depth + 1))',
     suites: ['tests/include-chain-smoke.mjs'],
     // Needs the accumulator to exist; if it is absent the mutation is skipped.
     extra: {
-      file: 'lib/include-chain.js',
+      file: 'lib/hosts.js',
       find: '      const out = []',
       replace: '      const out = []\n      const trailing = []',
     },
@@ -33,28 +33,28 @@ const MUTATIONS = [
   },
   {
     name: 'cycle detection compares WRITTEN paths, not real paths',
-    file: 'lib/include-chain.js',
+    file: 'lib/hosts.js',
     find: '      canonical = realpathSync(file)',
     replace: '      canonical = file',
     suites: ['tests/include-chain-smoke.mjs'],
   },
   {
     name: 'the nesting cap is removed',
-    file: 'lib/include-chain.js',
+    file: 'lib/hosts.js',
     find: '    if (depth > maxDepth) {',
     replace: '    if (false) {',
     suites: ['tests/include-chain-smoke.mjs'],
   },
   {
     name: 'glob order is not deterministic',
-    file: 'lib/include-chain.js',
+    file: 'lib/hosts.js',
     find: '      for (const entry of entries.sort()) {',
     replace: '      for (const entry of entries.reverse()) {',
     suites: ['tests/include-chain-smoke.mjs'],
   },
   {
     name: 'directories are accepted as config files',
-    file: 'lib/include-chain.js',
+    file: 'lib/hosts.js',
     find: '      return statSync(candidate).isFile()',
     replace: '      statSync(candidate); return true',
     suites: ['tests/include-chain-smoke.mjs'],

@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { parseHop, parseJumpChain, checkJumpChain, describeChain, MAX_JUMPS } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib/jump-chain.js')).href)
+  await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts.js')).href)
 
 let passed = 0
 let failures = 0

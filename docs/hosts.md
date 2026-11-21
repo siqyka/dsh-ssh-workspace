@@ -53,7 +53,7 @@ agent 认证自带的 `agentPath`）：key / password 认证的主机勾选后�
 `user` / `identityfile`（`%d` 展开为家目录）/ `password` / `identityagent` /
 `forwardagent` / `compression`，同键按 OpenSSH 的 first-wins 规则。
 `ForwardAgent` / `Compression` 按 OpenSSH 的 yes/no 语义归一为布尔（只有显式
-`yes` 才算开启，其余一律关闭）。`Include` 会被**跟随**（`lib/include-chain.js`，相对
+`yes` 才算开启，其余一律关闭）。`Include` 会被**跟随**（`lib/hosts.js` 的 `readConfigWithIncludes`，相对
 `~/.ssh` 解析、支持 `*` / `?` / `[...]` 通配，并防环），`Match` 会被**求值**
 （`lib/ssh-config.js` 底部的 `matchSelects`，支持 `host` / `originalhost` / `all`）。
 仍被跳过的是**通配符 `Host` 块**——它只用于代理扫描，不贡献身份字段；目标是
