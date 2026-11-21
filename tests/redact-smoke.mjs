@@ -28,7 +28,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { maskText, maskAlias, maskPath, maskLine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/redact.js')).href)
+const { maskText, maskAlias, maskPath, maskLine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
 const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
 const { buildSupportBundle } = await import(pathToFileURL(path.join(pluginRoot, 'lib/support-bundle.js')).href)
 const { redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/audit.js')).href)
@@ -132,7 +132,7 @@ console.log('[4] the three surfaces agree on the same string')
   // shared half must still be there, or a command log would leak what the event
   // log masks.
   //
-  // `alice@host` WITHOUT a `:port` is deliberately left alone (see redact.js:
+  // `alice@host` WITHOUT a `:port` is deliberately left alone (see the masking
   // only `user@host:port` is masked, so an email address survives). The
   // connection events this plugin records do carry a port, which is why the
   // event-log case above is the one that mattered.

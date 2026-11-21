@@ -137,8 +137,8 @@
 - **`scripts/reverse-verify-future.mjs`：19 confirmed / 0 not（2026-11-09 复跑，exit 0）**：四条漂移均已落位——
   - F-04 wildcard：破坏点改为 `lib/config-audit.js:236` 的 `selects(section, alias)` → `isExact(...)`，实测 2 红；
   - F-04 repeated：删除 `lib/config-audit.js:243` 的 `seen.has(keyword)` 守卫，实测 1 红；
-  - F-07 environment assignment：`lib/audit.js:81` 与 `lib/redact.js:103` 两处同时破坏（脚本新增 `also` 多文件变异），实测 2 红；
-  - F-09 login user：锚点移到 `lib/redact.js:99` 的 `maskText` 登录用户正则，实测 1 红。
+  - F-07 environment assignment：`lib/audit.js:81` 与 `lib/diagnostics.js` 的 `maskText` 两处同时破坏（脚本新增 `also` 多文件变异），实测 2 红；
+  - F-09 login user：锚点移到 `lib/diagnostics.js` 里 `maskText` 的登录用户正则，实测 1 红。
   脚本现在对每个已写文件逐字节还原并按相反顺序收尾；跑后 `git status --short lib` 为空。
 - **判断标准**：反向验证的 `expect` 是“必须变红的断言数”；少于它说明套件没有钉住行为，多于它说明变异破坏了别的东西，数字不再是证据。`expect: 0` 的变异允许以**崩溃**记数（`F-06` 那条就是这样：套件解引用它期望的环境），但这只证明“行为变了”，不能证明是哪条断言抓住的——复跑时仍要看崩溃点。
 

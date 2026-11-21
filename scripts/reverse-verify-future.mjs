@@ -15,7 +15,7 @@
  * tree modified.
  *
  * A case may carry `also: [{file, from, to}]` when one behaviour is implemented
- * in two places. The shared password fallback in `redact.js` masks the same
+ * in two places. The shared password fallback in `diagnostics.js` masks the same
  * `DB_PASSWORD=` that `audit.js` masks, so breaking only one of them is
  * invisible to the suite. All applied mutations are restored in reverse order,
  * each with its own byte-for-byte check.
@@ -120,13 +120,13 @@ const CASES = [
     file: 'lib/audit.js',
     from: "    /([A-Za-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key))(\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
     to: "    /(\\bpassword\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
-    // The shared fallback in `redact.js:103` still masks `DB_PASSWORD=` when
+    // The shared fallback in `diagnostics.js` still masks `DB_PASSWORD=` when
     // only the audit's own rule is broken. Both have to stop masking it for the
     // mutation to be observable; this is the one case where one file is not
     // enough to prove the behaviour is gone.
     also: [
       {
-        file: 'lib/redact.js',
+        file: 'lib/diagnostics.js',
         from: "  out = out.replace(/(password|passphrase)(\\s*[=:]\\s*)[^\\s,'\"}]+/giu, '$1$2<redacted>')",
         to: "  out = out.replace(/(\\bpassword\\s*[=:]\\s*)[^\\s,'\"}]+/giu, '$1<redacted>')",
       },
@@ -146,7 +146,7 @@ const CASES = [
   },
   {
     label: 'F-09: the bundle stops masking a login user',
-    file: 'lib/redact.js',
+    file: 'lib/diagnostics.js',
     from: "  out = out.replace(/([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+:\\d+)/gu, '<user>@$2')",
     to: "  out = out.replace(/(?:)/gu, '')",
     suite: 'support-bundle-smoke.mjs',
