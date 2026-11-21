@@ -29,6 +29,7 @@
 
 ### 变更
 
+- **注释瘦身**：全仓注释行从 27,457 降到 25,905（29.8% → 28.6%）。四类改动：① 修正 `lib/client/client.js` 里 5 处过时/自相矛盾的说明（chunk 数、boot 顺序、重发布名字数、picker helper 位置）；② 删掉两个空 section banner 并给 `scripts/client-map.mjs` 加「banner 下无代码也算不一致」的断言；③ 删除 15 块共 239 行「这个文件以前叫什么」的迁移叙事，只留下它要守的约束（行为性的「为什么」全部保留）；④ 去掉 1,491 行只复述签名的单行 JSDoc `@param` / `@returns`（保留多行、带约束说明的，以及 `@typedef` / `@type` / `@throws`）。`CONTRIBUTING.md` 的注释约定改为「总体写做什么，关键处写为什么，危险处多写，尽量精简；不留迁移史」。测试锚点已核对：0 条反验证锚点钉在被删的 JSDoc 或迁移叙事上。
 - **七个补丁搬进 `lib/patch/`**：`patch-fs` / `patch-sandbox` / `patch-shell` / `patch-subprocess` / `patch-ptc` / `patch-terminal` / `patch-projection` 从 `lib/` 顶层移进 `lib/patch/`，**basename 一个都没改**——`lib/upstream-contract.js` 按文件登记退役判据、`docs/upstream-workarounds.md` 按文件名认人，改名会打乱退役信号，而这里要的只是「补丁族有自己的目录」。改动只有三类：8 条对外 import（`lib/index.js` 7 条 + `lib/fs-shim.js` 1 条）、15 条 JSDoc 类型路径、以及 7 个 `file:` 字段与 39 处文档路径。3 条同族引用（`patch-ptc` → `patch-sandbox`、`patch-subprocess` → `patch-projection`、`patch-terminal` → `patch-subprocess`）保持 `./`。**0 条变异锚点**——这是这组便宜的根本原因：`scripts/reverse-verify-*.mjs` 里没有一条钉在补丁文件名上。门禁数字不变（`modules under lib/` 仍 57、补丁仍 7），生成表的 `source` 列自己从 `lib/patch-*.js` 变成 `lib/patch/patch-*.js`，没有手改。
 
 ### 修复

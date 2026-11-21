@@ -127,7 +127,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 两个半边都无编译步骤，"改完即所测"：
 
 - **宿主半边**（`lib/*.js`，除 client）与浏览器半边的**样式/文案**：改动进入已安装位置后重启 DSH 生效。调试源码检出的宿主半边可用 DSH 自带的 Electron 运行时：以 `ELECTRON_RUN_AS_NODE=1` 运行宿主源码脚本，并设 `DSH_PEER_ROOT` 指向 DSH 安装目录的 `node_modules`（参考 [architecture.md](./architecture.md) 的「peer 解析」顺序）。
-- **浏览器半边**：`client.js` 与它的八个 chunk 由 DSH 前端加载，改动需重装进 profile 并重启 DSH，再重载页面；文件头注释里写明其加载协议，无独立构建管线。只改 chunk 不会自己生效——chunk 的 URL 带主入口的 revision，改完 chunk 还要碰一下 `lib/client/client.js` 或重启 DSH。三个启动 chunk 改了要重启；`apply` 里的 `Promise.all` 会让任何一块取不到都直接 reject，而不是画出半张面板。
+- **浏览器半边**：`client.js` 与它的十二个 chunk 由 DSH 前端加载，改动需重装进 profile 并重启 DSH，再重载页面；文件头注释里写明其加载协议，无独立构建管线。只改 chunk 不会自己生效——chunk 的 URL 带主入口的 revision，改完 chunk 还要碰一下 `lib/client/client.js` 或重启 DSH。启动 chunk 改了要重启；`apply` 里的 `Promise.all` 会让任何一块取不到都直接 reject，而不是画出半张面板。
 
 ### 日志与诊断
 
