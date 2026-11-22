@@ -29,7 +29,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const moduleUrl = pathToFileURL(path.join(pluginRoot, 'lib', 'routes', 'text-encoding.js')).href
 
-const { fileFormatOf, decodeBody, decodeTruncated, encodeBody, isWritableEncoding, WRITE_ENCODINGS } = await import(moduleUrl)
+const {
+  PAGE_BYTES,
+  SAMPLE_BYTES,
+  WRITE_ENCODINGS,
+  decodeBody,
+  decodePage,
+  decodeTruncated,
+  encodeBody,
+  fileFormatOf,
+  isWritableEncoding,
+} = await import(moduleUrl)
 
 let passed = 0
 const failures = []
@@ -216,6 +226,56 @@ console.log('\n=== text encoding smoke ===\n')
   })(), JSON.stringify((() => { try { return decodeTruncated(oddCut, 'utf16le') } catch (error) { return String(error) } })()))
 
   check('a whole file decodes through the same path', decodeTruncated(Buffer.from('alpha\n', 'utf8'), 'utf8') === 'alpha\n')
+}
+
+// ---------------------------------------------------------------------------
+// A head cut at a byte count lands inside a character most of the time
+// ---------------------------------------------------------------------------
+{
+  // Three bytes per character and an 8 192-byte sample: only one file in three
+  // ends its head on a boundary. The other two used to be reported as GB18030 —
+  // the leftover half character made strict UTF-8 refuse, and the same bytes
+  // read as two-byte GBK characters, which is why the answer was wrong rather
+  // than absent. A page cut has to survive the same thing.
+  const cjk = '界'.repeat(4000)
+  const raw = Buffer.from(cjk, 'utf8')
+  const cut = raw.subarray(0, SAMPLE_BYTES)
+  check('a head cut mid-character still says UTF-8, not GB18030',
+    format(cut, { truncated: true }).encoding === 'utf8', JSON.stringify(format(cut, { truncated: true })))
+  check('...and the same bytes read whole say UTF-8 too',
+    format(raw.subarray(0, (SAMPLE_BYTES / 3 | 0) * 3), { truncated: false }).encoding === 'utf8')
+
+  // The page seam: 128 KiB of three-byte characters is cut on a boundary only
+  // once in three, so a page that assumed the cut was clean would garble the
+  // last character of every page.
+  const many = '界'.repeat(Math.ceil(PAGE_BYTES / 3) + 5)
+  const manyRaw = Buffer.from(many, 'utf8')
+  const page = decodePage(manyRaw.subarray(0, PAGE_BYTES), 'utf8', { first: true })
+  check('a page cut mid-character ends on a real boundary',
+    page.consumed === PAGE_BYTES - (PAGE_BYTES % 3), `${page.consumed} of ${PAGE_BYTES}`)
+  check('...and it reports how much it consumed, so the next page starts where it stopped',
+    page.text === '界'.repeat(page.consumed / 3), String(page.text.length))
+  const rest = decodePage(manyRaw.subarray(page.consumed), 'utf8', { first: false })
+  check('...and the pages add up to the file',
+    page.text + rest.text === many, `${page.text.length}+${rest.text.length} vs ${many.length}`)
+
+  const utf16 = Buffer.from('abcdefgh', 'utf16le')
+  const oddPage = decodePage(utf16.subarray(0, 7), 'utf16le', { first: true })
+  check('a UTF-16 page cut between bytes stops at the last whole unit',
+    oddPage.consumed === 6 && oddPage.text === 'abc', JSON.stringify({ consumed: oddPage.consumed, text: oddPage.text }))
+
+  // Only page one starts at the beginning of the file, so only page one can
+  // start with a byte order mark. A U+FEFF in the middle is a character.
+  const withBom = Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from('x', 'utf8')])
+  check('a BOM is stripped from the first page',
+    decodePage(withBom, 'utf8', { first: true }).text === 'x', JSON.stringify(decodePage(withBom, 'utf8', { first: true }).text))
+  check('...but the same bytes later in the file are kept',
+    decodePage(withBom, 'utf8', { first: false }).text === '\uFEFFx',
+    JSON.stringify(decodePage(withBom, 'utf8', { first: false }).text))
+
+  check('an encoding the decoder does not know is an error, not an empty page', (() => {
+    try { decodePage(Buffer.from('a'), 'utf32', { first: true }); return false } catch (error) { return /unknown text encoding/u.test(String(error)) }
+  })())
 }
 
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)

@@ -62,6 +62,7 @@
 | 行尾与 BOM 保真 | 读时把 `eol`（`LF`/`CRLF`）与 `bom` 与 `text` 分开报告（`text` 已归一化为 LF 且不含 BOM），写时原样装回；`eol: 'auto'` 用磁盘当前风格。编解码与 `editText` 工具共用同一份实现 |
 | 截断即不可写 | 超限读只回头部且 `revision: null`——截断内容算出的哈希是假证据，而写路由要求 revision 是字符串，所以截断的文件在协议层面无法保存 |
 
+| 分页读（只读） | 超过 **2 MiB** 的文件不是死路：probe 回 `paged: true`，读路由接受 `offset`，每次一页 **128 KiB**，`nextOffset` 说明下一页从哪开始（页按固定字节数切开，最后一个字符可能被切断，切下的字节留在下一页，不丢也不补）。编码与行尾**只在第一页决定**，之后由客户端回传——中间页按自己的字节重新嗅探会把同一个文件解成两种文字（GB18030 的一页很可能恰好也是合法 UTF-8）。分页一律只读：`revision: null`，没有保存路径 |
 详见 [architecture.md](./architecture.md) 的「接管 ctx.fs」。
 
 ### 本机路径直通（localPassthrough）

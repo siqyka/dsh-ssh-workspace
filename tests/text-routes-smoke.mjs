@@ -94,6 +94,7 @@ if (!coreRoot) {
   const { makeRoutes, ROUTES } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes', 'routes.js')).href)
   const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'fs', 'remote-fs.js')).href)
   const { EDIT_MAX_BYTES } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes', 'text.js')).href)
+  const { PAGE_BYTES } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'routes', 'text-encoding.js')).href)
 
   function fakeRes () {
     const state = { status: undefined, body: '', headers: {} }
@@ -342,6 +343,60 @@ if (!coreRoot) {
     check('...and reports the real size, not the cut length', truncated.json?.size === 64, truncated.body)
     check('...and offers NO revision, because it never saw the whole file',
       truncated.json?.revision === null, truncated.body)
+
+    // ---- paged read
+    //
+    // A file too large to open whole is not a dead end: it is served one page at
+    // a time, read-only. The load-bearing assertion is that the pages ADD UP —
+    // every page cut lands inside a 3-byte character, so a decoder that assumed
+    // the cut was on a boundary would drop or garble characters at every seam.
+    const pagedText = '界'.repeat(Math.ceil((PAGE_BYTES * 1.5) / 3))
+    seeded.tree.write('/srv/app/pages.txt', pagedText)
+    const pageUrl = (params) => `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/pages.txt', ...params })}`
+    const first = await get(routes, pageUrl({ offset: 0 }))
+    check('a paged read answers one page and says which part it is',
+      first.status === 200 && first.json?.paged === true && first.json?.offset === 0, first.body)
+    check('...with the encoding and line endings it decided from the FIRST page',
+      first.json?.encoding === 'utf8' && first.json?.eol === 'LF', first.body)
+    check('...and no revision, because no page is a whole file to save',
+      first.json?.revision === null && first.json?.partial === true, first.body)
+    check('...ending on a character boundary rather than mid-character',
+      first.json?.nextOffset === Buffer.byteLength(first.json.text, 'utf8'), first.body)
+    const second = await get(routes, pageUrl({
+      offset: first.json.nextOffset, encoding: first.json.encoding, eol: first.json.eol,
+    }))
+    check('the next page continues exactly where the first stopped',
+      second.status === 200 && second.json?.offset === first.json.nextOffset, second.body)
+    check('...and the two pages together are the whole file, character for character',
+      `${first.json.text}${second.json.text}` === pagedText, `${first.json.text.length}+${second.json.text.length} vs ${pagedText.length}`)
+    check('a page taken past the last byte is empty rather than an error',
+      (await get(routes, pageUrl({ offset: pagedText.length * 3 }))).json?.partial === false, 'end page')
+    // Sniffing each page would decode the same file differently halfway down:
+    // a page from the middle of a GB18030 file can be valid UTF-8 by accident.
+    // Without the carried encoding the route must sniff the HEAD, never the page.
+    const gbkCount = Math.ceil(PAGE_BYTES / 4) + 8
+    seeded.tree.write('/srv/app/gbk-big.txt', Buffer.concat(Array.from({ length: gbkCount }, () => Buffer.from([0xC4, 0xE3, 0xBA, 0xC3]))))
+    const gbkHead = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/gbk-big.txt', offset: 0 })}`)
+    const gbkSecond = await get(routes, `${ROUTES.readText}?${q({
+      sessionId: 's-rw', path: 'ssh://box/srv/app/gbk-big.txt', offset: gbkHead.json.nextOffset,
+    })}`)
+    check('a later page without the encoding still decodes as the head decided',
+      gbkHead.json?.encoding === 'gb18030' && gbkSecond.json?.encoding === 'gb18030', gbkSecond.body)
+    check('...so the pages still add up with no mojibake at the seam',
+      `${gbkHead.json.text}${gbkSecond.json.text}` === '你好'.repeat(gbkCount),
+      JSON.stringify(`${gbkHead.json.text}${gbkSecond.json.text}`.slice(-6)))
+    check('offset must be a number', (await get(routes, pageUrl({ offset: 'abc' }))).status === 400, 'offset abc')
+    check('a negative offset is refused', (await get(routes, pageUrl({ offset: -1 }))).status === 400, 'offset -1')
+    check('an encoding the sniffer cannot report is refused',
+      (await get(routes, pageUrl({ offset: 0, encoding: 'utf32' }))).status === 400, 'encoding utf32')
+    check('a line ending that is neither LF nor CRLF is refused',
+      (await get(routes, pageUrl({ offset: 0, eol: 'CR' }))).status === 400, 'eol CR')
+    // The probe is what tells the panel the button it should draw is "page
+    // through this", not "edit this".
+    seeded.tree.write('/srv/app/over-cap.txt', 'y'.repeat(EDIT_MAX_BYTES + 16))
+    const overProbe = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/over-cap.txt', probe: '1' })}`)
+    check('a probe over the editing cap says the file can still be paged',
+      overProbe.json?.editable === false && overProbe.json?.reason === 'too-large' && overProbe.json?.paged === true, overProbe.body)
 
     // ---- write
     const save = await post(routes, ROUTES.writeText, {
