@@ -9,7 +9,8 @@
 | --- | --- | --- | --- | --- |
 | 01 | 测试骨架与代码整合（内存 SFTP + 插件宿主 + 渲染；清基线红） | — | — | **已实施**（`tests/support/`，`docs/development.md` 的「共享替身」一节） |
 | 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | — | — | **已实施**（`lib/surface/remote-skills.js`，`tests/remote-skills-smoke.mjs` 55 项；说明见 `docs/features.md` 五之三 与 `docs/architecture.md` 的「远端技能发现」一节） |
-| 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | [03-remote-file-editing.md](./03-remote-file-editing.md) | [prompt](./03-remote-file-editing-prompt.md) | 方案 |
+| 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | — | — | **已实施**（`lib/routes/text.js` + `lib/client/client.editor.js`，`tests/text-routes-smoke.mjs` 69 项与 `tests/file-editor-smoke.mjs` 53 项；说明见 `docs/ui.md` 的「文件编辑」一节） |
+| 06 | 文件系统与编辑器的参照取舍（对照 DSH-better-sidebar：4 条必做 + 4 条纯优化 + 5 条明确不做） | [06-fs-and-editor-reference.md](./06-fs-and-editor-reference.md) | [06-fs-and-editor-reference-prompt.md](./06-fs-and-editor-reference-prompt.md) | **方案已定，待开工** |
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
 
@@ -17,26 +18,25 @@
 
 | # | 工作流 | 落点 |
 | --- | --- | --- |
+| 03 | 右侧文件树的文件编辑（读/写/改三条路由、`version` + `revision` 双校验、远端与本地同一条路由、复用 mode 门禁与写围栏） | `docs/ui.md` 的「文件编辑」一节（为什么是按钮 + 对话框、为什么两个令牌、行尾与 BOM 的往返、截断即不可写）；`docs/features.md` 二之「在浏览器里编辑」 |
 | 04 | 代码拆分（去重、`statusTool` 三段分离、`routes` 按资源域拆模块、watch 集群独立、`client.js` 按懒渲染边界拆 chunk） | `CHANGELOG.md` 的 0.3.6「变更」一节；client chunk 的宿主能力实测与七条拆分边界在 `docs/optimization-and-future03.md` §1.1 |
 | 05 | 同功能模块合并（16 组，`lib/` 83 → 57 个模块） | `CHANGELOG.md` 的 0.3.6「变更」一节（含合并带出的两处真缺陷）；「搬家会让检查静默变松」的四处修正见未发布段的「修复」 |
 
-两份方案与两份任务书已按本目录的约定删除——它们记录的是「要做什么」，
-做完之后唯一还有价值的部分（实测数字、边界、踩过的坑）已经搬进上面两个落点。
+三份方案与三份任务书已按本目录的约定删除——它们记录的是「要做什么」，
+做完之后唯一还有价值的部分（实测数字、边界、踩过的坑）已经搬进上面三个落点。
 
 ## 与 03 的关系
 
 - **01 是地基，且已完成**：03 的验收依赖「裸检出上能跑远端读写」，那正是 01 补上的
   `tests/support/fake-sftp.mjs`（连同 `plugin-host.mjs` 与 `render.mjs`）。
 - **02 已完成**，它立下的权限语汇（默认关闭、主机白名单、写围栏、审计不写内容）
-  正是 03 要复用的那一套：会话 mode（`lib/core/mode-gate.js`）、
+  正是 03 复用的那一套：会话 mode（`lib/core/mode-gate.js`）、
   写围栏（`lib/fs/remote-fs.js`）、审计不写内容（`lib/engine/engine.js` 底部）。
-- **03 现在没有并行项**：04 与 05 都已落地，`lib/` 的分层（`core` / `engine` / `hosts` /
-  `fs` / `transfer` / `forward` / `report` / `surface`）与模块边界已定，03 的新路由与
-  handler 直接放进 `lib/routes/` 即可，不需要再动既有文件的位置。
+- **03 已完成**，没有并行项。
 
 ## 阅读顺序
 
 - 想知道「为什么要做」 → 方案的第 1–2 节（现状与诊断）
 - 想直接开工 → 任务书（起点状态已核对，不需要重新调研）
 - 想知道边界 → 方案的「不做什么」一节
-- 想知道 04 / 05 做过什么 → 本页上面的「已完成的工作流」表
+- 想知道 03 / 04 / 05 做过什么 → 本页上面的「已完成的工作流」表
