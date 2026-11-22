@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { fakeForwardEngine } from './support/fake-forward-engine.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
+const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward/forward.js')).href)
 
 let passed = 0
 let failures = 0

@@ -40,7 +40,7 @@ if (!coreRoot) {
 }
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
 
 /** The alias every target below lives on. */
 const ALIAS = 'box'

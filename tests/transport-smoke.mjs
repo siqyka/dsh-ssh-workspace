@@ -50,10 +50,10 @@ if (!coreRoot) {
 }
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
-const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
-const { SshWorkspaceEngine, channelExecOptions, agentIsReachable, isAgentForwardingRefusal } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
-const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/store.js')).href)
+const { SshWorkspaceEngine, channelExecOptions, agentIsReachable, isAgentForwardingRefusal } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
+const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
 
 // The plugin's own ssh2 tree: the connect-time validation under test is REAL
 // ssh2 behaviour, so a stand-in would prove nothing.
@@ -246,7 +246,7 @@ function quietEngine () {
 
   // Every command-channel open site goes through the same seam; the connect
   // config must never carry the flag again.
-  const engineSource = readFileSync(path.join(pluginRoot, 'lib/engine.js'), 'utf8')
+  const engineSource = readFileSync(path.join(pluginRoot, 'lib/engine/engine.js'), 'utf8')
   const shellSource = readFileSync(path.join(pluginRoot, 'lib/patch/patch-shell.js'), 'utf8')
   const subprocessSource = readFileSync(path.join(pluginRoot, 'lib/patch/patch-subprocess.js'), 'utf8')
   check('connectConfig no longer assigns a connect-level agentForward',

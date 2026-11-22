@@ -989,7 +989,7 @@ async function postChunk (route, body, chunks = []) {
 // unregistered the tool left every route assertion green. These two assertions
 // exist to make that impossible.
 {
-  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tools.js')).href)
+  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'surface', 'tools.js')).href)
   const reverseStub = { list: () => [], open: async () => ({ id: 'rfwd-9' }), close: () => true }
   const withReverse = workspaceTools({ get: () => undefined }, engine, {}, forwards, undefined, reverseStub)
   const names = withReverse.map(tool => tool.name)
@@ -1095,11 +1095,11 @@ async function postChunk (route, body, chunks = []) {
 // mapping with no fixed local port, or that let a rebinding page toggle a
 // tunnel, would be a real hole.
 {
-  const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
-  const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
+  const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward/forward.js')).href)
+  const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward/forward.js')).href)
   const { mkdtempSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
-  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
+  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/store.js')).href)
 
   const dir = mkdtempSync(path.join(tmpdir(), 'dsh-routes-forwards-'))
   try {
@@ -1268,7 +1268,7 @@ async function postChunk (route, body, chunks = []) {
 {
   const { mkdtempSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
-  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
+  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/store.js')).href)
 
   const dir = mkdtempSync(path.join(tmpdir(), 'dsh-routes-detach-'))
   try {
@@ -1473,8 +1473,8 @@ async function postChunk (route, body, chunks = []) {
 {
   const { mkdtempSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
-  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
-  const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
+  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/store.js')).href)
+  const { ForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward/forward.js')).href)
 
   const dir = mkdtempSync(path.join(tmpdir(), 'dsh-routes-probe-'))
   try {
@@ -1611,7 +1611,7 @@ async function postChunk (route, body, chunks = []) {
     // shutdown, so the row has to end up exactly where the row's own close
     // button leaves it.
     {
-      const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward.js')).href)
+      const { SavedForwardManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/forward/forward.js')).href)
       pool.clear()
       const record = makeRecord()
       pool.set('alpha', record)
@@ -1852,7 +1852,7 @@ async function postChunk (route, body, chunks = []) {
 {
   const { mkdtempSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
-  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
+  const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/store.js')).href)
 
   const dir = mkdtempSync(path.join(tmpdir(), 'dsh-routes-contract-'))
   try {

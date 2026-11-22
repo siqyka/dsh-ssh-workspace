@@ -720,7 +720,7 @@ console.log('\n[a11y: the menu contract]')
     /path: ROUTES\.selfCheck/u.test(routeSource(packageRoot)),
     'the route behind the button was removed along with the button')
   check('the status tool still reports self-check rows',
-    /selfCheck: probedAliases\(engine\)/u.test(readFileSync(path.join(packageRoot, 'lib', 'tools.js'), 'utf8')),
+    /selfCheck: probedAliases\(engine\)/u.test(readFileSync(path.join(packageRoot, 'lib', 'surface', 'tools.js'), 'utf8')),
     'an agent can no longer ask what a host is missing')
 }
 
@@ -1479,7 +1479,7 @@ console.log('\n[provenance] the panel admits how old the cached sections are')
 // helpful-looking alternative would quietly become a second truth.
 {
   const client = clientSource(packageRoot)
-  const transfer = readFileSync(path.join(packageRoot, 'lib', 'transfer.js'), 'utf8')
+  const transfer = readFileSync(path.join(packageRoot, 'lib', 'transfer', 'transfer.js'), 'utf8')
 
   check('there is exactly one queue store',
     (client.match(/let transferQueueState = /gu) ?? []).length === 1,

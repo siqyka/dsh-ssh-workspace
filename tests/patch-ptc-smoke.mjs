@@ -46,7 +46,7 @@ const {
   uninstallRemotePtc,
 } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'patch', 'patch-ptc.js')).href)
 const { substituteWorkspaceRoot } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'patch', 'patch-sandbox.js')).href)
-const { isRemotePath } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'protocol.js')).href)
+const { isRemotePath } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'core', 'protocol.js')).href)
 
 let passed = 0
 let failures = 0

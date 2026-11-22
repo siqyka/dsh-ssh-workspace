@@ -29,9 +29,9 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { sectionsOf, selects, isExact, patternMatches } = await import(pathToFileURL(path.join(pluginRoot, 'lib/ssh-config.js')).href)
-const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts.js')).href)
-const { auditConfigText, KNOWN_UNSUPPORTED, verdictFor } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href)
+const { sectionsOf, selects, isExact, patternMatches } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/ssh-config.js')).href)
+const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/hosts.js')).href)
+const { auditConfigText, KNOWN_UNSUPPORTED, verdictFor } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report/report.js')).href)
 
 let passed = 0
 let failures = 0
@@ -353,7 +353,7 @@ console.log('[4] every vocabulary key is reachable')
 {
   // The parser's keyword charset has no hyphen, so a hyphenated key is dead by
   // construction. Asserting the invariant keeps a future "fix" from adding one.
-  const { CONFIG_LINE } = await import(pathToFileURL(path.join(pluginRoot, 'lib/ssh-config.js')).href)
+  const { CONFIG_LINE } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/ssh-config.js')).href)
   check('the config keyword charset excludes hyphens',
     CONFIG_LINE.test('StrictHostKeyChecking no') && !CONFIG_LINE.test('strict-host-key-checking no'))
   const entries = auditConfigText('Host web\n  strict-host-key-checking no\n', 'web')

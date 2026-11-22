@@ -13,9 +13,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { HostConfigStore } from '../lib/store.js'
-import { HostStore } from '../lib/hosts.js'
-import { SecretCodec, isEncrypted, keyPath } from '../lib/store.js'
+import { HostConfigStore } from '../lib/hosts/store.js'
+import { HostStore } from '../lib/hosts/hosts.js'
+import { SecretCodec, isEncrypted, keyPath } from '../lib/hosts/store.js'
 
 console.log('\n=== secrets smoke ===\n')
 

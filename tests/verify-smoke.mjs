@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { REMOTE_HASHERS, digestOfHasherOutput, hashLocalFile, compareDigests, findRemoteHasher, hashRemoteFile } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
+  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'transfer-rules.js')).href)
 
 let passed = 0
 let failures = 0

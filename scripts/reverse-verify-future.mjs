@@ -35,7 +35,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CASES = [
   {
     label: 'F-06: "unknown" is treated as "present"',
-    file: 'lib/capabilities.js',
+    file: 'lib/report/capabilities.js',
     from: "    if (value === true) {\n      rows.push({ tool: spec.tool, feature: spec.feature, state: 'present' })\n      continue\n    }",
     to: "    if (value !== undefined) {\n      rows.push({ tool: spec.tool, feature: spec.feature, state: 'present' })\n      continue\n    }",
     suite: 'capabilities-report-smoke.mjs',
@@ -44,7 +44,7 @@ const CASES = [
   },
   {
     label: 'F-06: an absent capability loses its install hint',
-    file: 'lib/capabilities.js',
+    file: 'lib/report/capabilities.js',
     from: "        install: spec.install,",
     to: "        install: undefined,",
     suite: 'capabilities-report-smoke.mjs',
@@ -53,7 +53,7 @@ const CASES = [
   },
   {
     label: 'F-06: the probe goes back to a substring test',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     from: "      for (const tool of probedTools()) result[tool] = present.has(tool)",
     to: "      for (const tool of probedTools()) result[tool] = outcome.stdout.includes(tool)",
     suite: 'capabilities-report-smoke.mjs',
@@ -62,7 +62,7 @@ const CASES = [
   },
   {
     label: 'F-06: the environment facts stop travelling with the probe',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     from: "      this.environments.set(alias, environment)",
     to: "      this.environments.delete(alias)",
     suite: 'capabilities-report-smoke.mjs',
@@ -72,7 +72,7 @@ const CASES = [
   },
   {
     label: 'F-04: "lost" collapses into "ignored"',
-    file: 'lib/report.js',
+    file: 'lib/report/report.js',
     from: "  const known = KNOWN_UNSUPPORTED[keyword]\n  if (known !== undefined) return known",
     to: "  const known = KNOWN_UNSUPPORTED[keyword]\n  if (known !== undefined) return { verdict: 'ignored', detail: known.detail }",
     suite: 'config-audit-smoke.mjs',
@@ -81,7 +81,7 @@ const CASES = [
   },
   {
     label: 'F-04: the audit stops following wildcard blocks',
-    file: 'lib/report.js',
+    file: 'lib/report/report.js',
     from: "    if (!selects(section, alias)) continue",
     to: "    if (!isExact(section, alias)) continue",
     suite: 'config-audit-smoke.mjs',
@@ -90,7 +90,7 @@ const CASES = [
   },
   {
     label: 'F-04: a repeated keyword is reported twice',
-    file: 'lib/report.js',
+    file: 'lib/report/report.js',
     from: "      if (seen.has(keyword)) continue",
     to: "      // duplicate guard removed for reverse verification",
     suite: 'config-audit-smoke.mjs',
@@ -99,7 +99,7 @@ const CASES = [
   },
   {
     label: 'F-07: a refused command is not recorded by the exec tool',
-    file: 'lib/tools.js',
+    file: 'lib/surface/tools.js',
     from: "        engine.audit?.record({\n          at: Date.now(),\n          alias,\n          command,\n          channel: 'exec',\n          durationMs: 0,\n          refused: true,",
     to: "        void ({\n          at: Date.now(),\n          alias,\n          command,\n          channel: 'exec',\n          durationMs: 0,\n          refused: true,",
     suite: 'audit-smoke.mjs',
@@ -108,7 +108,7 @@ const CASES = [
   },
   {
     label: 'F-07: redaction stops masking an Authorization header',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     from: "  text = text.replace(\n    /(authorization\\s*:\\s*)(?:bearer|basic|token)\\s+[A-Za-z0-9._~+/=-]+/giu,\n    (_match, header) => `${header}<redacted>`,\n  )",
     to: "  void (/(authorization\\s*:\\s*)(?:bearer|basic|token)\\s+[A-Za-z0-9._~+/=-]+/giu)",
     suite: 'audit-smoke.mjs',
@@ -117,7 +117,7 @@ const CASES = [
   },
   {
     label: 'F-07: redaction stops masking an environment assignment',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     from: "    /([A-Za-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key))(\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
     to: "    /(\\bpassword\\s*=\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s;|&]+)/giu,",
     // The shared fallback in `diagnostics.js` still masks `DB_PASSWORD=` when
@@ -126,7 +126,7 @@ const CASES = [
     // enough to prove the behaviour is gone.
     also: [
       {
-        file: 'lib/diagnostics.js',
+        file: 'lib/core/diagnostics.js',
         from: "  out = out.replace(/(password|passphrase)(\\s*[=:]\\s*)[^\\s,'\"}]+/giu, '$1$2<redacted>')",
         to: "  out = out.replace(/(\\bpassword\\s*[=:]\\s*)[^\\s,'\"}]+/giu, '$1<redacted>')",
       },
@@ -137,7 +137,7 @@ const CASES = [
   },
   {
     label: 'F-09: the bundle falls back to pre-formatted audit text',
-    file: 'lib/report.js',
+    file: 'lib/report/report.js',
     from: "  const commands = Array.isArray(input.commands) ? input.commands : []",
     to: "  const commands = []",
     suite: 'support-bundle-smoke.mjs',
@@ -146,7 +146,7 @@ const CASES = [
   },
   {
     label: 'F-09: the bundle stops masking a login user',
-    file: 'lib/diagnostics.js',
+    file: 'lib/core/diagnostics.js',
     from: "  out = out.replace(/([A-Za-z0-9._-]+)@([A-Za-z0-9._-]+:\\d+)/gu, '<user>@$2')",
     to: "  out = out.replace(/(?:)/gu, '')",
     suite: 'support-bundle-smoke.mjs',
@@ -155,7 +155,7 @@ const CASES = [
   },
   {
     label: 'F-01: a later generation is described as the first',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     from: "      return state.generation === 1\n        ? 'connected (first generation)'",
     to: "      return state.generation >= 1\n        ? 'connected (first generation)'",
     suite: 'support-bundle-smoke.mjs',
@@ -164,7 +164,7 @@ const CASES = [
   },
   {
     label: 'F-01: generationOf reads the record instead of the map',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     from: "    const generation = this.generations.get(alias) ?? 0",
     to: "    const generation = record?.generation ?? 0",
     suite: 'support-bundle-smoke.mjs',

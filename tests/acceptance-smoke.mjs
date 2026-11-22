@@ -22,7 +22,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { removeScratch, resolveScratchDir } from './scratch.mjs'
-import { shellQuote } from '../lib/engine.js'
+import { shellQuote } from '../lib/engine/engine.js'
 
 const alias = process.env.DSH_WS_TEST_ALIAS
 const coreRoot = process.env.DSH_CORE_ROOT

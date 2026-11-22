@@ -19,37 +19,37 @@ const CORE = path.join(root, 'tests/.peer-stubs')
 const MUTATIONS = [
   {
     name: 'the healthy-connection guard is removed (everything is retried)',
-    file: 'lib/reconnect.js',
+    file: 'lib/engine/reconnect.js',
     find: "  if (state?.connected === true) {\n    return { retry: false, reason: 'the connection is healthy, so this is not a transport accident' }\n  }",
     replace: '',
   },
   {
     name: 'the "nothing is repairing it" guard is removed',
-    file: 'lib/reconnect.js',
+    file: 'lib/engine/reconnect.js',
     find: "  if (!recovering) {\n    return { retry: false, reason: 'nothing is trying to bring the connection back' }\n  }",
     replace: '',
   },
   {
     name: 'a gave-up loop counts as repairing',
-    file: 'lib/reconnect.js',
+    file: 'lib/engine/reconnect.js',
     find: "loop.phase !== 'gave-up'",
     replace: 'true',
   },
   {
     name: 'the backoff is a fixed delay (no growth)',
-    file: 'lib/reconnect.js',
+    file: 'lib/engine/reconnect.js',
     find: 'return Math.min(base * 2 ** exponent, ceiling)',
     replace: 'return base',
   },
   {
     name: 'the poller reports instead of retrying',
-    file: 'lib/remote-watch.js',
+    file: 'lib/fs/remote-watch.js',
     find: '      if (verdict.retry !== true) {\n        // A real failure on a healthy connection',
     replace: '      if (true) {\n        // A real failure on a healthy connection',
   },
   {
     name: 'the recovery rescan is dropped (silent freeze)',
-    file: 'lib/remote-watch.js',
+    file: 'lib/fs/remote-watch.js',
     find: '    if (failures > 0) {\n      // Observations resumed.',
     replace: '    if (false) {\n      // Observations resumed.',
   },

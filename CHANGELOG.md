@@ -23,24 +23,30 @@
   - **组件渲染骨架（`render.mjs`）**：从 bundle 里按大括号切出真组件、用 React 形状的钩子桩渲染一次，`render-smoke` 用**真组件**（`SelfCheckList`）驱动并带负向对照（改坏过滤条件后树必须变）。effect 默认不执行——执行等于替 React 断言它何时跑。
   - **三条长期红清除**：①`transfer-retry` / `transport` 在裸检出上从「失败」变成显式 SKIP 或真跑（缺的是 `ssh2` 本身，不是 `DSH_CORE_ROOT`）；②`workspace-ownership-smoke` 的硬编码 LF marker 改为读入后 `replace(/\r\n/g,'\n')`，CRLF 检出不再红；③新增 `.gitattributes`（`* text=auto eol=lf`）让行尾不再随检出漂移。
   - **partial 变成待办清单**：`run.mjs` 收尾逐个打印 partial 套件的 SKIP 行，`docs/development.md` 的套件表新增「跳过段」一列，写清跳的是哪一段、缺什么条件。
-- **远端技能发现（`lib/remote-skills.js`，默认关闭）**：远端工作区里的 `.dsh/skills` 与 `.agents/skills` 现在能被 `skill` 工具发现和加载，rank 250（夹在项目级与用户级之间）。三条不能复用宿主代码的理由都落在实现里：宿主的 `discoverRoot` 用 `node:path.join` 拼 `SKILL.md`，在 Windows 上把 `ssh://box/data/proj` 拼成 `.\ssh:\box\...`——既不是远端路径也不报错，目录型候选会被静默丢弃，所以发现循环自建、路径全程 `normalizeRemotePath` / `formatRemotePath`（测试钉住 locator 里不出现反斜杠）；宿主的 frontmatter 解析是私有函数，本插件只依赖 `ssh2`，故自写子集解析（标量 / 布尔 / 一层嵌套 / 块标量），认不出的行跳过、旧拼写 `modelInvocable` 等直接判定不是技能；宿主的 `validateCandidate` 在 `provider.list()` 的 `try` 之外且是 `throw`，一个非法候选会让整个会话的技能目录读取失败、本地技能一起消失，所以非法名字 / 空描述 / 非法 `invocation` 在返回前就滤掉。**读也过围栏**：`remote-fs.js` 的 `assertWithinRemoteRoots` 只被 `#assertWritable` 调用，读取不判围栏，因此 `get()` 每次加载正文前自己调一次 `assertFencedRealpath`，远端种下的符号链接不会把读取带出工作区。**默认关闭 + 主机白名单**：技能描述一被读到就进模型上下文，与「模型主动打开一个文件」是不同风险等级；`*` / `bo?x` 这类通配别名被拒绝并记警告。有界（每根 200 条 / 每主机 32 个 / 单文件 64 KiB / 5 秒）且**不完整不等于空**——某个根读失败时 `complete: false` 并保留已读到的候选，宿主据此不缓存，一次断线不会被写成「这台主机没有技能」。状态工具与面板 `/status` 增加 `remoteSkills` 块，诊断只记数量与别名。
+- **远端技能发现（`lib/surface/remote-skills.js`，默认关闭）**：远端工作区里的 `.dsh/skills` 与 `.agents/skills` 现在能被 `skill` 工具发现和加载，rank 250（夹在项目级与用户级之间）。三条不能复用宿主代码的理由都落在实现里：宿主的 `discoverRoot` 用 `node:path.join` 拼 `SKILL.md`，在 Windows 上把 `ssh://box/data/proj` 拼成 `.\ssh:\box\...`——既不是远端路径也不报错，目录型候选会被静默丢弃，所以发现循环自建、路径全程 `normalizeRemotePath` / `formatRemotePath`（测试钉住 locator 里不出现反斜杠）；宿主的 frontmatter 解析是私有函数，本插件只依赖 `ssh2`，故自写子集解析（标量 / 布尔 / 一层嵌套 / 块标量），认不出的行跳过、旧拼写 `modelInvocable` 等直接判定不是技能；宿主的 `validateCandidate` 在 `provider.list()` 的 `try` 之外且是 `throw`，一个非法候选会让整个会话的技能目录读取失败、本地技能一起消失，所以非法名字 / 空描述 / 非法 `invocation` 在返回前就滤掉。**读也过围栏**：`remote-fs.js` 的 `assertWithinRemoteRoots` 只被 `#assertWritable` 调用，读取不判围栏，因此 `get()` 每次加载正文前自己调一次 `assertFencedRealpath`，远端种下的符号链接不会把读取带出工作区。**默认关闭 + 主机白名单**：技能描述一被读到就进模型上下文，与「模型主动打开一个文件」是不同风险等级；`*` / `bo?x` 这类通配别名被拒绝并记警告。有界（每根 200 条 / 每主机 32 个 / 单文件 64 KiB / 5 秒）且**不完整不等于空**——某个根读失败时 `complete: false` 并保留已读到的候选，宿主据此不缓存，一次断线不会被写成「这台主机没有技能」。状态工具与面板 `/status` 增加 `remoteSkills` 块，诊断只记数量与别名。
 - **目录列表跟随输入（两个 picker）**：路径栏以前只有回车才生效——键入 `/home/me/pro` 时列表还停在登录目录，找目录只能盲打整条路径再按回车试。现在两个对话框共用 `usePathDraftPreview`：同一目录内的前缀**只本地收窄**（大小写不敏感、保留主机真实拼写、零往返零定时器）；带尾斜杠的路径（`/home/me/` 明确表示这是目录）在输入停顿 `PATH_PREVIEW_DEBOUNCE_MS`（200 ms）之后**只发一次**列目录请求；整条拼全的真实目录名只收窄成一行、**不自动进入**——进目录永远是补尾斜杠、回车或双击。**尾斜杠就是「在目录里」**：导航后草稿写成 `/raid/`，删掉斜杠即回父目录并按 `raid` 收窄，两个状态不再共用同一个字符串。预览请求不写输入框、不先清空列表（失败时旧行还在），并且**只在主机答完后**才把 `path` 指向该目录，所以「挂载此目录」不会指向还在拼写的路径。输入框**删掉了 `onBlur` 复位**：双击的第一下会先 blur，复位会让行在两次点击之间移位。
 - **列目录从「逐条 stat」改成一轮往返**：`sftp.readdir` 每个条目都带 attrs，服务器要为每一条做一次 `lstat`——共享 `/tmp` 这种几万条的目录在 300 ms 链路上 30 s 都不返回，而同机 `ls` 只要 44 ms。选择器**只要名字、而且只要目录**，于是 `GET /ls` 新增 `dirs=1` 快路径：一次 `engine.exec`（`ls -1ap` 过一层 `awk`，只认带尾斜杠的目录，文件与符号链接都被排掉），**上限在远端就生效**（25 000 条的目录最多只传 `limit` 个名字），同一轮里 `pwd -P` 解析登录目录、`test -w` 报可写性。stdout 只走名字、stderr 只走一行标记（目录名可以和状态行一模一样，所以不能共用流）；任何形状不符——非 POSIX 登录 shell、缺 `awk`、目录不可读、退出码非 0、计数不自洽、脚本自认 `fallback`——一律**回退到 SFTP**，这是优化而不是第二套实现。这条 exec 带 `audit: false`：它是一次界面读取，和 `readdir` 同性质，记进审计环只会让面板每敲一个键多出一条多行脚本。
 
 ### 变更
 
 - **注释瘦身**：全仓注释行从 27,457 降到 25,905（29.8% → 28.6%）。四类改动：① 修正 `lib/client/client.js` 里 5 处过时/自相矛盾的说明（chunk 数、boot 顺序、重发布名字数、picker helper 位置）；② 删掉两个空 section banner 并给 `scripts/client-map.mjs` 加「banner 下无代码也算不一致」的断言；③ 删除 15 块共 239 行「这个文件以前叫什么」的迁移叙事，只留下它要守的约束（行为性的「为什么」全部保留）；④ 去掉 1,491 行只复述签名的单行 JSDoc `@param` / `@returns`（保留多行、带约束说明的，以及 `@typedef` / `@type` / `@throws`）。`CONTRIBUTING.md` 的注释约定改为「总体写做什么，关键处写为什么，危险处多写，尽量精简；不留迁移史」。测试锚点已核对：0 条反验证锚点钉在被删的 JSDoc 或迁移叙事上。
-- **七个补丁搬进 `lib/patch/`**：`patch-fs` / `patch-sandbox` / `patch-shell` / `patch-subprocess` / `patch-ptc` / `patch-terminal` / `patch-projection` 从 `lib/` 顶层移进 `lib/patch/`，**basename 一个都没改**——`lib/upstream-contract.js` 按文件登记退役判据、`docs/upstream-workarounds.md` 按文件名认人，改名会打乱退役信号，而这里要的只是「补丁族有自己的目录」。改动只有三类：8 条对外 import（`lib/index.js` 7 条 + `lib/fs-shim.js` 1 条）、15 条 JSDoc 类型路径、以及 7 个 `file:` 字段与 39 处文档路径。3 条同族引用（`patch-ptc` → `patch-sandbox`、`patch-subprocess` → `patch-projection`、`patch-terminal` → `patch-subprocess`）保持 `./`。**0 条变异锚点**——这是这组便宜的根本原因：`scripts/reverse-verify-*.mjs` 里没有一条钉在补丁文件名上。门禁数字不变（`modules under lib/` 仍 57、补丁仍 7），生成表的 `source` 列自己从 `lib/patch-*.js` 变成 `lib/patch/patch-*.js`，没有手改。
+- **七个补丁搬进 `lib/patch/`**：`patch-fs` / `patch-sandbox` / `patch-shell` / `patch-subprocess` / `patch-ptc` / `patch-terminal` / `patch-projection` 从 `lib/` 顶层移进 `lib/patch/`，**basename 一个都没改**——`lib/core/upstream-contract.js` 按文件登记退役判据、`docs/upstream-workarounds.md` 按文件名认人，改名会打乱退役信号，而这里要的只是「补丁族有自己的目录」。改动只有三类：8 条对外 import（`lib/index.js` 7 条 + `lib/fs/fs-shim.js` 1 条）、15 条 JSDoc 类型路径、以及 7 个 `file:` 字段与 39 处文档路径。3 条同族引用（`patch-ptc` → `patch-sandbox`、`patch-subprocess` → `patch-projection`、`patch-terminal` → `patch-subprocess`）保持 `./`。**0 条变异锚点**——这是这组便宜的根本原因：`scripts/reverse-verify-*.mjs` 里没有一条钉在补丁文件名上。门禁数字不变（`modules under lib/` 仍 57、补丁仍 7），生成表的 `source` 列自己从 `lib/patch-*.js` 变成 `lib/patch/patch-*.js`，没有手改。
 
 ### 变更
 
 - **所有「读不到文件就静默降级」的检查改成显式报错**：这一轮的形状和上一轮那四处一样，只是范围更大——扫描器把「列不出目录」答成空集或空串，而空集会让全称断言自动成立。五处支持层扫描器（`modulePaths` / `topLevelModulePaths` / `clientChunkNames` / `clientKernelBlock` / `routeSource`）现在一律抛错并**点名它读不了的那个路径**；`scripts/doc-numbers.mjs` 的 `readOrEmpty` 整个删掉（缺文档曾以 `''` 往下传，再由第二处检查报「不存在」——同一个结论，经由一个读起来像「文档是空的」的值）；`scripts/lint.mjs` 跳过缺失的根时**把跳过的根打印出来**，而存在却读不了的根直接抛错；`tests/client-shape-smoke.mjs` 对 `package.json` 点名的每个入口先断言存在、再断言能解析（原先缺一个就 `continue`，「发布出去的文件都能解析」于是变成「磁盘上碰巧有的那些能解析」）。
 - **新增 `tests/source-scanners-smoke.mjs`（20 项）**：钉住的不是「抛错更礼貌」，而是两种失败必须分开——「树是完整的，答案为空」是一个可以断言的事实；「我没能看」是检查自身的缺陷，而空答案恰好把它伪装成前一件事。所以 `every patch has a contract`、`expandPrefix 定义恰好一处` 这类断言在空集上成立时，绿灯是假的。空目录仍然回答空列表：这条区分的是「没有」与「看不了」，不是「空一律有罪」。套件同时断言三处收敛仍在（生成器不声明 `readOrEmpty`、`lint` 打印跳过项、`client-shape` 的入口存在性断言）。
 
+### 变更
+
+- **`lib/` 按能力域分文件夹（29 个顶层模块 → 1 个入口 + 8 个域）**：`core/`（7 个：`protocol` / `shared` / `peers` / `diagnostics` / `mode-gate` / `tool-schema` / `upstream-contract`）、`engine/`（3）、`hosts/`（3）、`fs/`（4）、`transfer/`（3）、`forward/`（1）、`report/`（2）、`surface/`（5），加上已有的 `patch/` / `routes/` / `client/`。**分层只有一条规则**：`core/` 里的模块不 import `lib/` 内任何东西（七个都是零出边），所以任何层都能引用它；其余文件夹可引用 `core/` 与自己这一层，不能反向——这条由 `scripts/graph-cycles.mjs` 守，环数仍是 5（全部是 `lib/routes/` 内部既有的那五个）。`lib/index.js` 留在顶层作为入口，`package.json` 的 `main` 与 `exports` 只改了 `./protocol` 一项。
+- **搬家不改语义**：`lib/` 内 65 条相对 import 与外部 589 处引用（`'lib/x.js'` 249、`'lib', 'x.js'` 69、`'../lib/x.js'` 19、散文 `lib/x.js` 252）全部按新位置改写，`git diff -M` 里除 import 行、JSDoc 类型路径与路径字符串外没有别的改动。三处**不会报错的**引用单独处理：`tests/diagnostics-smoke.mjs` 的 `KINDS` 生产者名单、`tests/local-passthrough-smoke.mjs` 的「`expandPrefix` 只定义一处」（改成比 basename，否则搬家会读成重复定义）、`tests/workspace-ownership-smoke.mjs` 的 `load()` 按 `/` 拆路径。两处源码扫描断言钉的是**导入方的目录深度**（`'./passthrough.js'`、`'../transfer.js'`），一并改成新拼写；`lib/client/client.kernel.js` 里那句作为 lift 锚点的注释也改成了真实路径。
+- **`docs/development.md` 新增「`lib/` 目录分层」小节**：一张按域的表 + 那条依赖规则，源码结构表 44 行的路径同步到新位置（行数不变，没有行被丢弃）。
+
 ### 修复
 
 - **四个检查不再把「找不到」答成 0 或答成通过**：这一轮给 `lib/` 搬家做准备时先量了量「搬完之后哪些检查会静默变松」，量出四处同形状的问题——**读不到的东西被当成 0，或空集让全称断言自动成立**，而它们的结果都会进文档。
-  - `scripts/doc-numbers.mjs` 的 `countTools()` 读 `lib/tools.js` 用的是 `readOrEmpty`：文件不在了就拿到 `''`，`countTools('')` 是 **0**，于是「模型可见工具 0 个」这个数字会被当作正确结果写进 `docs/development.md`。现在改成 `readRequired()`（读不到就抛错并点名文件）与新增的 `findModule(name)`（按 basename 在递归清单里定位，**0 个或多个都是错误**——「不在」和「有两份」是两种缺陷，都不是一个数字）。表格里的来源列也从写死的 `` `lib/tools.js` `` 改成跟着实际路径走。
+  - `scripts/doc-numbers.mjs` 的 `countTools()` 读 `lib/surface/tools.js` 用的是 `readOrEmpty`：文件不在了就拿到 `''`，`countTools('')` 是 **0**，于是「模型可见工具 0 个」这个数字会被当作正确结果写进 `docs/development.md`。现在改成 `readRequired()`（读不到就抛错并点名文件）与新增的 `findModule(name)`（按 basename 在递归清单里定位，**0 个或多个都是错误**——「不在」和「有两份」是两种缺陷，都不是一个数字）。表格里的来源列也从写死的 `` `lib/surface/tools.js` `` 改成跟着实际路径走。
   - `countPatches()` 原先只 `readdirSync(lib)` 顶层，把 `lib/patch/` 里的补丁数成 0。现在与模块计数共用同一个递归的 `moduleFiles()`（新增，返回相对路径——两个目录可能有同名文件，只说 basename 的不可能说清是哪一个），`countModules()` 也改成它的长度。`routeSources()` 与 `suiteNames()` 同样从 `readOrEmpty` 换成 `readRequired`：读不到 `tests/run.mjs` 时「0 个套件」和「0 条路由」都不是事实。
   - `tests/upstream-contract-smoke.mjs` 用扁平 `readdirSync(lib)` 找补丁，搬进子目录后 `patchFiles` 会变成空集，于是「每个 `patch-*.js` 都有契约」**在空集上成立**——绿灯，而这一条恰恰是最重要的那个方向。现在走递归的 `modulePaths()`，并**先断言补丁模块确实被找到**（再断言数量与契约表相等），空集会直接红。
   - `tests/capabilities-report-smoke.mjs` 的排除名单是 `^capabilities\.js$` / `^archive\.js$` 这种**顶层锚定**，文件一旦进子目录就失配，而失配的后果是词表主人被它自己的检查扫描、每一行都能自证。现在按 basename 匹配（`/(?:^|\/)capabilities\.js$/`），并**先断言这两个文件真的被找到**——排除规则匹配了 0 个文件是「检查悄悄变宽」，不是「没有例外」。
@@ -51,8 +57,8 @@
 ### 变更
 
 - **`lib/` 顶层模块 62 → 36、总数 83 → 57，一个行为没变**：十六个「其实是一件事、拆开只让读者多跳一次」的模块两两或三三合并，逐组一个提交（`2c43d33` … `2897a21`），每组独立可回滚。合并后的文件名与边界见 `docs/FF/05-module-merges.md` §9。**套件数、路由数（33）、工具数（11）、补丁数（7）一个没动**，import 图的环从 6 降到 5——唯一的功能环（`ssh-config` ↔ `match-eval`）随着两者合成一个文件自然消失，剩下 5 个全是 `lib/routes/routes.js` 与它子模块的互相引用。
-- **合并不是「再抽一层」，而是承认「为一行逻辑开一个文件」是多余的**：`escapeRegExp` / `positive` / `shellQuote` 三个一行函数并成 `lib/shared.js`（96 行，文件头写明边界：只收无状态、无依赖、单表达式、被三处以上调用的纯函数）；`tar` + `zip` 并成 `lib/archive.js`（两者本来就是同一个「写一种归档格式」的问题，只有一个消费者）；`ssh-config` + `match-eval` 合成一个文件（它们互相 import，那个环就是「这是一件事」的诚实陈述）。
-- **合并带出了两处真缺陷**：`lib/store.js` 里**有两个 `dshHome()`**（密钥写在 A 处、却从 B 处读，症状与「密钥被换掉」无法区分）随 `secrets.js` 合并成一个；`lib/shell.js` 合并后 `quote` 与 `shellQuote` 两个拼法并存，直接 `ReferenceError`，统一成后者。
+- **合并不是「再抽一层」，而是承认「为一行逻辑开一个文件」是多余的**：`escapeRegExp` / `positive` / `shellQuote` 三个一行函数并成 `lib/core/shared.js`（96 行，文件头写明边界：只收无状态、无依赖、单表达式、被三处以上调用的纯函数）；`tar` + `zip` 并成 `lib/transfer/archive.js`（两者本来就是同一个「写一种归档格式」的问题，只有一个消费者）；`ssh-config` + `match-eval` 合成一个文件（它们互相 import，那个环就是「这是一件事」的诚实陈述）。
+- **合并带出了两处真缺陷**：`lib/hosts/store.js` 里**有两个 `dshHome()`**（密钥写在 A 处、却从 B 处读，症状与「密钥被换掉」无法区分）随 `secrets.js` 合并成一个；`lib/surface/shell.js` 合并后 `quote` 与 `shellQuote` 两个拼法并存，直接 `ReferenceError`，统一成后者。
 - **没合并的也有理由，写在文档里**：`capabilities.js` 留在报告组外——`tests/capabilities-report-smoke.mjs` 精确排除「拥有被检查词表的那一个文件」，并进 984 行的报告面等于把两次扫描整体摘掉，且实测会让 `tput` / `tar` 误判为「被调用」；七个 `patch-*.js` 互不合并（`upstream-contract.js` 按文件登记退役判据、门禁按 `lib/patch-*.js` 计数）；`mode-gate` 与 `command-policy` 不合并（一个是围栏、一个是减速带）。
 
 ### 修复
@@ -88,7 +94,7 @@
 - **「变更请求」tab 下半的最近提交历史**：按官方 tab key 遮蔽该 slot 条目，官方组件留在上方、只读提交条渲染在下方，不加新 tab。数据来自只读路由 `GET /api/dsh-ssh-workspace/git-history`：只接受 `session` 与 `limit`（1..100，默认 20），cwd 只从会话自己的 `workingDirectory` 取，argv 固定，带 `GIT_TERMINAL_PROMPT=0` / `GIT_OPTIONAL_LOCKS=0` / `LC_ALL=C`，15s 超时与 1MB / 16KB 输出上限；非仓库与未出生 HEAD 是 200，`-n limit+1` 用来判断截断。
 - **提交历史可折叠，折叠状态被记住**：点标题行整体收起，`aria-expanded` 同步、chevron 旋转 90°、文案不带数字、标题里是真正的 `button`。可见性由唯一纯函数 `historyChrome(collapsed, truncated)` 决定；折叠值写页面 `localStorage`（`dsh-ssh-workspace.commit-history.folded`，只认 `'1'`），缺失 / 垃圾值 / 读写抛错 / 无存储一律按展开。
 - **「添加工作区」改成两段式**：先选「新建本地工作区 / 新建远端工作区」。本地支直接渲染已安装的目录浏览面板本身（同一组件、同一份 locale 与列目录调用，没有内置浏览器才回落 `pickDirectory()`），远端支仍是选主机 → 逐级浏览 → 确认挂载。
-- **会话归属自动补偿**（`lib/ownership.js`）：宿主用 `realpath(cwd)` 校验会话，插件缺席时 `ssh://` 必然失败，该 id 两个名单都不入，此后任一次 `mutate()` 都会把这份名单写回磁盘——会话文件都在，丢的是归属记账。现在每次激活、远端根挂好**之后**（顺序不能反）无条件重建一次宿主会话索引（`listStoredHeaders()` → `replaceHeaderIndex()` → `indexLiveSessions()`，实测约 340 ms / 60 个持久会话），再只对记录里真没有的 id `attachSession` 并回读 `sessionIds` 验证；只在规范化后完全相等时认领，`subagent` 子会话不算候选，失败只算一条 `pending`。
+- **会话归属自动补偿**（`lib/surface/ownership.js`）：宿主用 `realpath(cwd)` 校验会话，插件缺席时 `ssh://` 必然失败，该 id 两个名单都不入，此后任一次 `mutate()` 都会把这份名单写回磁盘——会话文件都在，丢的是归属记账。现在每次激活、远端根挂好**之后**（顺序不能反）无条件重建一次宿主会话索引（`listStoredHeaders()` → `replaceHeaderIndex()` → `indexLiveSessions()`，实测约 340 ms / 60 个持久会话），再只对记录里真没有的 id `attachSession` 并回读 `sessionIds` 验证；只在规范化后完全相等时认领，`subagent` 子会话不算候选，失败只算一条 `pending`。
 - **侧栏分组与分组里的行都能自己回来**：重建索引改的是索引、不发 `domain/changed`，所以重建成功后还要按宿主自己的发射形状把每个工作区的筛选后视图重新广播一次（`makeWorkspaceRepublisher`，失败只降级不中断补偿）。分组**里的行**来自页面连上时那一次 `session.list`，于是补偿跑完后浏览器那一半再要一次会话基线（`sessions.refresh()`）：只在 `stage === 'done'` 且这次真动过东西时触发，缺行重试最多 3 次（400 ms 起、×1.6 封顶 2 s、整趟 150 s 封顶），一个页面实例只跑一趟。「禁用 → 重启 → 启用」之后不必再重启 DSH。
 
 ### 修复
@@ -184,7 +190,7 @@
 
 ### 修复
 
-- **工具返回值被 DSH 0.2.2-rc.1 拒绝**（[#3](https://github.com/siqyka/dsh-ssh-workspace/issues/3)）：宿主开始真正校验 `output.schema`，`ssh_workspace_status` 的 `events[].seq` 一直在产生却没被声明，`ssh_workspace_hosts` 直接把带未声明键（含 `undefined`）的存储行交给宿主，整次调用被判成不可无损 JSON。修的是**这一类**而不是这两个字段：新增 `lib/tool-schema.js` 的 `projectValue` / `validateValue`，`defineTool` 按各工具自己的 schema 投影返回值并把丢弃记进 `drainProjectionDrops()`；顺带修掉 `ShellManager.list()` 的 `startedIn: start?.cwd`，以及 `projectValue` 自己漏报「未声明且值为 `undefined`」的键。新增 `tests/tool-results-smoke.mjs` 真跑 `execute` 并**对丢弃记录断言为空**——schema 必须跟上生产者，而不是靠投影悄悄吃掉信息。
+- **工具返回值被 DSH 0.2.2-rc.1 拒绝**（[#3](https://github.com/siqyka/dsh-ssh-workspace/issues/3)）：宿主开始真正校验 `output.schema`，`ssh_workspace_status` 的 `events[].seq` 一直在产生却没被声明，`ssh_workspace_hosts` 直接把带未声明键（含 `undefined`）的存储行交给宿主，整次调用被判成不可无损 JSON。修的是**这一类**而不是这两个字段：新增 `lib/core/tool-schema.js` 的 `projectValue` / `validateValue`，`defineTool` 按各工具自己的 schema 投影返回值并把丢弃记进 `drainProjectionDrops()`；顺带修掉 `ShellManager.list()` 的 `startedIn: start?.cwd`，以及 `projectValue` 自己漏报「未声明且值为 `undefined`」的键。新增 `tests/tool-results-smoke.mjs` 真跑 `execute` 并**对丢弃记录断言为空**——schema 必须跟上生产者，而不是靠投影悄悄吃掉信息。
 - **同名工作区误标**：标题是弱身份，本地工作区与远程工作区可以合法同名（本仓库本身就是）。此前标记与停用置灰只按标题匹配，同名的**本地**行会被换成远程标记、甚至被置灰成不可点。现在同时收集本地标题，两边都有的标签不标识任何一方；标题规则也只在完整读过 DSH 自己的 store 之后生效，`/status` 回退时只做 id 匹配。
 - **拖动插入后光标落在错误位置**：插入后只聚焦一次，且聚焦的是接住投放的那张输入卡（不再受「唯一可见 composer」这条歧义规则影响）；拖动结束清掉树行里残留的文本选区，光标落在 chip 之后而不是行名上。
 
@@ -267,7 +273,7 @@
 - **远端命令审计**（F-07）：新增 `lib/audit.js`，容量 200 的有界环，脱敏在写入时发生。
 - **一键支持包**（F-09）：新增 `lib/support-bundle.js` + `GET /support-bundle` + 面板「复制支持包」，组装而非采集，不做自动上传。
 - **连接分代**（F-01）：`engine.generations` 记录每个 alias 的成功连接次数，第 2 代起说明「重连前启动的远端进程可能仍在运行」。
-- **补丁的宿主契约成表**（O-15）：新增 `lib/upstream-contract.js`，每个 `patch-*.js` 声明它碰的宿主符号与退役判据。
+- **补丁的宿主契约成表**（O-15）：新增 `lib/core/upstream-contract.js`，每个 `patch-*.js` 声明它碰的宿主符号与退役判据。
 
 ### 修复
 

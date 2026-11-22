@@ -51,17 +51,17 @@
 
 ### 1.2 配置解析的统一词法层（F-10）
 
-**状态：已收敛，原前提不成立（2026-11-09 复核）。** 现在只有一个 section 切分实现：`lib/ssh-config.js:76` 的 `sectionsOf`；`selects`（`:124`）使用同一文件的 `patternMatches`（`:109`），`Match` 判定在 `:131` 委托同一文件底部的 `matchSelects`（`:296`），后者又把 `host` / `originalhost` 的模式交回 `patternMatches`。**这两个半以前是两个文件、互相 import，是 `lib/` 里唯一的功能环；现在合成一个文件，环消失了。**两个真实消费者读的是同一套：`lib/hosts.js:55` 与 `lib/report.js:67` 都 import `sectionsOf` / `isExact` / `selects`，`lib/hosts.js` 与 `lib/report.js:256` 都调用它们（`report.js` 的前身是 `config-audit.js`，两者已合成一个模块）。
+**状态：已收敛，原前提不成立（2026-11-09 复核）。** 现在只有一个 section 切分实现：`lib/hosts/ssh-config.js:76` 的 `sectionsOf`；`selects`（`:124`）使用同一文件的 `patternMatches`（`:109`），`Match` 判定在 `:131` 委托同一文件底部的 `matchSelects`（`:296`），后者又把 `host` / `originalhost` 的模式交回 `patternMatches`。**这两个半以前是两个文件、互相 import，是 `lib/` 里唯一的功能环；现在合成一个文件，环消失了。**两个真实消费者读的是同一套：`lib/hosts/hosts.js:55` 与 `lib/report/report.js:67` 都 import `sectionsOf` / `isExact` / `selects`，`lib/hosts/hosts.js` 与 `lib/report/report.js:256` 都调用它们（`report.js` 的前身是 `config-audit.js`，两者已合成一个模块）。
 
 逐条核对剩下的“差异”：
 
 | 看似第二套规则 | 实际 | 是否会在同一输入上给出不同结论 |
 | --- | --- | --- |
-| `lib/hosts.js:92` 的 `expandGlob` | 展开 **文件路径**（`*` / `?` / `[...]`，按路径段），且只在 `Include` 上调用 | 否：输入是文件路径，不是 Host 模式 |
-| `lib/ssh-config.js:241` 的 `parseMatchConditions` | 解析 `criterion value` 条件语法；host 模式仍走 `patternMatches` | 否：条件语法与模式匹配是两层，不竞争同一输入 |
+| `lib/hosts/hosts.js:92` 的 `expandGlob` | 展开 **文件路径**（`*` / `?` / `[...]`，按路径段），且只在 `Include` 上调用 | 否：输入是文件路径，不是 Host 模式 |
+| `lib/hosts/ssh-config.js:241` 的 `parseMatchConditions` | 解析 `criterion value` 条件语法；host 模式仍走 `patternMatches` | 否：条件语法与模式匹配是两层，不竞争同一输入 |
 | `Host` 与 `Match` 的引号 / token 化 | 两者都从 `sectionsOf` 拿同一份 `patterns`，因此内部消费者一致；`sectionsOf` 不做引号内空格合并，是**单实现相对 OpenSSH 的缺口** | 否（内部一致）；这是窄修，不是三处同步问题 |
 
-`lib/hosts.js:185` 的 `readConfigWithIncludes` 返回展开后的**文本**，不是第二套 section；`configTextOf`（`:494`）把它交给 `sectionsOf`。因此“新增一条指令必须同步改三处”没有真实样例：指令词表只在 `lib/report.js` 的 `SUPPORTED_KEYWORDS` / `KNOWN_UNSUPPORTED` 维护，读取侧只有 `lib/hosts.js` 一处。
+`lib/hosts/hosts.js:185` 的 `readConfigWithIncludes` 返回展开后的**文本**，不是第二套 section；`configTextOf`（`:494`）把它交给 `sectionsOf`。因此“新增一条指令必须同步改三处”没有真实样例：指令词表只在 `lib/report/report.js` 的 `SUPPORTED_KEYWORDS` / `KNOWN_UNSUPPORTED` 维护，读取侧只有 `lib/hosts/hosts.js` 一处。
 
 目标中的完整词法层不再立项；若将来要支持引号模式或续行，按窄修处理，不预先抽象。完整 OpenSSH 语义仍明确不做（见第 2 节）。
 
@@ -73,11 +73,11 @@
 
 | 资源 | 现有实现 | 是否需要统一登记表 |
 | --- | --- | --- |
-| 持久端口转发 | `lib/forward.js` 的 `SavedForwardManager`：意图与事实分离、失败原因按 id 记在内部 Map、启动时自动开启 | 需要，但已在原处有幂等生命周期 |
-| 文件 watcher | `lib/reconnect.js:403` 的 `watchFailureVerdict` + `:431` 的退避；断链重试、恢复后重扫由引擎接线（O-19） | 需要，但已按连接健康与重连代次判定 |
-| 上传续传 | `lib/transfer-rules.js:245` 的 `planResume`、`:282` 的 `resumeRecord`：暂存文件 + sidecar，按源身份决定续不续 | 否：是传输内部状态，不跨连接恢复编排 |
-| 连接本身 | `lib/reconnect.js:78` 的 `ReconnectScheduler`：按 alias 维护 entry / 退避 / 放弃态 | 否：是连接策略，不是被恢复的资源 |
-| 持久 shell | `lib/shell.js:322` 的 `ShellManager`；dispose 时全部关闭 | 否：刻意不跨进程恢复（见第 2 节“承诺断线后恢复运行中命令”） |
+| 持久端口转发 | `lib/forward/forward.js` 的 `SavedForwardManager`：意图与事实分离、失败原因按 id 记在内部 Map、启动时自动开启 | 需要，但已在原处有幂等生命周期 |
+| 文件 watcher | `lib/engine/reconnect.js:403` 的 `watchFailureVerdict` + `:431` 的退避；断链重试、恢复后重扫由引擎接线（O-19） | 需要，但已按连接健康与重连代次判定 |
+| 上传续传 | `lib/transfer/transfer-rules.js:245` 的 `planResume`、`:282` 的 `resumeRecord`：暂存文件 + sidecar，按源身份决定续不续 | 否：是传输内部状态，不跨连接恢复编排 |
+| 连接本身 | `lib/engine/reconnect.js:78` 的 `ReconnectScheduler`：按 alias 维护 entry / 退避 / 放弃态 | 否：是连接策略，不是被恢复的资源 |
+| 持久 shell | `lib/surface/shell.js:322` 的 `ShellManager`；dispose 时全部关闭 | 否：刻意不跨进程恢复（见第 2 节“承诺断线后恢复运行中命令”） |
 
 需要统一编排的仍只有**转发与 watcher 两类**；另外三类要么是传输内部状态，要么是连接策略，要么明确不可恢复。O-19 已经把 watcher 的注册表、责任边界与跨订阅去重收口，转发也有自己的持久化。没有出现第三类真实恢复需求，因此不建 `{ type, target, generation, recover, close }` 登记表；恢复顺序“先重扫、再监听”也留在 watcher 的现有实现里。
 
@@ -92,7 +92,7 @@
 - 拖拽落点插入已完成：`dragover`/`drop` 从 `caretRangeFromPoint` 映射到 composer 的 detect 偏移，第一个 chip 落在指针处；视觉光标、映射退化与测试见 `docs/ui.md` 与 `tests/composer-drop-point-smoke.mjs`。
 - 系统文件拖入远端「文件」树上传已完成（2026-11-11）：`osDropPlan` 用宿主 `li` 嵌套回答目标目录，`splitDroppedFolders` 只跳过文件夹、不递归，树内 capture 拦住宿主附件、树外保持宿主行为；共享 `queueTreeUploads` 入队，测试见 `tests/tree-os-drop-smoke.mjs`。
 - 2026-11-09 门禁收口：`run.mjs` 增加 `partial` 第三态（`tests/support/run-state.mjs` + `run-state-smoke`），默认 71 passed / 6 skipped、装配树 74 passed / 1 partial / 2 skipped；`reverse-verify-future` 19/0；F-10 判定收敛、F-11 触发未满足（见 §1.2 / §1.3）。
-- 本机路径直通（`localPassthrough`，issue #4）已落地（2026-11-13）：`lib/passthrough.js` 做词法前缀匹配（默认 `$DSH_HOME/attachments` / `plugins`），`ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 在远端分类前直通本机；剥离 cwd 防递归，未命中路径仍远端，不做 `stat`，写围栏不变；测试见 `tests/local-passthrough-smoke.mjs`。
+- 本机路径直通（`localPassthrough`，issue #4）已落地（2026-11-13）：`lib/fs/passthrough.js` 做词法前缀匹配（默认 `$DSH_HOME/attachments` / `plugins`），`ctx.fs.resolve` / `lstat` 与 `node:path.resolve` 在远端分类前直通本机；剥离 cwd 防递归，未命中路径仍远端，不做 `stat`，写围栏不变；测试见 `tests/local-passthrough-smoke.mjs`。
 - 显式本机 scheme 与「`@` 裸 POSIX 远端优先、miss 回退本机」已落地（2026-11-14，随 0.3.4 发布）：scheme 名与回退开关只存 `passthrough.settings` 一处，解析 / `fs-shim` 折叠 / `@` 提取三缝读同一个值；回退只覆盖点名路径与读动词。规则（≥ 3 字符、保留名表、两个大小写字段）由 `/status.passthrough.schemeRules` 下发，客户端不留第二份。测试见 `tests/local-passthrough-smoke.mjs`（231 项）与 `scripts/reverse-verify-passthrough.mjs`（43 条变异）。
 - C-02 chunk 通道探针已通过并回滚（见 §1.1）；真实拆分已于 2026-11-21 落地成十二个 chunk：五个按需（`lib/client/client.dialogs.js`、`lib/client/client.panel.js`、`lib/client/client.add-workspace.js`、`lib/client/client.transfer-queue.js`、`lib/client/client.history.js`），七个启动期由 `apply` 的 `await loadBootChunks()` 取回（`lib/client/client.kernel.js` 先单独取，然后 `lib/client/client.locale.js`、`lib/client/client.styles.js`、`lib/client/client.icons.js`、`lib/client/client.queue.js`、`lib/client/client.selection.js`、`lib/client/client.marks.js` 并发）。主包 12,604 → 4,343 行（−66%），500,755 → 197,647 B。
 
@@ -121,9 +121,9 @@
 | --- | --- | --- |
 | 终端 backend 丢弃 `request.cwd` | `dsh-api-terminal-controller/lib/index.js:981` `spawn(agent, owner, request, signal)`；`:983` `const cwd = await workingDirectory.ensure(agent, signal)`；`:986-996` 把该 `cwd` 传给 `subprocess.spawnTerminal(...)`；`:1001` `info.cwd` 同值。`request.cwd` 在函数内 **0 次读取**。工具层其实已经正确下传：`dsh-tool-terminal/lib/index.js:303-307` `const cwd = await ctx.workingDirectory.ensure(owner, exec.signal)`，`cwd: args.cwd === void 0 ? cwd : resolve(cwd, args.cwd)` | `lib/patch/patch-terminal.js:317-356` 的 cwd 补丁与 `lib/patch/patch-projection.js:90` 的 `RELAXED_KEY`。两者现在都承重：`ssh://` cwd 能进终端全靠它们 |
 | 宿主文件树没有选择/批量 API | `dsh-client-ui-sidebar-files/lib/client.js`（0.2.1-rc.2，1,025 行）：`selected` / `selection` 0 命中；`ctrlKey` / `shiftKey` / `metaKey` 0 命中（只有命令快捷键的 `modifiers`）。宿主仍输出 `data-files-entry` / `data-files-path`（`:498-499` 目录、`:522-523` 文件、`:542-543` other，`:667` 声明），本插件的装饰式桥接依赖它们 | `.sshwsp-tree-row-selected` + `aria-selected` + roving tabindex + document 捕获监听 + `selectReduce` 的手势拆分。注意：宿主已从 2,251 行缩到 1,025 行，桥接必须按当前 DOM 重新复核一遍 |
-| 工具上下文没有 cwd / world / 进度通道 | `dsh-tool-cordis/lib/types/api-catalog.js:8172` `ToolExecutionInput { callId; rootCallId?; name; schema?; arguments; agent?; parent?; signal }`；`:8244` `ToolRunContext extends ToolExecution { deferContext(context: UserMessage): void; concludeTurn(): void }`。插件只能用 `exec.signal`（`lib/tools.js:1385-1387`） | F-02 的“传输进度进入工具输出”可以接宿主进度通道，而不是现在的查队列；前台工具也能显示进度，而不是只有终态 |
-| execution world / 配额没有 provider seam | `dsh-api-terminal-controller/lib/index.js:969-980` `execution(agent)` 只 `agent.ctx.get` `subprocess` / `sandboxPolicy` / `workingDirectory`，没有可替换的 provider。上限仍只有每会话终端数：`:753` `maxTerminals: z.number().step(1).min(1).default(8)`、`:843` `terminal/limit-reached`；没有连接/传输配额抽象。`shells()` 内部走 `subprocess.resolveExecutable` / `terminalEnvironment`，这两个方法同样没有 seam，插座只包了 `spawn` 与 `spawnTerminal` | F-05 的“多工作区配额”可以交给宿主，插件不必自己维护计数器；远端命令沙箱也才有讨论的前提。插件目前以 own-property 接管 `terminalController.shells()` 实现远端 shell 发现（`lib/shell.js` 下半）；上游一旦给 `execution world` 一个 provider seam（或让 `resolveExecutable` / `terminalEnvironment` 支持远端），就把发现改成注册 provider 并删掉这处接管 |
-| 远端会话的归属记账会因为本机解析不了 cwd 而被真删 | `dsh-workspace/lib/index.js:875-895` 的 `indexHeader()`：`realpathNormalize(header.cwd)` 抛错时只写进 `invalidSessionPaths`（**既不入** `sessionPaths`，**也不入** `missingSessionPaths`），而成员判定是 `:367` 的 `candidateMatches`，于是 `ssh://` 会话不匹配任何工作区；`:173-191` 的 `mutate()` 又把 `candidateMatches` 过滤后的名单 `table.update` 落盘，任何一次改标题 / attach / detach 都会把「解析不了」的旧会话真删。宿主只在注册表**从未初始化**时跑 `bootstrap()`（`:758-810`），之后不会重新认领 | `lib/ownership.js` 的启动补偿，以及 `engine.ownership` 快照 / `workspace-ownership` finding / `KINDS.ownership` 事件这一整条可观测链。上游只要做到任一半即可退役：① `mutate()` 不因 cwd 本机解析不了而删账（保留该 id，或降级为 `missingSessionPaths` 语义）；② `indexHeader()` 对「字符串与某个已登记工作区 path 完全相等」的 cwd 直接认作成员（URI 语义），不必先过 `realpath` |
+| 工具上下文没有 cwd / world / 进度通道 | `dsh-tool-cordis/lib/types/api-catalog.js:8172` `ToolExecutionInput { callId; rootCallId?; name; schema?; arguments; agent?; parent?; signal }`；`:8244` `ToolRunContext extends ToolExecution { deferContext(context: UserMessage): void; concludeTurn(): void }`。插件只能用 `exec.signal`（`lib/surface/tools.js:1385-1387`） | F-02 的“传输进度进入工具输出”可以接宿主进度通道，而不是现在的查队列；前台工具也能显示进度，而不是只有终态 |
+| execution world / 配额没有 provider seam | `dsh-api-terminal-controller/lib/index.js:969-980` `execution(agent)` 只 `agent.ctx.get` `subprocess` / `sandboxPolicy` / `workingDirectory`，没有可替换的 provider。上限仍只有每会话终端数：`:753` `maxTerminals: z.number().step(1).min(1).default(8)`、`:843` `terminal/limit-reached`；没有连接/传输配额抽象。`shells()` 内部走 `subprocess.resolveExecutable` / `terminalEnvironment`，这两个方法同样没有 seam，插座只包了 `spawn` 与 `spawnTerminal` | F-05 的“多工作区配额”可以交给宿主，插件不必自己维护计数器；远端命令沙箱也才有讨论的前提。插件目前以 own-property 接管 `terminalController.shells()` 实现远端 shell 发现（`lib/surface/shell.js` 下半）；上游一旦给 `execution world` 一个 provider seam（或让 `resolveExecutable` / `terminalEnvironment` 支持远端），就把发现改成注册 provider 并删掉这处接管 |
+| 远端会话的归属记账会因为本机解析不了 cwd 而被真删 | `dsh-workspace/lib/index.js:875-895` 的 `indexHeader()`：`realpathNormalize(header.cwd)` 抛错时只写进 `invalidSessionPaths`（**既不入** `sessionPaths`，**也不入** `missingSessionPaths`），而成员判定是 `:367` 的 `candidateMatches`，于是 `ssh://` 会话不匹配任何工作区；`:173-191` 的 `mutate()` 又把 `candidateMatches` 过滤后的名单 `table.update` 落盘，任何一次改标题 / attach / detach 都会把「解析不了」的旧会话真删。宿主只在注册表**从未初始化**时跑 `bootstrap()`（`:758-810`），之后不会重新认领 | `lib/surface/ownership.js` 的启动补偿，以及 `engine.ownership` 快照 / `workspace-ownership` finding / `KINDS.ownership` 事件这一整条可观测链。上游只要做到任一半即可退役：① `mutate()` 不因 cwd 本机解析不了而删账（保留该 id，或降级为 `missingSessionPaths` 语义）；② `indexHeader()` 对「字符串与某个已登记工作区 path 完全相等」的 cwd 直接认作成员（URI 语义），不必先过 `realpath` |
 
 
 ## 4. 验证证据的缺口与口径
@@ -135,10 +135,10 @@
 - **`scripts/reverse-verify-tree-drag.mjs`：17 confirmed / 0 not（2026-11-09 实测，exit 0）**：本轮三个行为各配一组变异——本地空白菜单（解析最近目录 / 根内栅栏 / 行按钮不算空白 / 展开目录的子列表算空白 / 远端根不进入 / 项目数 / 只读只禁用新建）、多选拖入（载荷退回单路径 / 只插第一项 / 行菜单退回单行 / 每项各聚焦一次 / 去掉去重 / 中途失败即中止 / 丢掉接收卡）、本地 mkdir 分支（边界改读请求 / 跳过 realpath 父目录检查 / 接受远端工作区）。同样是评审动作、不进 CI。
 - **`scripts/reverse-verify-passthrough.mjs`：20 confirmed / 0 not（2026-11-13 实测，exit 0）**：本机路径直通的 20 个变异，覆盖三段——matcher 段（默认前缀丢掉 attachments / 未知变量被展开 / 前缀匹配忽略分量边界 / 整 `$DSH_HOME` 被接受 / 非 win32 也认盘符 / 非盘符拼写进引用表 / 引用表不设上限 / 命中不了自己 / 引号形式不提取 / 提取放过 POSIX 绝对路径）、路由段（剥 cwd 改成原样透传 / 不再认直通拼写 / `path.resolve` 无视 matcher / `path.relative` 不再原样返回 / 热重载留旧 matcher / 安装点漏传 matcher / 内建桥漏传 matcher）、接线段（监听器把事件当消息 / 恢复的会话不再重扫 / 提示词丢掉边界段）。修变异时还发现并补了四处测试空洞：POSIX 拼写即使平台是 win32 也不能进引用表、提示词必须写明「只覆盖经过 ctx.fs」、消息提取器的 role / block 判定要真跑一遍、监听器必须把 `event.data` 而不是 `event` 交给提取器。**同样不进 CI**——它会改写源文件。
 - **`scripts/reverse-verify-future.mjs`：19 confirmed / 0 not（2026-11-09 复跑，exit 0）**：四条漂移均已落位——
-  - F-04 wildcard：破坏点改为 `lib/report.js:256` 的 `selects(section, alias)` → `isExact(...)`，实测 2 红；
-  - F-04 repeated：删除 `lib/report.js:263` 的 `seen.has(keyword)` 守卫，实测 1 红；
-  - F-07 environment assignment：`lib/engine.js:2004` 与 `lib/diagnostics.js` 的 `maskText` 两处同时破坏（脚本新增 `also` 多文件变异），实测 2 红；
-  - F-09 login user：锚点移到 `lib/diagnostics.js` 里 `maskText` 的登录用户正则，实测 1 红。
+  - F-04 wildcard：破坏点改为 `lib/report/report.js:256` 的 `selects(section, alias)` → `isExact(...)`，实测 2 红；
+  - F-04 repeated：删除 `lib/report/report.js:263` 的 `seen.has(keyword)` 守卫，实测 1 红；
+  - F-07 environment assignment：`lib/engine/engine.js:2004` 与 `lib/core/diagnostics.js` 的 `maskText` 两处同时破坏（脚本新增 `also` 多文件变异），实测 2 红；
+  - F-09 login user：锚点移到 `lib/core/diagnostics.js` 里 `maskText` 的登录用户正则，实测 1 红。
   脚本现在对每个已写文件逐字节还原并按相反顺序收尾；跑后 `git status --short lib` 为空。
 - **判断标准**：反向验证的 `expect` 是“必须变红的断言数”；少于它说明套件没有钉住行为，多于它说明变异破坏了别的东西，数字不再是证据。`expect: 0` 的变异允许以**崩溃**记数（`F-06` 那条就是这样：套件解引用它期望的环境），但这只证明“行为变了”，不能证明是哪条断言抓住的——复跑时仍要看崩溃点。
 

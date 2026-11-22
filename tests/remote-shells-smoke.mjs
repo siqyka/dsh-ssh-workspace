@@ -31,7 +31,7 @@ const {
   shellArgsFor,
   shellsRouterFor,
   uninstallShellDiscovery,
-} = await import(pathToFileURL(path.join(pluginRoot, 'lib/shell.js')).href)
+} = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/shell.js')).href)
 const { RemoteTerminalRouter } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-terminal.js')).href)
 
 let passed = 0

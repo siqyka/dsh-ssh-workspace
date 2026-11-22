@@ -43,7 +43,7 @@ if (!coreRoot) {
 }
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'remote-fs.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'fs', 'remote-fs.js')).href)
 
 let passed = 0
 let failures = 0
@@ -259,9 +259,9 @@ console.log('\n[3] a real socket drop does not grow or double the watcher')
         },
       })
       track(() => server.close())
-      const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'store.js')).href)
-      const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts.js')).href)
-      const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
+      const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts', 'store.js')).href)
+      const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts', 'hosts.js')).href)
+      const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine', 'engine.js')).href)
 
       const dir = mkdtempSync(path.join(tmpdir(), 'dsh-watch-sharing-'))
       track(() => rmSync(dir, { recursive: true, force: true }))

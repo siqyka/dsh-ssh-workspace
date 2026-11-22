@@ -18,8 +18,8 @@
 | --- | --- | --- |
 | `lib/client/client.js` | **12,603 行 / 627,867 B** | 单 `window.__ModuleLoader__.load({id, factory})`；22 个 banner 段 |
 | `lib/routes.js` | **3,765 行** | `makeRoutes`（`lib/routes.js:911`）单函数 **1,856 行**；33 条路由，全部 `kind: 'exact'` |
-| `lib/tools.js` | 2,250 行 | `statusTool`（`lib/tools.js:850`）**606 行**；其余 10 个工具 92–186 行 |
-| `lib/remote-fs.js` | 2,597 行 | `RemoteFileSystem` 类体 1,517 行，其中方法体合计 **976 行** |
+| `lib/surface/tools.js` | 2,250 行 | `statusTool`（`lib/surface/tools.js:850`）**606 行**；其余 10 个工具 92–186 行 |
+| `lib/fs/remote-fs.js` | 2,597 行 | `RemoteFileSystem` 类体 1,517 行，其中方法体合计 **976 行** |
 | `lib/index.js` | 855 行 | `apply`（`lib/index.js:269`）**584 行**，占全文件 68% |
 | `lib/patch/patch-subprocess.js` | 1,298 行 | `RemoteSubprocessRouter.spawn`（`:998`）**237 行** |
 
@@ -81,7 +81,7 @@
    （公共实现是 `tests/support/render.mjs:68` 的 `componentSource`）。拆文件会同时动到它们。
    已由 `tests/support/client-source.mjs`（E1）收敛为一个 resolver。
 9. **`scripts/doc-numbers.mjs` 按路径写死**：`countRoutes` 只读 `lib/routes.js`
-   （`:129`），`countTools` 只读 `lib/tools.js`（`:130`），`countModules` 只数
+   （`:129`），`countTools` 只读 `lib/surface/tools.js`（`:130`），`countModules` 只数
    `lib/*.js`（`:119`）。拆分会让这三个数字失真，**必须在搬代码之前先改计数器**。
 10. **`lib/` 下新建子目录对现有扫描是透明的**：`upstream-contract-smoke.mjs:43`、
     `capabilities-report-smoke.mjs:117`、`local-passthrough-smoke.mjs:509` 都用
@@ -147,11 +147,11 @@
 
 | 函数 | 位置 | 处置 |
 | --- | --- | --- |
-| `escapeRegExp` | `lib/include-chain.js:146`、`lib/shell.js:310`、`lib/ssh-config.js:174` | 新建 `lib/text.js` |
-| `requirePort` | `lib/forward.js:28`、`lib/reverse-forward.js:45` | 新建 `lib/forward-common.js` |
-| `normalizedHost` | `lib/forward.js:37`、`lib/reverse-forward.js:54` | 同上 |
-| `positive` | `lib/reconnect.js:50`、`lib/watch-recovery.js:46` | 新建 `lib/options.js` |
-| `quote` | `lib/patch/patch-terminal.js:642`、`lib/shell.js:523` | 与 `engine.js:1846` 的 `shellQuote` 同体，统一到 `lib/shell-quote.js` |
+| `escapeRegExp` | `lib/include-chain.js:146`、`lib/surface/shell.js:310`、`lib/hosts/ssh-config.js:174` | 新建 `lib/text.js` |
+| `requirePort` | `lib/forward/forward.js:28`、`lib/reverse-forward.js:45` | 新建 `lib/forward-common.js` |
+| `normalizedHost` | `lib/forward/forward.js:37`、`lib/reverse-forward.js:54` | 同上 |
+| `positive` | `lib/engine/reconnect.js:50`、`lib/watch-recovery.js:46` | 新建 `lib/options.js` |
+| `quote` | `lib/patch/patch-terminal.js:642`、`lib/surface/shell.js:523` | 与 `engine.js:1846` 的 `shellQuote` 同体，统一到 `lib/shell-quote.js` |
 
 `quote` 这一组要小心：`engine.js` 的 `shellQuote` 已被 6 个模块引用
 （`fs-shim.js`、`patch-shell.js`、`patch-subprocess.js`、`remote-fs.js`、
@@ -161,13 +161,13 @@
 
 另有两个导出**全仓库零引用**（含 `tests/` 与 `scripts/`）：
 
-- `capabilityKeys`（`lib/capabilities.js:161`）——只是 `probedTools()` 的别名；
+- `capabilityKeys`（`lib/report/capabilities.js:161`）——只是 `probedTools()` 的别名；
 - `resumeToken`（`lib/resume.js:169`）。
 
 它们不在 `package.json` 的 `exports` 里，属内部 API，删除是纯减法。
 
 **不删、只记录**的两个：`acceptsWithoutOurPatch`（`lib/path-binding.js:141`）与
-`matchLimitation`（`lib/ssh-config.js:149`）零引用，但两者的注释都写着「审计需要它」
+`matchLimitation`（`lib/hosts/ssh-config.js:149`）零引用，但两者的注释都写着「审计需要它」
 （「would still accept with this bridge removed」/「Why a `Match` section selected nobody」）。
 这更像**该接未接的诊断**，而不是死代码；处置写进
 `docs/optimization-and-future03.md` §1 作为待办，不在本辑里删。
@@ -187,7 +187,7 @@
 里——`doc-numbers.countTools`（`scripts/doc-numbers.mjs:80`）的正则不受影响。
 
 **注意**：`tests/client-shape-smoke.mjs:712` 断言
-`/selfCheck: probedAliases\(engine\)/` 出现在 `lib/tools.js`。`execute` 留在 `tools.js`，
+`/selfCheck: probedAliases\(engine\)/` 出现在 `lib/surface/tools.js`。`execute` 留在 `tools.js`，
 这条断言继续成立；若将来把 `execute` 也搬走，必须同 commit 改这条断言。
 
 ### 2.3 轨道 C —— `routes.js`：按资源域拆模块
@@ -246,7 +246,7 @@ CI 的 `npm run lint` 因此会「通过」而漏掉语法错误。
 
 | 成员 | 位置 |
 | --- | --- |
-| `#watchShared` | `lib/remote-fs.js:1220` |
+| `#watchShared` | `lib/fs/remote-fs.js:1220` |
 | `#waitForSharedStart` | `:1296` |
 | `#openSharedWatch` | `:1326` |
 | `#notifyShared` | `:1469` |
@@ -254,7 +254,7 @@ CI 的 `npm run lint` 因此会「通过」而漏掉语法错误。
 | `startRemoteWatch` | `:1793` |
 | `startPushWatch` | `:1695` |
 
-搬到 `lib/remote-watch.js` 作为一个协作者类，`RemoteFileSystem` 只保留委托。
+搬到 `lib/fs/remote-watch.js` 作为一个协作者类，`RemoteFileSystem` 只保留委托。
 **这是五条轨道里唯一「搬完行为可能真的变」的一块**（O-19 的跨订阅去重、断链重试、
 恢复后重扫的先后顺序都在里面），因此给它一条硬闸门：`watch-sharing-smoke`（327 行）、
 `watch-lifecycle-smoke`、`watch-recovery-smoke`、`remote-fs-smoke` 四套必须全绿，
@@ -451,7 +451,7 @@ chunk 文件里 `load({ id: '<本插件 id>', chunk: 'client.dialogs.js', factor
 **D remote-fs**
 
 16. `refactor(remote-fs): give the shared watch its own module` ⛔ —— 新建
-    `lib/remote-watch.js`，一个提交内完成，四套 watch 相关套件必须全绿；做不到就停。
+    `lib/fs/remote-watch.js`，一个提交内完成，四套 watch 相关套件必须全绿；做不到就停。
 
 **E client**
 
@@ -541,7 +541,7 @@ chunk 文件里 `load({ id: '<本插件 id>', chunk: 'client.dialogs.js', factor
   `tests/render-smoke.mjs` 用真组件（`SelfCheckList`）并带负向对照。
 - 计数与文档：`tests/doc-numbers-smoke.mjs` 用「加一条就 +1」证明计数器没有写死。
 
-**跑法**：必须设 `DSH_CORE_ROOT`，否则 `lib/peers.js:146` 解析不到 peer 包。
+**跑法**：必须设 `DSH_CORE_ROOT`，否则 `lib/core/peers.js:146` 解析不到 peer 包。
 
 ```bash
 export DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules

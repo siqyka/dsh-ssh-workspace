@@ -3,7 +3,7 @@
  *
  * The report is a FACT SHEET — nine sections of what happened and not one line
  * saying whether that is good or bad (`buildSupportBundle` assembles and never
- * judges). `diagnose` is the judgement half — both now live in `lib/report.js`,
+ * judges). `diagnose` is the judgement half — both now live in `lib/report/report.js`,
  * and the judgement's whole claim is that it
  * can be WRONG in only two directions, both of which must be caught here:
  *
@@ -27,10 +27,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { diagnose, renderDiagnosis, STATE, DIAGNOSIS_VERSION } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib/report/report.js')).href
 )
 const { buildSupportBundle, maskAlias } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib/report/report.js')).href
 )
 
 let passed = 0

@@ -20,13 +20,13 @@
 | `lib/client/client.js:12237` | 我们已在 `sidebar.right.tab.files.actions` 注册过组件（`FilePanelTransferActions`），注册写法照抄 |
 | `lib/client/client.js` `modalLayer(children)` | portal 到 `document.body` 的助手；**不 portal 会被侧栏 `.scrollArea` 的 wheel hand-off 吞掉滚轮** |
 | `lib/client/client.js` `.sshwsp-dialog-fill` | 已有布局：头部与表单 `flex: 0 0 auto`，正文是唯一滚动容器 |
-| `lib/remote-fs.js:1070` | `async writeText (target, content, expected, signal, sandboxPolicy)` |
-| `lib/remote-fs.js:1104` | `async editText (target, edit, expected, signal, sandboxPolicy)` |
-| `lib/remote-fs.js:117` | `versionOf(stats)` 返回 `FsVersion('ino:size:mtime')` —— **没有亚秒精度**，同秒同大小改动查不出来 |
-| `lib/remote-fs.js:711 / :772 / :881` | `stat` 返回 `{version, type, size}`；`readText` 返回解码文本；`readBytes` 受 `maxBytes` 限制 |
-| `lib/remote-fs.js:2189 / :2209 / :2214 / :2221` | `decodeUtf8`（strict）/ `normalizeLineEndings` / `detectLineEndings` / `restoreLineEndings` |
-| `lib/remote-fs.js:2019 / :2040 / :2082` | `writeFenceRoots` / `assertWithinRemoteRoots` / `assertFencedRealpath` |
-| `lib/mode-gate.js:120 / :151 / :215` | `writeModeRefusal` / `sessionModeOf` / `sessionPolicyOf` |
+| `lib/fs/remote-fs.js:1070` | `async writeText (target, content, expected, signal, sandboxPolicy)` |
+| `lib/fs/remote-fs.js:1104` | `async editText (target, edit, expected, signal, sandboxPolicy)` |
+| `lib/fs/remote-fs.js:117` | `versionOf(stats)` 返回 `FsVersion('ino:size:mtime')` —— **没有亚秒精度**，同秒同大小改动查不出来 |
+| `lib/fs/remote-fs.js:711 / :772 / :881` | `stat` 返回 `{version, type, size}`；`readText` 返回解码文本；`readBytes` 受 `maxBytes` 限制 |
+| `lib/fs/remote-fs.js:2189 / :2209 / :2214 / :2221` | `decodeUtf8`（strict）/ `normalizeLineEndings` / `detectLineEndings` / `restoreLineEndings` |
+| `lib/fs/remote-fs.js:2019 / :2040 / :2082` | `writeFenceRoots` / `assertWithinRemoteRoots` / `assertFencedRealpath` |
+| `lib/core/mode-gate.js:120 / :151 / :215` | `writeModeRefusal` / `sessionModeOf` / `sessionPolicyOf` |
 | `lib/routes.js:2632` | `mutationContextOf(ctx, body)` —— 会话归属的**唯一**入口；root 永不取自请求 |
 | `lib/routes.js:2691` | `assertMutationAllowed(ctx, body, target, verb)` |
 | `lib/routes.js:3074 / :3087` | `localRootOf(owner)` / `assertLocalParentInside(realRoot, target)` |
@@ -144,7 +144,7 @@ onKeyDown: (event) => {
 ### 3.2.2 编码与 BOM
 
 - 判定看内容不看扩展名：前 8192 字节含 NUL → 二进制 → 按钮不渲染。
-- `decodeUtf8` 是 strict（`lib/remote-fs.js:2189`）：GBK / GB18030 / UTF-16 / latin-1 一律 `FS_NOT_TEXT`。
+- `decodeUtf8` 是 strict（`lib/fs/remote-fs.js:2189`）：GBK / GB18030 / UTF-16 / latin-1 一律 `FS_NOT_TEXT`。
   按钮不渲染时 `title` 必须说明「不是 UTF-8 文本」，**不要等点开才报错**。
 - **不做编码转换**（猜错就静默改坏文件）。
 - **BOM 必须显式处理**：读路由检测到 BOM 回 `bom: true`，写路由按 `bom` 决定是否重新前置 `\uFEFF`

@@ -28,8 +28,8 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { CommandAudit, AUDIT_CAPACITY, redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+const { CommandAudit, AUDIT_CAPACITY, redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
 
 let passed = 0
 let failures = 0
@@ -219,7 +219,7 @@ console.log('\n[the engine records every command it runs]')
   // refusal missing from the log is a gap a reader cannot interpret, because
   // "not run" and "not recorded" look identical from outside.
   const { readFileSync } = await import('node:fs')
-  const toolsSource = readFileSync(path.join(pluginRoot, 'lib/tools.js'), 'utf8')
+  const toolsSource = readFileSync(path.join(pluginRoot, 'lib/surface/tools.js'), 'utf8')
   const refusalCall = /assertRemoteCommandAllowed[\s\S]{0,400}catch \(error\) \{[\s\S]{0,400}engine\.audit\?\.record\(\{[\s\S]{0,400}refused: true/u.test(toolsSource)
   check('the exec tool records a refusal into the audit', refusalCall, 'the catch around assertRemoteCommandAllowed must record')
   check('...with the refusal flag, so a reader knows nothing ran', /refused: true/u.test(toolsSource))

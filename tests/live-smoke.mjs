@@ -63,10 +63,10 @@ console.log(`\n=== live smoke (alias=${alias}, dir=${sandbox}) ===\n`)
 // modules can even load; this is the one place that legitimately skips.
 let HostStore, SshWorkspaceEngine, RemoteFileSystem, formatRemotePath, ENGINE_DEFAULTS, shellQuote
 try {
-  ;({ HostStore } = await import('../lib/hosts.js'))
-  ;({ SshWorkspaceEngine, ENGINE_DEFAULTS, shellQuote } = await import('../lib/engine.js'))
-  ;({ RemoteFileSystem } = await import('../lib/remote-fs.js'))
-  ;({ formatRemotePath } = await import('../lib/protocol.js'))
+  ;({ HostStore } = await import('../lib/hosts/hosts.js'))
+  ;({ SshWorkspaceEngine, ENGINE_DEFAULTS, shellQuote } = await import('../lib/engine/engine.js'))
+  ;({ RemoteFileSystem } = await import('../lib/fs/remote-fs.js'))
+  ;({ formatRemotePath } = await import('../lib/core/protocol.js'))
 } catch (error) {
   console.log(`  SKIP  the plugin's peers are not resolvable here: ${error instanceof Error ? error.message : String(error)}`)
   console.log('        set DSH_CORE_ROOT to an assembled node_modules tree, or run npm install in the package root')

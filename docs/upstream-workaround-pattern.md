@@ -162,7 +162,7 @@ path.isAbsolute = current
 
 结论：`info` 进了无人读的缓冲，`warn`/`error` 只在启动崩溃时被顺便打印。**写 `logger.debug` 和写注释是等效的。**
 
-所以「退役信号」必须走一条真正能到达的通道。在本插件里那是 `lib/diagnostics.js`：一个有界环形缓冲，经 `ssh_workspace_status` 工具和面板 status 路由暴露。上游一修好，状态里就出现：
+所以「退役信号」必须走一条真正能到达的通道。在本插件里那是 `lib/core/diagnostics.js`：一个有界环形缓冲，经 `ssh_workspace_status` 工具和面板 status 路由暴露。上游一修好，状态里就出现：
 
 ```
 upstream workaround OBSOLETE: UPSTREAM-1-working-directory-isAbsolute — ...

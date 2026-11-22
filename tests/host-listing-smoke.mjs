@@ -22,7 +22,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts.js')).href)
+const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/hosts.js')).href)
 
 let passed = 0
 let failures = 0
@@ -335,7 +335,7 @@ console.log('\n[8] a negated pattern exempts a host from a wildcard block')
 
 console.log('\n[9] the tool renderer keeps the three cases apart')
 {
-  const { renderHostsForTest } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+  const { renderHostsForTest } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
     .catch(() => ({ renderHostsForTest: undefined }))
   if (renderHostsForTest === undefined) {
     // The renderer is not exported; assert the same three shapes through the

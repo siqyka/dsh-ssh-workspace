@@ -18,7 +18,7 @@ const pluginRoot = path.resolve(here, '..')
 // now — they imported each other, which was the only functional cycle in `lib/`.
 const { parseMatchConditions, matchSelects, patternMatches,
   EVALUABLE_CRITERIA, REFUSED_CRITERIA, DEFERRED_CRITERIA } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'ssh-config.js')).href)
+  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts', 'ssh-config.js')).href)
 
 let passed = 0
 let failures = 0

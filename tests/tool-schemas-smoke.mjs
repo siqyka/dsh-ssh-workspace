@@ -55,9 +55,9 @@ function check (name, condition, detail) {
 
 console.log(`\n=== tool schema validation (${pluginRoot}) ===\n`)
 
-const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
-const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
+const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
 
 const engine = new SshWorkspaceEngine({})
 const router = new RemoteFileSystem({ engine })
@@ -126,7 +126,7 @@ for (const tool of tools) {
 // each `execute` RETURNS against the keys the sibling schema DECLARES.
 console.log('\n[returned keys are declared in the output schema]')
 {
-  const source = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
+  const source = readFileSync(path.join(pluginRoot, 'lib', 'surface', 'tools.js'), 'utf8')
 
   /**
    * Slice out a balanced `{ … }` starting at `open`.

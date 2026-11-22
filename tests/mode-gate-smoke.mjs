@@ -52,9 +52,9 @@ if (!coreRoot) {
 }
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
-const gate = await import(pathToFileURL(path.join(pluginRoot, 'lib/mode-gate.js')).href)
-const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
-const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+const gate = await import(pathToFileURL(path.join(pluginRoot, 'lib/core/mode-gate.js')).href)
+const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
 const { installRemoteShell } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-shell.js')).href)
 
 const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMessage } = gate
@@ -359,7 +359,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // router with a real per-call policy and count what reaches the connection layer,
 // so "refused" and "never sent" are proven together.
 {
-  const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
+  const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
 
   const makeRouter = () => {
     const engine = new SshWorkspaceEngine({})

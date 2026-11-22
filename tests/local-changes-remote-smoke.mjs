@@ -750,7 +750,7 @@ console.log('\n[content capture]')
 {
   let RemoteFileSystem
   try {
-    ;({ RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href))
+    ;({ RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href))
   } catch (error) {
     console.log(`  SKIP  remote-fs.js is not resolvable here: ${error instanceof Error ? error.message : String(error)}`)
     RemoteFileSystem = undefined
@@ -857,9 +857,9 @@ async function runLive (hostAlias) {
   let RemoteFileSystem
   let shellQuote
   try {
-    ;({ HostStore } = await import('../lib/hosts.js'))
-    ;({ SshWorkspaceEngine, shellQuote } = await import('../lib/engine.js'))
-    ;({ RemoteFileSystem } = await import('../lib/remote-fs.js'))
+    ;({ HostStore } = await import('../lib/hosts/hosts.js'))
+    ;({ SshWorkspaceEngine, shellQuote } = await import('../lib/engine/engine.js'))
+    ;({ RemoteFileSystem } = await import('../lib/fs/remote-fs.js'))
   } catch (error) {
     console.log(`  SKIP  the plugin's live peers are not resolvable here: ${error instanceof Error ? error.message : String(error)}`)
     console.log('        set DSH_CORE_ROOT to an assembled node_modules tree')

@@ -1,13 +1,13 @@
 /**
  * Pure protocol checks: the `ssh://` path grammar every other layer builds on.
  *
- * Imports only `lib/protocol.js`, which has no dependencies at all — this
+ * Imports only `lib/core/protocol.js`, which has no dependencies at all — this
  * suite runs anywhere, including CI without the DSH peers installed.
  *
  * Run: node tests/protocol-smoke.mjs
  */
 
-import { parseRemotePath, isRemotePath, normalizeRemotePath, formatRemotePath, formatRemoteFileUrl, isRemotePathUnder, remoteBasename, remoteDirname } from '../lib/protocol.js'
+import { parseRemotePath, isRemotePath, normalizeRemotePath, formatRemotePath, formatRemoteFileUrl, isRemotePathUnder, remoteBasename, remoteDirname } from '../lib/core/protocol.js'
 
 const passes = []
 const failures = []

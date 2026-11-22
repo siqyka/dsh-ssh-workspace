@@ -79,9 +79,9 @@ if (coreRoot === undefined) {
 }
 
 const { startFakeSshServer, freshHostKey } = await import(pathToFileURL(path.join(supportDir, 'fake-ssh-server.mjs')).href)
-const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'store.js')).href)
-const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts.js')).href)
-const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
+const { HostConfigStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts', 'store.js')).href)
+const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'hosts', 'hosts.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine', 'engine.js')).href)
 
 const cleanups = []
 const track = (fn) => { cleanups.push(fn) }

@@ -9,7 +9,7 @@
  * CRC-32 that readers check before they will show any content, the data
  * descriptor that only matters because we stream.
  *
- * So this script builds archives with `lib/archive.js` and then opens them with
+ * So this script builds archives with `lib/transfer/archive.js` and then opens them with
  * Python's `zipfile`, which is an independent implementation that verifies CRCs
  * on read. If Python is unavailable the script still checks structure, and says
  * loudly that the real-reader half did not run.
@@ -27,7 +27,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { crc32Update, dosDateTime, zipStream, localHeader, centralHeader } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib', 'archive.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'archive.js')).href
 )
 
 let passed = 0

@@ -40,7 +40,7 @@
 
 一次远端读取的路径：模型 read 工具 → `ctx.fs.readText(target)`
 （`target.targetKey` 形如 `ssh://alias/abs/path`）→ 被接管的 `ctx.fs`
-（`lib/remote-fs.js` 的 `RemoteFileSystem`）按拼写分派 → 远端半边走 SFTP；
+（`lib/fs/remote-fs.js` 的 `RemoteFileSystem`）按拼写分派 → 远端半边走 SFTP；
 其余拼写原样转发给部署自己的本地后端。
 
 ## 接管 ctx.fs
@@ -66,7 +66,7 @@ Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔
 会被同一 cwd 再次判为远端，形成无限互相委派（表现为预览点击后
 `Maximum call stack size exceeded`）。
 
-**本机路径直通先于远端分类。** `lib/passthrough.js` 用词法前缀判定一个裸绝对路径是否属于
+**本机路径直通先于远端分类。** `lib/fs/passthrough.js` 用词法前缀判定一个裸绝对路径是否属于
 本机（默认 `$DSH_HOME/attachments`、`$DSH_HOME/plugins`）：命中的路径在 `resolve` / `lstat`
 进入远端分支**之前**交给本地后端，`node:path.resolve` 的桥接也在 POSIX 绝对分支之前做同样
 判定。路由层把路径交回本地后端时**必须去掉 `opts.cwd`**——否则被接管的 `resolve` 会按那个
@@ -83,7 +83,7 @@ Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔
 **显式 scheme 是第三类输入，而回退是唯一的存在性判定。** `<scheme>:<abs>` 在 `resolve` /
 `lstat` 里先被 `parseLocalScheme` 剥成裸绝对路径，再走同一套前缀与引用表判定——它不新增
 分类器，只是把“这条拼写属于本机”从推断变成声明。前缀名与回退开关的唯一真相在 `dsh-ssh.json`
-的 `passthrough.<field>`，`lib/passthrough.js` 底部的 `PassthroughSettings` 是唯一写入者，`lib/index.js` 在装缝之前
+的 `passthrough.<field>`，`lib/fs/passthrough.js` 底部的 `PassthroughSettings` 是唯一写入者，`lib/index.js` 在装缝之前
 `activate()` 一次把它 `configure` 进 live matcher，之后面板改动直接写穿、无需重启。
 
 回退之所以特殊：它是全仓库唯一一处**先问远端存不存在、再决定去哪个世界**的判定，与上面
@@ -159,7 +159,7 @@ worker 是本地 Windows 可执行文件，`Path::new(root).is_absolute()` + `ca
 
 词法围栏（`isRemotePathUnder`，规范化后做前缀比较）只是快路径；写 / 删
 操作在落盘前还做一次**服务器 `realpath` 裁决**（`assertFencedRealpath`，
-`lib/remote-fs.js`）：目标**父目录**经 `sftp.realpath` 解析后必须仍落在已
+`lib/fs/remote-fs.js`）：目标**父目录**经 `sftp.realpath` 解析后必须仍落在已
 挂载根内，否则 `FS_OUTSIDE_WORKSPACE`。没有这一步时，围栏内一个指向外部的
 符号链接（或中间目录为符号链接）会让词法判断与真实落点不一致，写入 / 删除
 即可越界。覆盖点为所有写、删入口——原子替换（`#publish`）、`copyFile` 直写
@@ -240,7 +240,7 @@ The command did not run; … or run with danger-full-access.
 - **替身根必须稳定**。`dsh-sandbox-local` 按 `workspaceRoot` 缓存 ACL 授权，
   每次调用换一个新目录就会每条命令泄一个常驻 ACE。固定名字让所有远端会话
   共用同一个（空）目录的同一个授权。
-- **绝不能改 `ctx.sandboxPolicy.resolve`**。`lib/mode-gate.js` 的
+- **绝不能改 `ctx.sandboxPolicy.resolve`**。`lib/core/mode-gate.js` 的
   `writeScopeRootOf` / `workspaceWriteScopeRefusal` 正是拿这个 `ssh://` 拼写做
   `workspace-write` 的会话级收窄；把 resolve 改成返回本机路径，会让那段比较
   失去意义、所有已挂载根都变成可写。只改交给提供方的那份参数。
@@ -276,7 +276,7 @@ runnerFailureRules }`，调用方据此判定 runner 失败与拒绝信号，所
 为 `undefined`，只有收到 `exit-signal` 才置 `null`，因此「传输层断开且未收到
 任何 exit-status」以 `close(undefined)` 呈现。两种拼写都表示**命令从未上报
 状态**，必须走 `fail(...)` 报连接丢失——只判 `=== null` 会把断连当成
-`status: 'completed'` 的正常完成（`lib/engine.js` 用 `typeof code !== 'number'`、
+`status: 'completed'` 的正常完成（`lib/engine/engine.js` 用 `typeof code !== 'number'`、
 `patch-subprocess.js` 用显式双判，语义一致）。真正的非零退出码（如 `exit 1`）
 是有效结果，仍按 completed 结算并保留 `exitCode`。
 
@@ -373,7 +373,7 @@ worker」不成立；而改动前这条路是**完全跑不起来**，不是「�
 拼写，这些调用会落到本机（Windows 会把 `ssh://…` 解析成相对路径）并以 ENOENT
 失败；`isAbsolute` 也把它判为相对。
 
-`lib/fs-shim.js` 替换对应行为：只有 `ssh://` 拼写（及上节已学习的 scratch
+`lib/fs/fs-shim.js` 替换对应行为：只有 `ssh://` 拼写（及上节已学习的 scratch
 镜像）改走远端，其余路径原样转发；然后 `module.syncBuiltinESMExports()`
 同步到内建模块的 ESM facade——已加载模块的
 `import { mkdir } from 'node:fs/promises'` 命名绑定也因此生效。覆盖面：
@@ -454,7 +454,7 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 
 结论经引擎的 `noteUpstreamWorkaround()` 落到 `ssh_workspace_status` 的 `upstreamWorkarounds`
 与一条 `upstream` 事件上——**不走 `ctx.logger`**，因为本部署没有 console exporter，
-写进 logger 等于写进注释（见 [diagnostics.js](../lib/diagnostics.js) 的模块说明）。
+写进 logger 等于写进注释（见 [diagnostics.js](../lib/core/diagnostics.js) 的模块说明）。
 登记与删除步骤见 [upstream-workarounds.md](./upstream-workarounds.md)，
 模式本身见 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md)。
 
@@ -493,7 +493,7 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 
 ### 1. 独立工具 `ssh_workspace_shell`
 
-`lib/shell.js`：`ShellManager` 按 `(别名, 会话名)` 维持一个 `sh -l` 的 SSH PTY
+`lib/surface/shell.js`：`ShellManager` 按 `(别名, 会话名)` 维持一个 `sh -l` 的 SSH PTY
 通道（`client.exec('sh -l', { pty: { cols, rows, term } })`），由
 `ssh_workspace_shell` 工具驱动。通道经 `engine.openChannel` 建立，因此
 `record.holds` 会钉住连接，空闲回收器不会在会话存活期间收走连接。
@@ -545,7 +545,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 于是菜单永远回答本机装了哪些 shell——远端独有的一支选不到，本机独有的选了也跑不
 起来（标签写 zsh、远端跑 sh）。
 
-`lib/shell.js` 的下半因此接管 `shells()` 本身：`ssh://` 会话问主机，本机会话原样
+`lib/surface/shell.js` 的下半因此接管 `shells()` 本身：`ssh://` 会话问主机，本机会话原样
 交给原方法。四点在实现里必须这么写：
 
 - **为什么是 own property，而不是新端点**。Cordis 的服务是 traceable proxy，赋值会
@@ -564,7 +564,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   in-flight promise。
 - **缓存没有 TTL，失效只由连接代次驱动**。键是
   `alias` + NUL + `engine.generationOf(alias).generation`，代次只在成功连接时加一
-  （`lib/engine.js:873`），所以**重连就是唯一的自动刷新点**：新一代次重探一次，随后
+  （`lib/engine/engine.js:873`），所以**重连就是唯一的自动刷新点**：新一代次重探一次，随后
   `#retireOtherGenerations()` 把旧代次的条目清掉（否则每次重连都留一条，长时间跑下来
   会一直涨）。没有定时器、没有 `refresh` 开关，`ssh_workspace_status` 也不暴露它——
   半台主机的 shell 清单不值得为它扩大状态面。代价说清楚：**主机上装了新 shell 而连接
@@ -572,7 +572,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   伴随重新登录），而反向的诱惑更容易出错：给 TTL 会把"一次探测"变成"每小时一次探测"，
   只换来"没断线时也能自愈"这一种情形。
   另一条边界同样有意：代次上升之前（连接已断、还没重连）**仍会答上一代次的答案**。
-  `generationOf` 里虽有 `connected` 字段（`lib/engine.js:428-430`），但它随连接状态反复
+  `generationOf` 里虽有 `connected` 字段（`lib/engine/engine.js:428-430`），但它随连接状态反复
   抖动，放进键里会把一次网络闪断放大成一次额外往返；而缓存里的每一行都是那台主机**真的
   报告过**的，此时选中它只会在打开终端时撞上连接错误——错误落在"主机连不上"这一类，
   不是谎报。
@@ -587,7 +587,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 
 ## 本机 ↔ 远端传输
 
-`lib/transfer.js`：`transferFile` 双向分块（256 KiB）流式拷贝，字节不经过对话。
+`lib/transfer/transfer.js`：`transferFile` 双向分块（256 KiB）流式拷贝，字节不经过对话。
 上传**先写同级暂存名 `<目标>.dsh-up-<pid>-<ts>`，成功后 `publishRename` 发布**，
 因此目标在被替换前始终是旧内容或完整新内容；失败路径清掉暂存文件并按需保留
 目标原内容。下载读至 EOF 而不是依赖 stat 时的长度（传输期间变长的文件会被完整
@@ -665,7 +665,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 目录目标加 `-r`（与本地递归 watcher 对齐），文件目标不加（`inotifywait` 对文件
 加 `-r` 会被拒绝），因此先 stat 判断目标是文件还是目录。
 
-## 远端技能发现（`lib/remote-skills.js`）
+## 远端技能发现（`lib/surface/remote-skills.js`）
 
 `ctx.skills.registerProvider()` 是宿主提供的唯一入口：注册一个 provider，`list()` 回答「这个工作区有哪些
 技能」，`get()` 回答「把某一个的正文给我」。本插件注册的是 `ssh-workspace-remote-skills`，
@@ -700,7 +700,7 @@ rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之�
 `engine.withSftp(alias, fn, { kind: 'read' })`，与其他读路径共用连接池与重连。
 ## 引擎与连接模型
 
-`lib/engine.js`：每个别名一条 ssh2 长连接 + 一个 SFTP 通道（常开）——文件
+`lib/engine/engine.js`：每个别名一条 ssh2 长连接 + 一个 SFTP 通道（常开）——文件
 系统后端一次工具调用会发很多小操作；远程命令在同一连接上另开 exec 通道。
 大文件流式读取（`streamText`，预览与 read 工具）走**按需打开的第二条 SFTP
 通道**（`engine.streamChannel`），传输期间统计、目录列表与变更监视仍走常开
@@ -717,7 +717,7 @@ rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之�
 | 测试连接 | `test` 连一次即 `forget(alias)` 释放（被转发的 `holds` 钉住时不释放） | — |
 | 后台重连 | 1s 起指数退避、60s 封顶、默认不限次数 | `engine.reconnect.baseDelayMs` / `maxDelayMs` / `maxAttempts` / `jitter`（`false` 关闭） |
 
-### 后台重连（`lib/reconnect.js`）
+### 后台重连（`lib/engine/reconnect.js`）
 
 每个别名一台小状态机，由**连接意外关闭**驱动，不依赖「下一次操作」：
 
@@ -750,7 +750,7 @@ rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之�
 
 ## peer 解析
 
-`lib/peers.js` 的 `requirePeer` 依次尝试（结果按包名记忆化）：
+`lib/core/peers.js` 的 `requirePeer` 依次尝试（结果按包名记忆化）：
 
 1. 本包自己的 `node_modules`（profile 安装时即 profile 的依赖树）；
 2. `DSH_PEER_ROOT`（可用路径分隔符列多个，测试或临时依赖树用）；

@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { PROVENANCE, provenance, ageOf, probeProvenance, staleProvenance, statusProvenance } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'status.js')).href)
+  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'surface', 'status.js')).href)
 
 let passed = 0
 let failures = 0

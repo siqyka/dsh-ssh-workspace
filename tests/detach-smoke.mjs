@@ -48,12 +48,12 @@ if (!coreRoot) {
 }
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
-const { HostConfigStore, workspacesOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/store.js')).href)
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
-const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+const { HostConfigStore, workspacesOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/store.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
 const { installRemoteShell } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-shell.js')).href)
 const { RemoteTerminalRouter } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-terminal.js')).href)
-const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFileURL(path.join(pluginRoot, 'lib/protocol.js')).href)
+const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFileURL(path.join(pluginRoot, 'lib/core/protocol.js')).href)
 
 // ---------------------------------------------------------------------------
 // The store section
@@ -251,7 +251,7 @@ const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFile
 // mounting it again, would have been impossible by construction. Both now go
 // through the raw connection, which this block pins.
 {
-  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
   const engine = new SshWorkspaceEngine({})
   let rawProbes = 0
   let routerProbes = 0
@@ -296,7 +296,7 @@ const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFile
 // therefore never ran in CI: the message asserted there had never existed.
 // Pinned here, against a fake connection, so it runs everywhere.
 {
-  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
   /** The error ssh2 reports for a path that is not there. */
   const missing = () => Object.assign(new Error('No such file'), { code: 2 })
 

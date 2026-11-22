@@ -32,9 +32,9 @@ const {
   maskPath,
   maskRemotePath,
   BUNDLE_VERSION,
-} = await import(pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href)
-const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
+} = await import(pathToFileURL(path.join(pluginRoot, 'lib/report/report.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
+const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/core/diagnostics.js')).href)
 
 let passed = 0
 let failures = 0

@@ -17,7 +17,7 @@ const pluginRoot = path.resolve(here, '..')
 const {
   sourceIdentity, resumableStagingName, resumeSidecarName, planResume,
   resumeRecord, parseResumeRecord,
-} = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
+} = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'transfer-rules.js')).href)
 
 let passed = 0
 let failures = 0

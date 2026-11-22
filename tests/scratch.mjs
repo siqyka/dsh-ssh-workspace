@@ -28,7 +28,7 @@
  * @module @shiqyka/dsh-ssh-workspace/tests/scratch
  */
 
-import { shellQuote } from '../lib/engine.js'
+import { shellQuote } from '../lib/engine/engine.js'
 
 /** The prefix every suite's default scratch directory carries. */
 const PREFIX = 'dsh-ssh-workspace'
@@ -70,7 +70,7 @@ export function checkScratchPath (value) {
 /**
  * Remove one remote scratch directory, refusing anything unproven.
  *
- * @param {import('../lib/engine.js').SshWorkspaceEngine} engine - live engine.
+ * @param {import('../lib/engine/engine.js').SshWorkspaceEngine} engine - live engine.
  * @param {string} alias - host alias.
  * @param {string} path - the scratch path from the environment.
  * @returns {Promise<{ok: boolean, reason?: string}>} the outcome.

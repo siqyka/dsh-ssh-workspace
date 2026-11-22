@@ -4,7 +4,7 @@
  * Three layers, because the feature spans three of them and each can fail
  * silently on its own:
  *
- *  1. `lib/git-history.js` — the fixed argv, the record parser, the git failure
+ *  1. `lib/engine/git-history.js` — the fixed argv, the record parser, the git failure
  *     classifier, the Session-directory resolution and the structured results.
  *     Pure Node, always runs.
  *  2. `lib/routes/routes.js` — the HTTP door: the loopback/method fence it
@@ -44,7 +44,7 @@ import {
   normalizeGitHistoryLimit,
   parseGitLog,
   readGitHistory,
-} from '../lib/git-history.js'
+} from '../lib/engine/git-history.js'
 import { installPeerStubs } from './peer-stubs.mjs'
 import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'
 

@@ -17,7 +17,7 @@
  * ## What it is, exactly
  *
  * A Map of paths to bytes, a Set of directories, a Map of symbolic links, and
- * the fourteen methods `lib/remote-fs.js` actually calls. Nothing else is
+ * the fourteen methods `lib/fs/remote-fs.js` actually calls. Nothing else is
  * implemented, and asking for anything else throws instead of answering
  * undefined — a double that silently returns nothing turns a missing method
  * into a passing test about nothing.
@@ -678,7 +678,7 @@ export function createFakeSftp (options = {}) {
 /**
  * An engine whose only job is to hand the double to `withSftp`.
  *
- * `lib/remote-fs.js` reaches SFTP exclusively through
+ * `lib/fs/remote-fs.js` reaches SFTP exclusively through
  * `engine.withSftp(alias, operation, options)`, so this is the whole surface a
  * suite needs to drive the real write path without a host. Suites that also
  * assert on capability probes can pass their own answers.

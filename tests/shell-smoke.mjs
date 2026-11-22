@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { fakeChannelEngine } from './support/fake-channel-engine.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { ShellManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/shell.js')).href)
+const { ShellManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/shell.js')).href)
 
 let passed = 0
 let failures = 0

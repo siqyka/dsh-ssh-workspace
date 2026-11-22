@@ -48,7 +48,7 @@ function check (label, ok, detail) {
 
 console.log('\n=== peers smoke ===\n')
 
-const { requirePeer } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'peers.js')).href)
+const { requirePeer } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'core', 'peers.js')).href)
 
 // ------------------------------------------------- the peer declaration itself
 console.log('[host packages are peers, and optional so npm does not install them]')
@@ -159,7 +159,7 @@ check(
 )
 // The role must reach the real caller, not just the helper: engine.js loads
 // `ssh2` through this module, so a missing ssh2 has to read as a dependency.
-const engineSource = readFileSync(path.join(pluginRoot, 'lib', 'engine.js'), 'utf8')
+const engineSource = readFileSync(path.join(pluginRoot, 'lib', 'engine', 'engine.js'), 'utf8')
 check(
   'engine.js loads ssh2 as a dependency, so a missing tree is not blamed on the Host',
   /requirePeer\(\s*['"]ssh2['"]\s*,\s*\{\s*kind:\s*['"]dependency['"]/.test(engineSource),

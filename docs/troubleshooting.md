@@ -4,7 +4,7 @@
 
 ## 常见错误语义
 
-文件工具在远端工作区报错时，错误码来自 `FsError`，与本地后端的语义对齐（`lib/remote-fs.js`）：
+文件工具在远端工作区报错时，错误码来自 `FsError`，与本地后端的语义对齐（`lib/fs/remote-fs.js`）：
 
 | 错误码 | 含义 | 常见触发 |
 | --- | --- | --- |
@@ -350,7 +350,7 @@ worker 的 bootstrap 在宿主包里，远端主机既没有它、也不一定�
 `degraded` 非空、`pending` 记 0 而不是虚报）。前两种可以先 `ssh_workspace_enable` 恢复工作区、
 确认远端目录存在后重启 DSH 再试一次。
 
-> 同样是服务端改动（`lib/ownership.js`）。**重新启用插件不必再重启一次**：补偿每次激活都先无条件
+> 同样是服务端改动（`lib/surface/ownership.js`）。**重新启用插件不必再重启一次**：补偿每次激活都先无条件
 > 重建一次宿主会话索引（结果写在 `ownership.indexRebuilt`，正常是 `reindexed`），重建后回读记账即算
 > 恢复。只有重建被判为 `unsupported`（宿主换了这几个方法名）或 `failed: …` 时，才需要**重启 DSH**。
 > 刷新页面**不会**重跑补偿（它只重跑浏览器那一半的 catch-up，而 catch-up 读的是补偿已经写下的结果）。
@@ -359,7 +359,7 @@ worker 的 bootstrap 在宿主包里，远端主机既没有它、也不一定�
 
 ## 连接问题
 
-**先看诊断历史**：环形缓冲的**容量是 40 条**（`lib/diagnostics.js` 的 `CAPACITY`），
+**先看诊断历史**：环形缓冲的**容量是 40 条**（`lib/core/diagnostics.js` 的 `CAPACITY`），
 但每个导出面只取最新的一部分：`ssh_workspace_status` 的 `events` 字段是 10 条，
 面板 `/status` 路由、`diagnosticsText` 与「诊断报告」都是 20 条。容量与导出条数是两回事，
 别把它们当成同一个数。它通常是「刚才发生了什么」最快的答案：一条 `disconnect`

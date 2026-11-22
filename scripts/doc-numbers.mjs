@@ -244,7 +244,7 @@ export function renderNumbers (options = {}) {
   const modules = countModules()
   const suites = suiteNames()
   // The `source` column names where the figure was read FROM, so it is derived
-  // from the paths actually used. A hardcoded `lib/tools.js` would keep pointing
+  // from the paths actually used. A hardcoded `lib/surface/tools.js` would keep pointing
   // at a file that moved, which reads as "the count is wrong" rather than "the
   // label is stale" — and the number itself would already have thrown above.
   const toolsSource = path.relative(root, toolsPath).split(path.sep).join('/')

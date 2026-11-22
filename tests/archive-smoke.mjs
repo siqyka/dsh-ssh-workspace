@@ -33,8 +33,8 @@ import { clientSource } from './support/client-source.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 
-const { BLOCK, splitTarName, tarHeader, tarPadding, tarStream } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'archive.js')).href)
-const { globToRegExp, relativeForRule, treeFilter } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
+const { BLOCK, splitTarName, tarHeader, tarPadding, tarStream } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'archive.js')).href)
+const { globToRegExp, relativeForRule, treeFilter } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'transfer-rules.js')).href)
 // The toast helpers are lifted from the shipped bundle by a shared harness so
 // this suite and `client-shape-smoke` drive the SAME code rather than two
 // retyped copies.
@@ -48,7 +48,7 @@ let downloadTreeAsTar
 let tarNameOf
 if (coreRoot !== undefined && coreRoot !== '') {
   process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
-  const transfer = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer.js')).href)
+  const transfer = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'transfer.js')).href)
   downloadTreeAsTar = transfer.downloadTreeAsTar
   tarNameOf = transfer.tarNameOf
 }

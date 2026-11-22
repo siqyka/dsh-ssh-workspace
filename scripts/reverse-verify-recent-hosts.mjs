@@ -15,37 +15,37 @@ const SUITE = 'tests/recent-hosts-smoke.mjs'
 const MUTATIONS = [
   {
     name: 'the recent section is read through load() (always empty)',
-    file: 'lib/store.js',
+    file: 'lib/hosts/store.js',
     find: '      return recentOf(this.#readDocument())',
     replace: '      return recentOf(this.load())',
   },
   {
     name: 'the listing stops sorting',
-    file: 'lib/hosts.js',
+    file: 'lib/hosts/hosts.js',
     find: '    rows.sort((left, right) => (right.lastUsedAt ?? 0) - (left.lastUsedAt ?? 0))',
     replace: '    void rows',
   },
   {
     name: 'the cap is dropped (unbounded growth)',
-    file: 'lib/store.js',
+    file: 'lib/hosts/store.js',
     find: '        for (const [name, value] of entries.slice(0, MAX_RECENT)) next[name] = value',
     replace: '        for (const [name, value] of entries) next[name] = value',
   },
   {
     name: 'the oldest, not the newest, survive the cap',
-    file: 'lib/store.js',
+    file: 'lib/hosts/store.js',
     find: '        const entries = Object.entries(section).sort((left, right) => right[1] - left[1])',
     replace: '        const entries = Object.entries(section).sort((left, right) => left[1] - right[1])',
   },
   {
     name: 'the timestamp is not attached to the row',
-    file: 'lib/hosts.js',
+    file: 'lib/hosts/hosts.js',
     find: '      if (typeof at === \'number\' && Number.isFinite(at)) row.lastUsedAt = at',
     replace: '      void at',
   },
   {
     name: 'a use overwrites the whole section instead of merging',
-    file: 'lib/store.js',
+    file: 'lib/hosts/store.js',
     find: '        const section = recentOf(existing)\n        section[target] = when',
     replace: '        const section = {}\n        section[target] = when',
   },

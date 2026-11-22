@@ -29,8 +29,8 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { auditConfigText, summarizeAudit, SUPPORTED_KEYWORDS, KNOWN_UNSUPPORTED } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href)
-const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts.js')).href)
+const { auditConfigText, summarizeAudit, SUPPORTED_KEYWORDS, KNOWN_UNSUPPORTED } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report/report.js')).href)
+const { HostStore } = await import(pathToFileURL(path.join(pluginRoot, 'lib/hosts/hosts.js')).href)
 
 let passed = 0
 let failures = 0

@@ -35,7 +35,7 @@ const {
   environmentFindings,
   selfCheck,
   renderSelfCheck,
-} = await import(pathToFileURL(path.join(pluginRoot, 'lib/capabilities.js')).href)
+} = await import(pathToFileURL(path.join(pluginRoot, 'lib/report/capabilities.js')).href)
 
 let passed = 0
 let failures = 0
@@ -80,7 +80,7 @@ check(
   ['tar', 'rsync', 'tput'].every(tool => UNPROBED_CAPABILITIES.some(spec => spec.tool === tool)),
   JSON.stringify(UNPROBED_CAPABILITIES.map(spec => spec.tool)),
 )
-// `sha256sum` was one of the four and is now REAL: `lib/transfer-rules.js` hashes both
+// `sha256sum` was one of the four and is now REAL: `lib/transfer/transfer-rules.js` hashes both
 // sides of a transfer on request. The membership test above (does any code
 // outside this file reference the tool?) is what moves a row between the two
 // lists — in either direction. Pinning that here is what makes the earlier
@@ -158,7 +158,7 @@ console.log('\n[every promised capability is actually wired]')
   // table. What counts as a dependency is an invocation, not the spelling of a
   // filename:
   //
-  //  - `lib/archive.js` is a module this plugin OWNS (it writes the archive
+  //  - `lib/transfer/archive.js` is a module this plugin OWNS (it writes the archive
   //    format itself, so the host needs no `tar` binary at all) — that is why it
   //    is left out of THIS scan entirely rather than patched up afterwards;
   //  - `x.tar` is an output filename;
@@ -300,7 +300,7 @@ console.log('\n[the probe asks for every capability the table names]')
   // Pin the probe against the table: a capability added to the table but not
   // asked for would be reported as unknown forever, which reads as "the host
   // might not have it" when the truth is "we never asked".
-  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
   const engine = new SshWorkspaceEngine({})
   const seen = []
   engine.exec = async (_alias, command) => {
@@ -320,7 +320,7 @@ console.log('\n[the probe asks for every capability the table names]')
 {
   // The substring bug: presence used to be decided with `includes(name)` over
   // the whole output, so a path containing the name reported the tool present.
-  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
   const engine = new SshWorkspaceEngine({})
   engine.exec = async () => ({
     success: true,
@@ -340,7 +340,7 @@ console.log('\n[the probe asks for every capability the table names]')
 
 {
   // Environment facts must survive the same round trip.
-  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
   const engine = new SshWorkspaceEngine({})
   engine.exec = async () => ({
     success: true,
@@ -363,7 +363,7 @@ console.log('\n[the probe asks for every capability the table names]')
 {
   // A sweep that could not answer must cache NOTHING — neither verdicts nor
   // environment — so the next attempt is a real attempt.
-  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
   const engine = new SshWorkspaceEngine({})
   let call = 0
   engine.exec = async () => {

@@ -15,7 +15,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
-import { HostConfigStore } from '../lib/store.js'
+import { HostConfigStore } from '../lib/hosts/store.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 
@@ -73,7 +73,7 @@ console.log('\n=== store lock smoke ===\n')
     const waitStart = Date.now()
     const worker = spawnSync(process.execPath, [
       '-e',
-      `import(${JSON.stringify(new URL('../lib/store.js', import.meta.url).href)}).then(m => {
+      `import(${JSON.stringify(new URL('../lib/hosts/store.js', import.meta.url).href)}).then(m => {
          const s = new m.HostConfigStore(${JSON.stringify(file)});
          s.save([...s.load(), ${JSON.stringify(entry('waited'))}]);
        })`,
@@ -98,7 +98,7 @@ console.log('\n=== store lock smoke ===\n')
     const aliases = Array.from({ length: 6 }, (_, i) => `host${i}`)
     // mutateHosts reads and writes inside one locked section, which is what
     // makes concurrent add-a-host safe across processes.
-    const script = `import(${JSON.stringify(new URL('../lib/store.js', import.meta.url).href)}).then(m => {
+    const script = `import(${JSON.stringify(new URL('../lib/hosts/store.js', import.meta.url).href)}).then(m => {
       const s = new m.HostConfigStore(${JSON.stringify(file)});
       for (let i = 0; i < 12; i += 1) {
         const alias = process.argv[1] + '-' + i;

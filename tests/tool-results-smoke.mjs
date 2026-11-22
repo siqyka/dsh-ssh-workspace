@@ -29,7 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createHost } from './support/plugin-host.mjs'
 
-// `lib/peers.js` searches `DSH_PEER_ROOT`; `run.mjs` supplies the root it built
+// `lib/core/peers.js` searches `DSH_PEER_ROOT`; `run.mjs` supplies the root it built
 // as `DSH_CORE_ROOT`. Bridge them before the first `lib/` import, because
 // `remote-fs.js` resolves its peers at module load. Every peer-consuming suite
 // does the same thing for the same reason.
@@ -51,13 +51,13 @@ function check (name, condition, detail) {
 
 console.log(`\n=== tool result conformance (${pluginRoot}) ===\n`)
 
-const { workspaceTools, defineTool, drainProjectionDrops } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
-const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
-const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
-const { CommandAudit } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
-const { ShellManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/shell.js')).href)
-const { projectValue, validateValue } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tool-schema.js')).href)
+const { workspaceTools, defineTool, drainProjectionDrops } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
+const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
+const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/core/diagnostics.js')).href)
+const { CommandAudit } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
+const { ShellManager } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/shell.js')).href)
+const { projectValue, validateValue } = await import(pathToFileURL(path.join(pluginRoot, 'lib/core/tool-schema.js')).href)
 
 // ---------------------------------------------------------------------------
 // A store whose listing() returns rows with EVERY field the real HostStore
@@ -192,7 +192,7 @@ const byName = new Map(tools.map(tool => [tool.name, tool]))
  * Execute one tool and assert its result conforms, reporting drops as failures.
  *
  * The important assertion is the FIRST one, and it is not derived from the value
- * the test receives: `lib/tools.js` projects every result before returning it, so
+ * the test receives: `lib/surface/tools.js` projects every result before returning it, so
  * re-projecting that value would find zero drops by construction and prove
  * nothing. What the test reads instead is the wrapper's own record of what it
  * had to discard. A field the schema forgot therefore fails here even though the

@@ -58,7 +58,7 @@ ssh://<主机别名>/<远端绝对路径>
    `docs/features.md` 的「工作区内的修改算不算数」）。落在会话工作区**且 `/tmp` 之外**的目标是
    `FS_SANDBOX_DENIED`，文案点名会话工作区与出路。挂载围栏是另一道：它问的是「这个目录被服务吗」。
    **命令执行面**（`ssh_workspace_exec` / 持久 shell / workdir 为 `ssh://` 的 bash、pwsh / cwd 为
-   `ssh://` 的终端）另走 `lib/mode-gate.js`：`read-only` 与**任何读不懂的模式**下直接拒绝，不做围栏尝试——本机内核边界跨不过
+   `ssh://` 的终端）另走 `lib/core/mode-gate.js`：`read-only` 与**任何读不懂的模式**下直接拒绝，不做围栏尝试——本机内核边界跨不过
    SSH，没有可交给它的 `workspaceRoot`。终端的判定分两处时机：开 PTY 时拒绝（不建通道），以及此后
    **每次写入**重新判定（已开着的终端在切成 `read-only` 后停止接受命令，控制字节与关闭除外）。
    `workspace-write` 下命令**不会**被收窄到会话工作区：限制一个**进程**需要内核边界，而它跨不过 SSH。
@@ -92,7 +92,7 @@ ssh://<主机别名>/<远端绝对路径>
 
 ## 本机 scheme 的前缀规则
 
-`local:` 这类前缀名由 `lib/passthrough.js` 定义——**规则只有那一份**，服务端校验、路由
+`local:` 这类前缀名由 `lib/fs/passthrough.js` 定义——**规则只有那一份**，服务端校验、路由
 错误文案、面板提示与本文件都从它派生，面板通过 `/status` 的 `passthrough.schemeRules`
 拿到同一张表，不再保存第二份正则或保留名清单：
 

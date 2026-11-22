@@ -49,8 +49,8 @@ if (process.env.DSH_CORE_ROOT) {
     .join(path.delimiter)
 }
 
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
-const { installBuiltinBridge, uninstallBuiltinBridge } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs-shim.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
+const { installBuiltinBridge, uninstallBuiltinBridge } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/fs-shim.js')).href)
 const fsPromises = (await import('node:fs/promises')).default
 
 const ALIAS = 'probehost'

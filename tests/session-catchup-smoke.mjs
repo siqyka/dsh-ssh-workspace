@@ -6,7 +6,7 @@
  * With the plugin disabled across a DSH restart, the Host indexes the session
  * table without the `ssh://` roots mounted, so every remote session fails its
  * `realpath` and drops out of its workspace's membership. Re-enabling the plugin
- * repairs that: `lib/ownership.js` rebuilds the Host index and re-announces each
+ * repairs that: `lib/surface/ownership.js` rebuilds the Host index and re-announces each
  * workspace, and the sidebar groups come back.
  *
  * They come back EMPTY. The groups are a follow stream, so an announcement
@@ -87,7 +87,7 @@ function liftCatchUp (deps) {
     // The whole section moved to the kernel chunk when the layer cut landed; the
     // bundle keeps the banner and nothing else. Anchor on the paragraph that
     // explains the pull, and stop at the constants that follow it.
-    start: '    // The compensation in `lib/ownership.js` repairs',
+    start: '    // The compensation in `lib/surface/ownership.js` repairs',
     end: "    const PANEL_ID = 'ssh-workspace'",
     text: clientPartSource(pluginRoot, 'client.kernel.js'),
     exclude: ['fetchJson', 'API', 'setTimeout', 'clearTimeout', 'Date', 'document', 'window', 'React', 'createPortal', 'jsx', 'jsxs', 'Fragment'],

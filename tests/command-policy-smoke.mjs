@@ -18,7 +18,7 @@ import { createHost } from './support/plugin-host.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
 const { RULE_SETS, DEFAULT_POLICY, normalizePolicy, matchRule, needsConfirmation, approvalUnavailableMessage } =
-  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tools.js')).href)
+  await import(pathToFileURL(path.join(pluginRoot, 'lib', 'surface', 'tools.js')).href)
 
 let passed = 0
 let failures = 0
@@ -229,7 +229,7 @@ process.env.DSH_PEER_ROOT = [process.env.DSH_PEER_ROOT, stubRoot].filter(Boolean
 
 let tools
 try {
-  tools = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'tools.js')).href)
+  tools = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'surface', 'tools.js')).href)
 } catch (error) {
   tools = undefined
   console.log(`  NOTE  tools.js could not be imported here (${error instanceof Error ? error.message : String(error)})`)

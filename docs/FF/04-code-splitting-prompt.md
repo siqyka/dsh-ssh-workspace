@@ -7,7 +7,7 @@
 ## 0. 一句话目标
 
 把 `lib/client/client.js`（12,603 行）、`lib/routes.js` 的 `makeRoutes`（1,856 行单函数）、
-`lib/tools.js` 的 `statusTool`（606 行）、`lib/remote-fs.js` 的 watch 集群，以及四处
+`lib/surface/tools.js` 的 `statusTool`（606 行）、`lib/fs/remote-fs.js` 的 watch 集群，以及四处
 逐字重复的小工具函数拆开；**行为、错误码、HTTP 状态码、工具输出 schema、`ssh://`
 围栏语义一律不变**。
 
@@ -17,13 +17,13 @@
 | --- | --- |
 | `lib/client/client.js` | 12,603 行 / 627,867 B，22 个 banner 段，单 `factory` |
 | `lib/routes.js` | 3,765 行；`makeRoutes`（`:911`）1,856 行；33 条路由全 `kind: 'exact'` |
-| `lib/tools.js` | 2,250 行；`statusTool`（`:850`）606 行，内部三段：schema 855–1233、render 1234–1339、execute 1341–1452 |
-| `lib/remote-fs.js` | 2,597 行；`RemoteFileSystem` 61 个方法、方法体合计 976 行 |
+| `lib/surface/tools.js` | 2,250 行；`statusTool`（`:850`）606 行，内部三段：schema 855–1233、render 1234–1339、execute 1341–1452 |
+| `lib/fs/remote-fs.js` | 2,597 行；`RemoteFileSystem` 61 个方法、方法体合计 976 行 |
 | `lib/index.js` | 855 行；`apply`（`:269`）584 行 |
 | 测试 | 101 个套件文件，98 个在 `tests/run.mjs` 的 `SUITES`；**28 个套件**、**29 处**读 `lib/client/client.js` |
-| 文档计数器 | `scripts/doc-numbers.mjs`：`countRoutes` 只读 `lib/routes.js`（`:129`），`countTools` 只读 `lib/tools.js`（`:130`），`countModules` 只数 `lib/*.js`（`:119`） |
+| 文档计数器 | `scripts/doc-numbers.mjs`：`countRoutes` 只读 `lib/routes.js`（`:129`），`countTools` 只读 `lib/surface/tools.js`（`:130`），`countModules` 只数 `lib/*.js`（`:119`） |
 
-**环境**：必须设 `DSH_CORE_ROOT`，否则 `lib/peers.js:146` 解析不到 peer 包：
+**环境**：必须设 `DSH_CORE_ROOT`，否则 `lib/core/peers.js:146` 解析不到 peer 包：
 
 ```bash
 DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
@@ -47,7 +47,7 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
 | `client-shape-smoke` | **337 passed / 0 failed** |
 
 判据因此从「相对基线不新增红」收紧为**「0 failed」**：本机现在能跑全量。
-`DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 仍需设置，否则 `lib/peers.js:146`
+`DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules` 仍需设置，否则 `lib/core/peers.js:146`
 解析不到 peer。3 个 SKIP 与 2 个 PARTIAL 是缺 `DSH_WS_TEST_ALIAS`（真机），不是失败。
 
 ## 2. 硬要求
@@ -91,14 +91,14 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
 
 | # | 提交 | 内容 |
 | --- | --- | --- |
-| A1 | `refactor: one POSIX quoter for every remote command` | 新建 `lib/shell-quote.js`；`lib/engine.js:1846` 的 `shellQuote` 改为 re-export（6 个既有 import 一行不动）；删 `lib/shell.js:523` 与 `lib/patch/patch-terminal.js:642` 的本地 `quote` |
-| A2 | `refactor: one port and host validator for both forward directions` | 新建 `lib/forward-common.js`；`lib/forward.js:28,37` 与 `lib/reverse-forward.js:45,54` 改用它 |
-| A3 | `refactor: one option-number coercion helper` | 新建 `lib/options.js`；`lib/reconnect.js:50` 与 `lib/watch-recovery.js:46` 的 `positive` 改用 |
-| A4 | `refactor: one regex escaper` | 新建 `lib/text.js`；`lib/include-chain.js:146`、`lib/shell.js:310`、`lib/ssh-config.js:174` 三处 `escapeRegExp` 改用 |
-| A5 | `chore: delete two exports nothing calls` | 删 `lib/capabilities.js:161` 的 `capabilityKeys` 与 `lib/resume.js:169` 的 `resumeToken`（全仓库含 tests/scripts 零引用） |
+| A1 | `refactor: one POSIX quoter for every remote command` | 新建 `lib/shell-quote.js`；`lib/engine/engine.js:1846` 的 `shellQuote` 改为 re-export（6 个既有 import 一行不动）；删 `lib/surface/shell.js:523` 与 `lib/patch/patch-terminal.js:642` 的本地 `quote` |
+| A2 | `refactor: one port and host validator for both forward directions` | 新建 `lib/forward-common.js`；`lib/forward/forward.js:28,37` 与 `lib/reverse-forward.js:45,54` 改用它 |
+| A3 | `refactor: one option-number coercion helper` | 新建 `lib/options.js`；`lib/engine/reconnect.js:50` 与 `lib/watch-recovery.js:46` 的 `positive` 改用 |
+| A4 | `refactor: one regex escaper` | 新建 `lib/text.js`；`lib/include-chain.js:146`、`lib/surface/shell.js:310`、`lib/hosts/ssh-config.js:174` 三处 `escapeRegExp` 改用 |
+| A5 | `chore: delete two exports nothing calls` | 删 `lib/report/capabilities.js:161` 的 `capabilityKeys` 与 `lib/resume.js:169` 的 `resumeToken`（全仓库含 tests/scripts 零引用） |
 
 **不要删** `lib/path-binding.js:141` 的 `acceptsWithoutOurPatch` 与
-`lib/ssh-config.js:149` 的 `matchLimitation`：零引用但注释写着审计需要它们，属「该接未接」，
+`lib/hosts/ssh-config.js:149` 的 `matchLimitation`：零引用但注释写着审计需要它们，属「该接未接」，
 处置写进 `docs/optimization-and-future03.md` §1。
 
 轨道 A 的验证套件：`forward-smoke`、`reverse-forward-smoke`、`forward-persist-smoke`、
@@ -112,8 +112,8 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
 | B1 | `refactor(tools): move the status output schema beside the tool` | 新建 `lib/status-schema.js` 导出 `STATUS_OUTPUT_SCHEMA`；`statusTool` 606 → 约 230 行 |
 | B2 | `refactor(tools): move the status renderer out of the tool body` | 新建 `lib/status-render.js` 导出 `renderStatus`；`statusTool` → 约 115 行 |
 
-**`execute` 必须留在 `lib/tools.js`**：`tests/client-shape-smoke.mjs:712` 断言
-`/selfCheck: probedAliases\(engine\)/` 出现在 `lib/tools.js` 里。
+**`execute` 必须留在 `lib/surface/tools.js`**：`tests/client-shape-smoke.mjs:712` 断言
+`/selfCheck: probedAliases\(engine\)/` 出现在 `lib/surface/tools.js` 里。
 `defineTool({` 也必须留在 `tools.js`：`scripts/doc-numbers.mjs:80` 的 `countTools`
 按它计数。
 
@@ -149,7 +149,7 @@ DSH_CORE_ROOT=F:/GitHub/.asar-full/dsh/node_modules node tests/run.mjs
 
 | # | 提交 | 内容 |
 | --- | --- | --- |
-| D1 ⛔ | `refactor(remote-fs): give the shared watch its own module` | 新建 `lib/remote-watch.js`，搬 `#watchShared`（`:1220`）、`#waitForSharedStart`（`:1296`）、`#openSharedWatch`（`:1326`）、`#notifyShared`（`:1469`）、`#stopSharedWatch`（`:1500`）、`startRemoteWatch`（`:1793`）、`startPushWatch`（`:1695`）；`RemoteFileSystem` 只留委托 |
+| D1 ⛔ | `refactor(remote-fs): give the shared watch its own module` | 新建 `lib/fs/remote-watch.js`，搬 `#watchShared`（`:1220`）、`#waitForSharedStart`（`:1296`）、`#openSharedWatch`（`:1326`）、`#notifyShared`（`:1469`）、`#stopSharedWatch`（`:1500`）、`startRemoteWatch`（`:1793`）、`startPushWatch`（`:1695`）；`RemoteFileSystem` 只留委托 |
 
 **必须一个提交内完成，不得留中间态。** 四套必须全绿：
 `watch-sharing-smoke`、`watch-lifecycle-smoke`、`watch-recovery-smoke`、`remote-fs-smoke`。

@@ -15,7 +15,7 @@ jobs:
           node-version: 20
           cache: npm
       # The @deepseek-ai/* runtime peers are supplied by the DSH host, never by
-      # a registry (see lib/peers.js and .npmrc), so only the ssh2 tree is
+      # a registry (see lib/core/peers.js and .npmrc), so only the ssh2 tree is
       # installed. --ignore-scripts skips ssh2's optional native cpu-features
       # build; ssh2 runs pure-JS without it.
       - name: Install

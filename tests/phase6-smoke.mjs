@@ -38,7 +38,7 @@ requireFromCore('@deepseek-ai/dsh-fs')
 requireFromCore('@deepseek-ai/dsh-tools')
 
 const { installRemoteShell } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-shell.js')).href)
-const { RemoteFileSystem, sftpPublishRename } = await import(pathToFileURL(path.join(pluginRoot, 'lib/remote-fs.js')).href)
+const { RemoteFileSystem, sftpPublishRename } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
 const { StreamTail } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-subprocess.js')).href)
 
 let passed = 0

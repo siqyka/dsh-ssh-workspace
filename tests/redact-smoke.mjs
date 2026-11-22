@@ -5,7 +5,7 @@
  *
  * Three surfaces emit text meant to be pasted into an issue: `exportText()`
  * (diagnostics), the support bundle, and the audit rows. Each had its own
- * masking, and they disagreed. `lib/engine.js` records
+ * masking, and they disagreed. `lib/engine/engine.js` records
  *
  *     connected to alice@prod-db-01.internal.corp:22
  *
@@ -28,10 +28,10 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { maskText, maskAlias, maskPath, maskLine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
-const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/diagnostics.js')).href)
-const { buildSupportBundle } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report.js')).href)
-const { redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine.js')).href)
+const { maskText, maskAlias, maskPath, maskLine } = await import(pathToFileURL(path.join(pluginRoot, 'lib/core/diagnostics.js')).href)
+const { Diagnostics } = await import(pathToFileURL(path.join(pluginRoot, 'lib/core/diagnostics.js')).href)
+const { buildSupportBundle } = await import(pathToFileURL(path.join(pluginRoot, 'lib/report/report.js')).href)
+const { redactCommand } = await import(pathToFileURL(path.join(pluginRoot, 'lib/engine/engine.js')).href)
 
 let passed = 0
 let failures = 0

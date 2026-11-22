@@ -63,7 +63,7 @@
 的本机，模型拿到的句柄是 `$DSH_HOME/attachments/v1/files/<digest>/<name>`；不直通时它会被
 解释成 `ssh://<alias>/<本机绝对路径>`，`read` / `read_image` / `node:fs` 都得到 ENOENT。
 
-**规则**（`lib/passthrough.js` 是唯一实现）：
+**规则**（`lib/fs/passthrough.js` 是唯一实现）：
 
 | 输入 | 结果 |
 | --- | --- |
@@ -92,7 +92,7 @@
 逃逸是已知残余风险：直通只解决“路径属于哪个世界”，不扩大本机读权限，也不假装 `realpath`。
 远端主机上存在同名前缀时按本机前缀优先，这是显式取舍。
 
-**为什么 `file:` 不能当本机前缀**：`formatRemoteFileUrl`（`lib/protocol.js`）为**远端**路径写出
+**为什么 `file:` 不能当本机前缀**：`formatRemoteFileUrl`（`lib/core/protocol.js`）为**远端**路径写出
 `file:///srv/x` 这类 URI。若把 `file` 配成本机前缀，同一串拼写在目录树里指向远端、在读取时
 指向本机——它不是「多了一个便利前缀」，而是把一个拼写的含义在两台机器之间交换。`sftp` 同理
 （`sftp://host/path` 是用户对远端最自然的写法，剥掉后 `host` 会变成路径首段、静默命中一个
@@ -319,7 +319,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | --- | --- |
 | `ssh_workspace_transfer` | 经 SFTP 双向拷贝，字节**不经过对话内容**；适合推构建产物、拉日志 |
 | 目录树传输 | `recursive: true`，**两个方向都支持**；下载时树内的 symlink 只列出不跟随（跟一个指向 `/` 的链接会把"下载这个目录"变成无界遍历）。冲突策略按**每个文件**判定，不是整棵树 |
-| 树传输的排除规则 | `exclude: string[]`，**两个方向共用同一份匹配**（`lib/transfer-rules.js` 的 `treeFilter`）；两侧各自解释一遍规则必然漂移——上传跳过 `node_modules` 而下载保留它，这种不对称在有人对比两棵树之前看不见。语法刻意不是 `.gitignore`：按路径段（`node_modules`）、通配（`*.log`）、从根锚定（`build/output`）、目录限定（`tmp/`）、`!` 反选，**最后匹配的一条说了算**。被排除的目录**不创建**，`refuse` 的预检也跳过它们 |
+| 树传输的排除规则 | `exclude: string[]`，**两个方向共用同一份匹配**（`lib/transfer/transfer-rules.js` 的 `treeFilter`）；两侧各自解释一遍规则必然漂移——上传跳过 `node_modules` 而下载保留它，这种不对称在有人对比两棵树之前看不见。语法刻意不是 `.gitignore`：按路径段（`node_modules`）、通配（`*.log`）、从根锚定（`build/output`）、目录限定（`tmp/`）、`!` 反选，**最后匹配的一条说了算**。被排除的目录**不创建**，`refuse` 的预检也跳过它们 |
 | 上传原子发布 | 先写同级暂存名再 `rename`；目标在被替换前读到的始终是旧内容或完整新内容，不会是半截文件；失败清暂存并保留原内容 |
 | 下载读至 EOF | 不依赖 stat 时的长度，因此传输期间变长的文件会被完整取回 |
 | 分块流式 | 每块 **256 KiB**，大文件只占有限内存 |
@@ -376,7 +376,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | 可关闭 | `engine.reconnect: false` 退回旧的「只在操作时重连一次」 |
 | 接缝接管可查 | 每个 `patch-*.js` 的安装结果记成 `seams[]`（`installed` / `absent` / `failed`）。`failed` 会在 `ssh_workspace_status` 里显式打印 `SEAM NOT INSTALLED`、进诊断报告，并把状态胶囊变红——宿主改名导致某个包装装不上，代价被限制在那项功能上，而不是整个插件 |
 
-实现见 [architecture.md](./architecture.md#后台重连libreconnectjs)；接缝接管的落盘位置见
+实现见 [architecture.md](./architecture.md#后台重连libenginereconnectjs)；接缝接管的落盘位置见
 [architecture.md](./architecture.md#接缝接管的结果表seams)。
 
 ## 五之三、远端 Skills 发现
@@ -411,7 +411,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | 跨主机的技能聚合 | 一次只用当前会话那台主机。聚合会让 A 主机的技能在 B 主机上生效，而用户以为自己只连了 B |
 | 给远端技能提升权限 | 技能不能改变会话 mode、不能绕过写围栏。它是文本，不是能力 |
 
-配置见 §八 的 `remoteSkills` 一节，实现见 [architecture.md](./architecture.md#远端技能发现libremote-skillsjs)。
+配置见 §八 的 `remoteSkills` 一节，实现见 [architecture.md](./architecture.md#远端技能发现libsurfaceremote-skillsjs)。
 ## 六、界面集成
 
 | 功能 | 说明 |

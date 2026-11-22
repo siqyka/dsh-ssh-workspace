@@ -32,7 +32,7 @@ if (!coreRoot) {
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { transferFile, uploadTree, downloadTree } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
+const { transferFile, uploadTree, downloadTree } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer/transfer.js')).href)
 
 import { createFakeSftp, fakeSftpEngine } from './support/fake-sftp.mjs'
 import { createHost } from './support/plugin-host.mjs'
@@ -198,7 +198,7 @@ try {
   // upload a file while `write` was refused — the same hole, one tool over.
   // It must resolve the policy from the calling agent's session itself.
   {
-    const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+    const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
     const modeOf = { current: undefined }
     /** A policy service whose mode the test drives. */
     const policyCtx = createHost({
@@ -368,7 +368,7 @@ try {
 
   // --- the upload tool passes the served roots down -------------------------
   {
-    const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+    const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
     const source = path.join(scratch, 'tree', 'a.txt')
     const served = fakeSftp({ dirs: ['/srv', '/srv/app', '/etc'] })
     const engine = { ...fakeSftpEngine(served.sftp), assertNotDisabled () {} }
@@ -389,7 +389,7 @@ try {
 
   // --- an upload answers to a mode the gate cannot read ---------------------
   {
-    const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/tools.js')).href)
+    const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
     const source = path.join(scratch, 'tree', 'a.txt')
     const served = fakeSftp({ dirs: ['/srv', '/srv/app'] })
     const ctx = createHost({
@@ -491,7 +491,7 @@ try {
     await writeFile(source, Buffer.from('ABCDEFGH'))
     const info = await stat(source)
     const { sourceIdentity, resumableStagingName, resumeSidecarName } = await import(
-      pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
+      pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'transfer-rules.js')).href)
     const identity = sourceIdentity({ size: info.size, mtimeMs: info.mtimeMs })
 
     const { sftp, files, state } = fakeSftp({ dirs: ['/srv'] })
@@ -536,7 +536,7 @@ try {
     await writeFile(source, Buffer.from('ABCDEFGH'))
     const info = await stat(source)
     const { sourceIdentity, resumableStagingName, resumeSidecarName } = await import(
-      pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
+      pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'transfer-rules.js')).href)
     // The sidecar describes an OLDER version of the source.
     const staleIdentity = `${info.size}:${Math.trunc(info.mtimeMs) - 60_000}`
 
@@ -592,7 +592,7 @@ try {
       thrown = error
     }
     check('the transfer failed', thrown !== undefined)
-    const { resumableStagingName } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer-rules.js')).href)
+    const { resumableStagingName } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'transfer', 'transfer-rules.js')).href)
     check('BUT the partial was kept for the next attempt',
       files.has(resumableStagingName('/srv/keep.bin')), JSON.stringify([...files.keys()]))
   }
@@ -912,7 +912,7 @@ try {
 // same staging file with 'w' and interleaved their bytes, and the loser's
 // cleanup deleted the winner's file.
 {
-  const { stagingNameOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
+  const { stagingNameOf } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer/transfer.js')).href)
   const names = new Set()
   for (let index = 0; index < 200; index += 1) names.add(stagingNameOf('/srv/app/artifact.bin', 'up'))
   check('200 staging names for one target are all distinct', names.size === 200, `${names.size} distinct`)
@@ -1142,17 +1142,17 @@ try {
 // the other. These checks pin the constant's VALUE and that every door reads the
 // same one — a duplicated `1024 ** 3` in the route family would drift silently.
 {
-  const { DEFAULT_MAX_BYTES, oversizeMessage } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer.js')).href)
+  const { DEFAULT_MAX_BYTES, oversizeMessage } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer/transfer.js')).href)
   // The byte-moving helpers moved into routes/transfer-bytes.js; the routes that
   // call them stayed in routes/transfers.js. The checks below ask "does the code
   // that moves bytes import the shared limit and bound it", so they read the
   // file that moves bytes.
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'transfer-bytes.js'), 'utf8')
-  const transferSource = readFileSync(path.join(pluginRoot, 'lib/transfer.js'), 'utf8')
+  const transferSource = readFileSync(path.join(pluginRoot, 'lib/transfer/transfer.js'), 'utf8')
 
   check('the shared limit is 1 GiB', DEFAULT_MAX_BYTES === 1024 * 1024 * 1024, String(DEFAULT_MAX_BYTES))
   check('the byte-moving code imports the limit instead of hard-coding it',
-    /import \{[^}]*DEFAULT_MAX_BYTES[^}]*\} from '\.\.\/transfer\.js'/u.test(routesSource), 'not imported')
+    /import \{[^}]*DEFAULT_MAX_BYTES[^}]*\} from '\.\.\/transfer\/transfer\.js'/u.test(routesSource), 'not imported')
   check('it hard-codes no gigabyte literal',
     !/1024\s*\*\s*1024\s*\*\s*1024/u.test(routesSource), 'a second copy of the limit exists')
   check('transfer.js states the limit once',

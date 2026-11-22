@@ -28,7 +28,7 @@
       "default": "./lib/index.js"
     },
     "./protocol": {
-      "default": "./lib/protocol.js"
+      "default": "./lib/core/protocol.js"
     },
     "./client": {
       "default": "./lib/client/client.js"

@@ -44,12 +44,12 @@ const {
   buildPassthrough, DEFAULT_LOCAL_SCHEME, DEFAULT_PASSTHROUGH, hostReferencePathsInText,
   isPosixHostPath, isWindowsHostPath, looksLocalAbsolute, MIN_SCHEME_LENGTH, normalizeLocalSpelling,
   normalizeScheme, parseLocalScheme, SCHEMES_IN_USE, schemeRefusal, schemeRules,
-} = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/passthrough.js')).href)
-const { HostConfigStore, passthroughOf } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/store.js')).href)
-const { PassthroughSettings } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/passthrough.js')).href)
-const { RemoteFileSystem } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/remote-fs.js')).href)
+} = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/fs/passthrough.js')).href)
+const { HostConfigStore, passthroughOf } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/hosts/store.js')).href)
+const { PassthroughSettings } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/fs/passthrough.js')).href)
+const { RemoteFileSystem } = await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
 const { installBuiltinBridge, uninstallBuiltinBridge } =
-  await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/fs-shim.js')).href)
+  await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/fs/fs-shim.js')).href)
 const { installRemoteFileSystem, uninstallRemoteFileSystem } =
   await import(pathToFileURL(nodePath.join(pluginRoot, 'lib/patch/patch-fs.js')).href)
 
@@ -468,9 +468,9 @@ console.log('\n[6] @ host references named by the user')
 console.log('\n[7] source wiring and single implementation')
 {
   const index = readFileSync(nodePath.join(pluginRoot, 'lib/index.js'), 'utf8')
-  const shim = readFileSync(nodePath.join(pluginRoot, 'lib/fs-shim.js'), 'utf8')
-  const remote = readFileSync(nodePath.join(pluginRoot, 'lib/remote-fs.js'), 'utf8')
-  const pass = readFileSync(nodePath.join(pluginRoot, 'lib/passthrough.js'), 'utf8')
+  const shim = readFileSync(nodePath.join(pluginRoot, 'lib/fs/fs-shim.js'), 'utf8')
+  const remote = readFileSync(nodePath.join(pluginRoot, 'lib/fs/remote-fs.js'), 'utf8')
+  const pass = readFileSync(nodePath.join(pluginRoot, 'lib/fs/passthrough.js'), 'utf8')
 
   const installs = index.match(/installRemoteFileSystem\([^)]*passthrough[^)]*\)/gu) ?? []
   check('all three installRemoteFileSystem call sites carry passthrough',
@@ -510,10 +510,12 @@ console.log('\n[7] source wiring and single implementation')
 
   const definitions = modulePaths(nodePath.join(pluginRoot, 'lib'))
     .filter(name => /export function buildPassthrough|function expandPrefix/gu.test(
-      readFileSync(nodePath.join(pluginRoot, 'lib', name), 'utf8'),
+      readFileSync(nodePath.join(pluginRoot, 'lib', ...name.split('/')), 'utf8'),
     ))
+  // Compared by basename: the question is "is this defined once", not "which
+  // folder does it live in" — a folder move must not read as a duplicate.
   check('prefix expansion is defined only in passthrough.js',
-    definitions.length === 1 && definitions[0] === 'passthrough.js',
+    definitions.length === 1 && nodePath.basename(definitions[0]) === 'passthrough.js',
     JSON.stringify(definitions))
   check('passthrough.js does not call the patched path.isAbsolute',
     !pass.includes('nodePath.isAbsolute'))
@@ -524,7 +526,7 @@ console.log('\n[7] source wiring and single implementation')
     limitIndex >= 0 && useIndex > limitIndex,
     `defined=${limitIndex} used=${useIndex}`)
   check('index imports the @ extractor from the single passthrough module',
-    /import \{[^}]*hostReferencePathsInText[^}]*\} from '\.\/passthrough\.js'/u.test(index))
+    /import \{[^}]*hostReferencePathsInText[^}]*\} from '\.\/fs\/passthrough\.js'/u.test(index))
   check('index listens for user messages to record @ references',
     index.includes("ctx.on('session/event'") && index.includes("event?.type !== 'user/message'"))
   check('index rescans a restored session once on creation',
@@ -1209,7 +1211,7 @@ console.log('\n[11] the scheme rules')
     SCHEMES_IN_USE.filter(entry => entry.name.length >= MIN_SCHEME_LENGTH)
       .every(entry => schemeRefusal(entry.name).code === 'reserved'))
   // `file` is the one entry whose reason is about THIS plugin rather than the
-  // wider web: `formatRemoteFileUrl` (lib/protocol.js) writes `file:///srv/x`
+  // wider web: `formatRemoteFileUrl` (lib/core/protocol.js) writes `file:///srv/x`
   // for a REMOTE path, so a `file:` local prefix would exchange one spelling
   // between two machines. Do not remove this entry without removing that writer.
   check('file is refused because this plugin itself writes file:/// for remote paths',

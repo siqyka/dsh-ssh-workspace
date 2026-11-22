@@ -19,31 +19,31 @@ const SUITE = 'tests/jump-transport-smoke.mjs'
 const MUTATIONS = [
   {
     name: 'the chain is built but never dialed through (silent direct)',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     find: '    if (chain.sock !== undefined) config.sock = chain.sock\n',
     replace: '',
   },
   {
     name: 'a hop port defaults to 22 instead of the entry\'s port',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     find: '        ...(hop.port === undefined ? {} : { port: hop.port }),',
     replace: '        port: hop.port ?? 22,',
   },
   {
     name: 'each hop trusts anything instead of pinning its own key',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     find: '        hopConfig.hostVerifier = this.#makeHostKeyVerifier({ ...hop }, hopKeyState)',
     replace: '        hopConfig.hostVerifier = () => true',
   },
   {
     name: 'the chain is never torn down with its record',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     find: '    try { record.jumpChain?.close?.() } catch { /* already gone */ }\n',
     replace: '',
   },
   {
     name: 'a half-built chain leaks its open sessions',
-    file: 'lib/engine.js',
+    file: 'lib/engine/engine.js',
     find: "      for (const hop of [...opened].reverse()) {\n        try { hop.client.destroy() } catch { /* already gone */ }\n      }\n      throw error",
     replace: '      throw error',
   },

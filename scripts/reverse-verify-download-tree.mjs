@@ -15,31 +15,31 @@ const SUITE = 'tests/transfer-smoke.mjs'
 const MUTATIONS = [
   {
     name: 'a symlink in the remote tree is followed',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: "      if (typeof attrs.isSymbolicLink === 'function' && attrs.isSymbolicLink() === true) {\n        links.push(source)\n        continue\n      }",
     replace: '      void links',
   },
   {
     name: 'nested directories are not descended into',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: "      if (typeof attrs.isDirectory === 'function' && attrs.isDirectory() === true) {\n        await walk(source, target)\n        continue\n      }",
     replace: '      if (false) {\n        continue\n      }',
   },
   {
     name: 'the conflict policy is applied once for the whole tree',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: "      const decision = await decideConflict({\n        policy,\n        exists: existsSync(target),",
     replace: "      const decision = await decideConflict({\n        policy: 'overwrite',\n        exists: existsSync(target),",
   },
   {
     name: 'a skipped file still counts as transferred',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: '        skipped += 1\n        continue',
     replace: '        skipped += 1',
   },
   {
     name: 'the local directory is not created before writing',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: '    await mkdir(to, { recursive: true })\n    const entries = await listRemote(from)',
     replace: '    const entries = await listRemote(from)',
   },

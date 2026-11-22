@@ -48,7 +48,7 @@ if (process.env.DSH_CORE_ROOT) {
   process.env.DSH_PEER_ROOT = [process.env.DSH_CORE_ROOT, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 }
 
-const skills = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'remote-skills.js')).href)
+const skills = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'surface', 'remote-skills.js')).href)
 const { RemoteSkillsProvider, normalizeRemoteSkillsConfig, parseFrontmatter, parseMapping, parseSkillText, REMOTE_SKILL_RANK, PROVIDER_NAME } = skills
 
 let passed = 0

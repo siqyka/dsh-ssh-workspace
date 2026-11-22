@@ -8,7 +8,7 @@
  * the defect I work around?", not "is the shape I attach to still there?".
  *
  * So each patch declares its Host-side dependencies in
- * `lib/upstream-contract.js`, and this suite asserts the declaration against
+ * `lib/core/upstream-contract.js`, and this suite asserts the declaration against
  * the module source in BOTH directions:
  *
  *  - a symbol the patch uses but never declared is an undeclared dependency;
@@ -29,7 +29,7 @@ import { modulePaths } from './support/lib-modules.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { CONTRACTS, contractFor, missingFiles } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib', 'upstream-contract.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib', 'core', 'upstream-contract.js')).href
 )
 
 let passed = 0

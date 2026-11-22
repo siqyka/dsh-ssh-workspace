@@ -36,7 +36,7 @@ const directorySchema = z$1.string().min(1).refine(isAbsolute).nullable()
 ### 缺陷
 
 `refine(isAbsolute)` 把谓词当**值**交给 zod——模块在服务构造那一刻持有的那个
-`isAbsolute` 函数。插件的内建桥接（`lib/fs-shim.js`）替换 `node:path.isAbsolute`
+`isAbsolute` 函数。插件的内建桥接（`lib/fs/fs-shim.js`）替换 `node:path.isAbsolute`
 并调用 `syncBuiltinESMExports()`，那只能更新 ESM **绑定**：
 
 | 调用方 | 读绑定还是读值 | 补丁是否生效 |
@@ -145,9 +145,9 @@ DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS=1   # 重启 DSH
    的文档索引里去掉这一行；
 5. 更新 `docs/architecture.md` 的「一处补丁打不到的地方：按值捕获的 schema」一节——
    该节描述的是缺陷本身，删掉补丁后可以整节移除，或改成「宿主已修复」的一行说明；
-6. `lib/engine.js`：删掉 `upstreamWorkarounds` 字段与 `noteUpstreamWorkaround()`；
-   `lib/tools.js` 的 status 输出与 `lib/routes/workspaces.js` 的 status 路由去掉 `upstreamWorkarounds`，
-   `lib/diagnostics.js` 去掉 `KINDS.upstream`（连同 `tests/diagnostics-smoke.mjs` 里对应的断言）；
+6. `lib/engine/engine.js`：删掉 `upstreamWorkarounds` 字段与 `noteUpstreamWorkaround()`；
+   `lib/surface/tools.js` 的 status 输出与 `lib/routes/workspaces.js` 的 status 路由去掉 `upstreamWorkarounds`，
+   `lib/core/diagnostics.js` 去掉 `KINDS.upstream`（连同 `tests/diagnostics-smoke.mjs` 里对应的断言）；
 7. [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) 的「本仓库的现状」
    一节改成「当前没有登记在案的补丁」——**那一页不要删**，它讲的是方法，不是这个实例；
 8. `CHANGELOG.md` 记一条「移除 UPSTREAM-1 临时补丁」。

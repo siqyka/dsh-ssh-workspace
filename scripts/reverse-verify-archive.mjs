@@ -44,56 +44,56 @@ if (!path.isAbsolute(coreRoot)) {
 const MUTATIONS = [
   {
     name: 'the tar size field is written in DECIMAL (the bug a real reader caught)',
-    file: 'lib/archive.js',
+    file: 'lib/transfer/archive.js',
     find: '  const digits = Math.max(0, Math.trunc(value)).toString(8)',
     replace: '  const digits = String(Math.max(0, Math.trunc(value)))',
     suite: 'archive',
   },
   {
     name: 'the tar mtime is written in decimal',
-    file: 'lib/archive.js',
+    file: 'lib/transfer/archive.js',
     find: '  writeOctal(header, 136, 12, Math.max(0, Math.trunc(entry.mtime ?? 0)))',
     replace: "  header.write(String(Math.max(0, Math.trunc(entry.mtime ?? 0))).padStart(11, '0') + '\\0', 136, 12, 'ascii')",
     suite: 'archive',
   },
   {
     name: 'a short entry is emitted instead of refused',
-    file: 'lib/archive.js',
+    file: 'lib/transfer/archive.js',
     find: '    if (written !== size) {',
     replace: '    if (false) {',
     suite: 'archive',
   },
   {
     name: 'a file past 100 bytes is silently truncated instead of split',
-    file: 'lib/archive.js',
+    file: 'lib/transfer/archive.js',
     find: "  if (name <= 100) return { prefix: '', name: path }",
     replace: "  return { prefix: '', name: path.slice(0, 100) }",
     suite: 'archive',
   },
   {
     name: 'the exclusion rules become first-match-wins (a re-include stops working)',
-    file: 'lib/transfer-rules.js',
+    file: 'lib/transfer/transfer-rules.js',
     find: '      let verdict\n      for (const rule of compiled) {\n        if (rule.test(path, isDir)) verdict = !rule.include\n      }\n      return verdict === true',
     replace: '      return compiled.some(rule => !rule.include && rule.test(path, isDir))',
     suite: 'archive',
   },
   {
     name: "an anchored rule stops matching its own path",
-    file: 'lib/transfer-rules.js',
+    file: 'lib/transfer/transfer-rules.js',
     find: "        if (pattern.test(clean)) return true\n        let cut = clean.lastIndexOf('/')",
     replace: "        if (pattern.test(clean)) return false\n        let cut = clean.lastIndexOf('/')",
     suite: 'archive',
   },
   {
     name: 'the glob compiles to a substring match instead of an anchored one',
-    file: 'lib/transfer-rules.js',
+    file: 'lib/transfer/transfer-rules.js',
     find: "  return new RegExp(`^${out}$`, 'u')",
     replace: "  return new RegExp(out, 'u')",
     suite: 'archive',
   },
   {
     name: 'the tar walk ignores the exclude rules',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     // The anchor extends past the filter into the tar walk's own `yield`, and
     // that matters: `downloadTree`'s walk contains the SAME filter lines, so a
     // shorter anchor is replaced in the wrong function — the mutation then
@@ -105,21 +105,21 @@ const MUTATIONS = [
   },
   {
     name: 'the archive silently omits the skips instead of reporting them',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: '    if (links.length === 0 && excluded === 0) return',
     replace: '    if (true) return',
     suite: 'archive',
   },
   {
     name: 'downloadTreeAsTar returns RAW ENTRIES instead of archive bytes',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: "  return { stream: format === 'tar' ? tarStream(archiveEntries()) : zipStream(archiveEntries()), format }",
     replace: "  return { stream: archiveEntries(), format }",
     suite: 'archive',
   },
   {
     name: 'a symlink inside the tree is followed into the archive',
-    file: 'lib/transfer.js',
+    file: 'lib/transfer/transfer.js',
     find: "      if (typeof attrs.isSymbolicLink === 'function' && attrs.isSymbolicLink() === true) {\n        links.push(source)\n        continue\n      }\n      const isDirectory = typeof attrs.isDirectory === 'function' && attrs.isDirectory() === true\n      if (filter.excluded(relativeForRule(remotePath, source), isDirectory)) {",
     replace: "      const isDirectory = typeof attrs.isDirectory === 'function' && attrs.isDirectory() === true\n      if (filter.excluded(relativeForRule(remotePath, source), isDirectory)) {",
     suite: 'archive',
@@ -251,7 +251,7 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const after = ['lib/archive.js', 'lib/transfer-rules.js', 'lib/transfer.js', 'lib/client/client.js']
+const after = ['lib/transfer/archive.js', 'lib/transfer/transfer-rules.js', 'lib/transfer/transfer.js', 'lib/client/client.js']
   .map(name => [name, damagedCount(readFileSync(path.join(root, name), 'utf8'))])
   .filter(([, count]) => count > 0)
 if (after.length > 0) {

@@ -31,7 +31,7 @@ function check (label, ok, detail) {
   }
 }
 
-const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
+const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'surface', 'tools.js'), 'utf8')
 
 console.log('\n[1] the counters read the source')
 {

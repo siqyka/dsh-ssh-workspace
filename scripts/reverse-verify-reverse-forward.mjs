@@ -17,37 +17,37 @@ const SUITE = 'tests/reverse-forward-smoke.mjs'
 const MUTATIONS = [
   {
     name: 'the remote listener is never cancelled on close',
-    file: 'lib/forward.js',
+    file: 'lib/forward/forward.js',
     find: '        record.client.unforwardIn?.(remoteHost, entry.boundRemotePort, () => {})',
     replace: '        void 0',
   },
   {
     name: 'a non-loopback bind is reported as safe',
-    file: 'lib/forward.js',
+    file: 'lib/forward/forward.js',
     find: '  return true\n}',
     replace: '  return false\n}',
   },
   {
     name: 'the assigned port is ignored (0 stays 0)',
-    file: 'lib/forward.js',
+    file: 'lib/forward/forward.js',
     find: '    entry.boundRemotePort = bound\n',
     replace: '    entry.boundRemotePort = remotePort\n',
   },
   {
     name: 'the local target is never dialed (connections hang)',
-    file: 'lib/forward.js',
+    file: 'lib/forward/forward.js',
     find: '      upstream.once(\'connect\', () => {\n        socket.pipe(upstream).pipe(socket)\n      })',
     replace: '      upstream.once(\'connect\', () => {})',
   },
   {
     name: 'a dead local target leaves the channel open',
-    file: 'lib/forward.js',
+    file: 'lib/forward/forward.js',
     find: '        try { socket.close() } catch { /* already gone */ }\n        try { upstream.destroy() } catch { /* already gone */ }',
     replace: '        try { upstream.destroy() } catch { /* already gone */ }',
   },
   {
     name: 'the diagnostics never mention exposure',
-    file: 'lib/forward.js',
+    file: 'lib/forward/forward.js',
     find: "${isExposedBind(entry.remoteHost) ? ' (exposed beyond the remote host)' : ''}",
     replace: "''",
   },

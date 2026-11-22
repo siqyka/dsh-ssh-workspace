@@ -27,14 +27,14 @@
 
 | 能力 | 位置 |
 | --- | --- |
-| `ctx.fs.writeText(target, content, expected, signal, sandboxPolicy)` | `lib/remote-fs.js:1070` |
-| `ctx.fs.editText(target, edit, expected, signal, sandboxPolicy)` | `lib/remote-fs.js:1104` |
-| 版本冲突语义（`expected.kind === 'replaceIfVersion'` 不匹配即 `FS_STALE_VERSION`） | `lib/remote-fs.js:1079-1084` / `:1114-1116` |
-| 原子发布（同目录暂存 → chmod → rename，失败清理） | `#publish` `lib/remote-fs.js:1621`、`publishRename` `:2479` |
+| `ctx.fs.writeText(target, content, expected, signal, sandboxPolicy)` | `lib/fs/remote-fs.js:1070` |
+| `ctx.fs.editText(target, edit, expected, signal, sandboxPolicy)` | `lib/fs/remote-fs.js:1104` |
+| 版本冲突语义（`expected.kind === 'replaceIfVersion'` 不匹配即 `FS_STALE_VERSION`） | `lib/fs/remote-fs.js:1079-1084` / `:1114-1116` |
+| 原子发布（同目录暂存 → chmod → rename，失败清理） | `#publish` `lib/fs/remote-fs.js:1621`、`publishRename` `:2479` |
 | 写围栏 | `writeFenceRoots` `:2019`、`assertWithinRemoteRoots` `:2040`、`assertFencedRealpath` `:2082` |
-| mode 门禁 | `writeModeRefusal` `lib/mode-gate.js:120`、`sessionModeOf` `:151`、`sessionPolicyOf` `:215` |
-| 行尾工具（CRLF/LF 归一与还原） | `normalizeLineEndings` `lib/remote-fs.js:2209`、`detectLineEndings` `:2214`、`restoreLineEndings` `:2221` |
-| 严格 UTF-8 解码（非法即 `FS_NOT_TEXT`） | `decodeUtf8` `lib/remote-fs.js:2189` |
+| mode 门禁 | `writeModeRefusal` `lib/core/mode-gate.js:120`、`sessionModeOf` `:151`、`sessionPolicyOf` `:215` |
+| 行尾工具（CRLF/LF 归一与还原） | `normalizeLineEndings` `lib/fs/remote-fs.js:2209`、`detectLineEndings` `:2214`、`restoreLineEndings` `:2221` |
+| 严格 UTF-8 解码（非法即 `FS_NOT_TEXT`） | `decodeUtf8` `lib/fs/remote-fs.js:2189` |
 | 读取原语 | `stat` `:711`（返回 `{version, type, size}`）、`readText` `:772`、`readBytes` `:881`、`readByteRange` `:908` |
 
 **关键缺口：本项目没有任何「读文件内容」的 HTTP 路由。** `lib/routes.js` 的 `ROUTES`（`:97-157`，33 条）里
@@ -116,7 +116,7 @@ POST /api/dsh-ssh-workspace/edit-text
 
 ### 4.3 版本从哪来：`version` + `revision` 双令牌
 
-`versionOf(stats)`（`lib/remote-fs.js:117`）是 `ino:size:mtime`，SFTP 没有亚秒字段。
+`versionOf(stats)`（`lib/fs/remote-fs.js:117`）是 `ino:size:mtime`，SFTP 没有亚秒字段。
 用它单独当版本，就正好漏掉 dsh-remote 已经踩过的那个坑：**同一秒、同样大小的外部改动**。
 但每次保存都做全文件哈希比对也不是白拿的——所以分两级：
 
@@ -223,7 +223,7 @@ onKeyDown: (event) => {
 
 ### 4.7 编码：能编辑什么，不能编辑什么
 
-**判定看内容，不看扩展名**：前 `BINARY_SAMPLE_BYTES = 8192` 字节（`lib/remote-fs.js:37`）含 NUL 即二进制。
+**判定看内容，不看扩展名**：前 `BINARY_SAMPLE_BYTES = 8192` 字节（`lib/fs/remote-fs.js:37`）含 NUL 即二进制。
 
 | 类别 | 能否编辑 | 原因 |
 | --- | --- | --- |
@@ -232,7 +232,7 @@ onKeyDown: (event) => {
 | 数据文本（`.csv` `.log` `.diff` `.patch`） | ✅ | 2 MiB 上限对日志偏小，超限只读 |
 | `.svg` | ✅ | 它是文本——所以**没有扩展名黑名单**是对的 |
 | 图片 / 音视频 / 压缩包 / Office / 字体 / 可执行文件 / sqlite | ❌ | `FS_NOT_TEXT`（前 8192 字节含 NUL） |
-| **非 UTF-8 文本**（GBK、GB18030、UTF-16、latin-1） | ❌ | `decodeUtf8`（`lib/remote-fs.js:2189`）是 strict 模式，解码失败即 `FS_NOT_TEXT` |
+| **非 UTF-8 文本**（GBK、GB18030、UTF-16、latin-1） | ❌ | `decodeUtf8`（`lib/fs/remote-fs.js:2189`）是 strict 模式，解码失败即 `FS_NOT_TEXT` |
 | 超过 2 MiB 的文本 | ❌ | 按钮置灰；读路由可截断并标 `truncated: true`，但不能保存 |
 
 **非 UTF-8 是国内项目的真实痛点**，必须在第一版就说清楚而不是让用户点开才发现：按钮不渲染时，

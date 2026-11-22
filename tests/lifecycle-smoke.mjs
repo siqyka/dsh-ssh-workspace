@@ -32,7 +32,7 @@ if (!coreRoot) {
 skipWithoutRealPeers('lifecycle smoke', 'a real assembled DSH tree (@deepseek-ai/cordis, dsh-fs and dsh-tools)', {
   requires: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-fs', '@deepseek-ai/dsh-tools'],
 })
-// Let the plugin's own requirePeer find the same tree (see lib/peers.js).
+// Let the plugin's own requirePeer find the same tree (see lib/core/peers.js).
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')

@@ -18,31 +18,31 @@ const SUITE = 'tests/shell-smoke.mjs'
 const MUTATIONS = [
   {
     name: 'the remembered start directory is ignored on reopen',
-    file: 'lib/shell.js',
+    file: 'lib/surface/shell.js',
     find: 'const cwd = requested ?? remembered?.cwd',
     replace: 'const cwd = requested',
   },
   {
     name: 'a reopen is reported as an ordinary first open',
-    file: 'lib/shell.js',
+    file: 'lib/surface/shell.js',
     find: 'reopened: reused !== true && (start?.reopens ?? 0) > 0,',
     replace: 'reopened: false,',
   },
   {
     name: 'an explicit close keeps the start directory',
-    file: 'lib/shell.js',
+    file: 'lib/surface/shell.js',
     find: '      this.starts.delete(key)\n',
     replace: '',
   },
   {
     name: 'the remembered start overrides an explicit cwd',
-    file: 'lib/shell.js',
+    file: 'lib/surface/shell.js',
     find: 'const cwd = requested ?? remembered?.cwd',
     replace: 'const cwd = remembered?.cwd ?? requested',
   },
   {
     name: 'the list calls the start directory "cwd"',
-    file: 'lib/shell.js',
+    file: 'lib/surface/shell.js',
     find: '        startedIn: start?.cwd,',
     replace: '        cwd: start?.cwd,',
   },

@@ -31,10 +31,10 @@ import { routeSource } from './support/route-source.mjs'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { ReconnectScheduler, RECONNECT_DEFAULTS } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib', 'reconnect.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib', 'engine', 'reconnect.js')).href
 )
 const { Diagnostics, KINDS } = await import(
-  pathToFileURL(path.join(pluginRoot, 'lib', 'diagnostics.js')).href
+  pathToFileURL(path.join(pluginRoot, 'lib', 'core', 'diagnostics.js')).href
 )
 
 let passed = 0
@@ -386,7 +386,7 @@ console.log('\n[engine wiring]')
 
 {
   const { readFileSync } = await import('node:fs')
-  const engineSource = readFileSync(path.join(pluginRoot, 'lib', 'engine.js'), 'utf8')
+  const engineSource = readFileSync(path.join(pluginRoot, 'lib', 'engine', 'engine.js'), 'utf8')
   check('the engine arms the loop from the socket close event', /client\.on\('close',[\s\S]{0,600}noteLost/u.test(engineSource))
   check('only a record still in the pool may arm it (deliberate closes are excluded)', /this\.pool\.get\(alias\) !== record\) return/u.test(engineSource))
   check('forget() cancels the background loop', /reconnector\?\.cancel\(alias/u.test(engineSource))
@@ -412,7 +412,7 @@ console.log('\n[engine wiring]')
   check('a successful background connect no longer fires the hook itself',
     !/async #backgroundConnect[\s\S]{0,600}this\.onReconnected\?\./u.test(engineSource))
   check('a manual retry also restores (it is a recovery too)',
-    /await this\.attempt\(target\)[\s\S]{0,200}onRestored\?\./u.test(readFileSync(path.join(pluginRoot, 'lib', 'reconnect.js'), 'utf8')))
+    /await this\.attempt\(target\)[\s\S]{0,200}onRestored\?\./u.test(readFileSync(path.join(pluginRoot, 'lib', 'engine', 'reconnect.js'), 'utf8')))
 }
 
 {
@@ -422,7 +422,7 @@ console.log('\n[engine wiring]')
   check('a manual reconnect route exists', /hostReconnect/u.test(routesSource))
   const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')
   check('a reconnect restores the saved tunnels', /onReconnected[\s\S]{0,400}reopenEnabled/u.test(indexSource))
-  const persistSource = readFileSync(path.join(pluginRoot, 'lib', 'forward.js'), 'utf8')
+  const persistSource = readFileSync(path.join(pluginRoot, 'lib', 'forward', 'forward.js'), 'utf8')
   check('reopenEnabled only opens rows whose intent is still on', /entry\.alias === target && entry\.enabled/u.test(persistSource))
 }
 

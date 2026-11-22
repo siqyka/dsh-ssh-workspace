@@ -23,7 +23,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { Diagnostics, CAPACITY, KINDS, SCHEMA_VERSION } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'diagnostics.js')).href)
+const { Diagnostics, CAPACITY, KINDS, SCHEMA_VERSION } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'core', 'diagnostics.js')).href)
 
 let passed = 0
 let failures = 0
@@ -140,7 +140,7 @@ console.log('\n[the Host drops logger.debug, so this log is the reachable one]')
 // debug, this assertion telling us to reconsider is better than silently
 // keeping a redundant surface. It is pinned against the SOURCE of the engine,
 // which must record through this module rather than assert observability.
-const engineSource = readFileSync(path.join(pluginRoot, 'lib', 'engine.js'), 'utf8')
+const engineSource = readFileSync(path.join(pluginRoot, 'lib', 'engine', 'engine.js'), 'utf8')
 check(
   'the engine records connection events into this log',
   // Whitespace-tolerant on purpose: the call is wrapped across lines, and this
@@ -156,7 +156,7 @@ check(
 check(
   'every kind in the vocabulary is actually recorded somewhere',
   (() => {
-    const sources = ['engine.js', 'remote-fs.js', 'forward.js', 'ownership.js', 'remote-skills.js']
+    const sources = ['engine/engine.js', 'fs/remote-fs.js', 'forward/forward.js', 'surface/ownership.js', 'surface/remote-skills.js']
       .map(file => readFileSync(path.join(pluginRoot, 'lib', file), 'utf8'))
       .join('\n')
     return Object.entries(KINDS).every(([name]) => new RegExp(`KINDS\\.${name}\\b`).test(sources))
@@ -172,7 +172,7 @@ check(
 console.log('\n[an obsolete workaround reaches the status surfaces]')
 
 {
-  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
+  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine', 'engine.js')).href)
   const engine = new SshWorkspaceEngine({})
 
   check('a fresh engine reports no workaround verdicts', engine.upstreamWorkarounds.length === 0)
@@ -213,8 +213,8 @@ console.log('\n[an obsolete workaround reaches the status surfaces]')
 // source because the tool needs a live ctx.fs to construct; the shape check
 // above already proved the engine side of the join.
 {
-  const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
-  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status.js'), 'utf8')
+  const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'surface', 'tools.js'), 'utf8')
+  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'surface', 'status.js'), 'utf8')
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'routes.js'), 'utf8')
   check('ssh_workspace_status returns the verdicts', /upstreamWorkarounds: \(engine\.upstreamWorkarounds/u.test(toolsSource))
   check('the panel status route returns them too', /upstreamWorkarounds: engine\.upstreamWorkarounds/u.test(routesSource))
@@ -242,8 +242,8 @@ console.log('\n[an obsolete workaround reaches the status surfaces]')
 console.log('\n[a seam that did not install is reported, an absent one is not]')
 
 {
-  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine.js')).href)
-  const { diagnose } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'report.js')).href)
+  const { SshWorkspaceEngine } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'engine', 'engine.js')).href)
+  const { diagnose } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'report', 'report.js')).href)
   const engine = new SshWorkspaceEngine({})
 
   check('a fresh engine reports no seam verdicts', engine.seams.length === 0)
@@ -283,10 +283,10 @@ console.log('\n[a seam that did not install is reported, an absent one is not]')
 // over, or a reader sees the same quiet startup for a clean deployment and for a
 // wrapper that never installed.
 {
-  const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'tools.js'), 'utf8')
-  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'status.js'), 'utf8')
+  const toolsSource = readFileSync(path.join(pluginRoot, 'lib', 'surface', 'tools.js'), 'utf8')
+  const renderSource = readFileSync(path.join(pluginRoot, 'lib', 'surface', 'status.js'), 'utf8')
   const routesSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'routes.js'), 'utf8')
-  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'report.js'), 'utf8')
+  const bundleSource = readFileSync(path.join(pluginRoot, 'lib', 'report', 'report.js'), 'utf8')
   const indexSource = readFileSync(path.join(pluginRoot, 'lib', 'index.js'), 'utf8')
   check('ssh_workspace_status returns the seam table', /seams: \(engine\.seams/u.test(toolsSource))
   check('the panel status route returns it too', /seams: engine\.seams/u.test(routesSource))

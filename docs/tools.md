@@ -135,7 +135,7 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 
 `seq` 是环形缓冲区的自增序号。它必须出现在返回值里，因为**环会淘汰旧条目**：没有 `seq`，
 两条相邻的记录看起来就是连续的，而实际的「中间漏掉了几条」正是判读一次断线所依据的信息。
-（这个字段一直由 `lib/diagnostics.js` 产生，只是最初的 schema 没声明它——DSH 0.2.2-rc.1
+（这个字段一直由 `lib/core/diagnostics.js` 产生，只是最初的 schema 没声明它——DSH 0.2.2-rc.1
 开始真正校验工具返回值，于是整个 status 调用被拒。）
 
 `shells[].startedIn` 是会话**启动时**所在的目录，不是当前目录（远端 shell 的当前目录从这里
@@ -177,7 +177,7 @@ durationMs / exitCode / timedOut`，以及可选的 `outcomeUnknown`、`refused`
 `diagnosis`：面板状态灯的判定，`{ version, state, warn, unknown, findings[], notes[], text }`。
 `state` 三值——`ok` / `warn` / `unknown`——且**只有需要处理的事项才进 `findings`**，所以
 `findings` 为空恰好等价于 `state: 'ok'`。判定只读上面这些字段，不探测、不连接、不读文件。
-它和报告、面板是同一个模块（`lib/report.js`），三处不会讲三个故事。
+它和报告、面板是同一个模块（`lib/report/report.js`），三处不会讲三个故事。
 
 `notes`：自检的观察结果，**不计入判定**。缺 `rg`、非 UTF-8 locale、watch 上限偏低这类
 事实属于「那台主机就是这样」，不是「这个会话出了事」——它们往往在主机侧改不了，混进
@@ -343,7 +343,7 @@ redirect URI），需要一并放行 localhost。
 - **命令执行同样受模式约束**：`ssh_workspace_exec`、`ssh_workspace_shell` 在 `read-only`
   下直接拒绝（返回 `success: false` / `ok: false`，文案自述原因与出路），因为本机沙箱跨不过
   SSH，没有可用的围栏手段。`ssh_workspace_shell` 的 `close: true` 不受限——关闭不改变远端任何东西。
-  这三处与 `write` / `edit` / 上传共用 `lib/mode-gate.js` 的判定，不会各自漂移；
+  这三处与 `write` / `edit` / 上传共用 `lib/core/mode-gate.js` 的判定，不会各自漂移；
 - glob / grep 在远端工作区调用**远端主机的 ripgrep**（需远端已安装 `rg`，
   缺失时命令以退出码 127 失败并附安装提示）；工作区变更追踪用**远端 git**
   （未安装时该功能自动降级，不阻断会话）。本地工作区不受影响。
