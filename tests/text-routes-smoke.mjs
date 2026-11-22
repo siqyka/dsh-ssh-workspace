@@ -159,7 +159,15 @@ if (!coreRoot) {
         '/srv/app/crlf.txt': 'one\r\ntwo\r\n',
         '/srv/app/bom.txt': '\uFEFFwith a bom\n',
         '/srv/app/binary.bin': Buffer.from([0x41, 0x00, 0x42]),
-        '/srv/app/latin.txt': Buffer.from([0xE4, 0xE8, 0x2E]), // not UTF-8
+        // Undecodable as UTF-8 AND as GB18030, which is what "not text" now
+        // means: `E4 E8 2E` used to be the fixture and is a perfectly valid
+        // GB18030 sequence for 滂, so it is readable text today.
+        '/srv/app/latin.txt': Buffer.from([0xFF, 0xFF, 0x2E]),
+        // Readable, but not writable: Node has no GB18030 encoder here.
+        '/srv/app/gbk.txt': Buffer.from([0xC4, 0xE3, 0xBA, 0xC3]),
+        // A genuine UTF-16LE body with a BOM. Opening it as text is only half
+        // the point — a save has to put the bytes back the same way.
+        '/srv/app/utf16.txt': Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from('alpha\nbeta\n', 'utf16le')]),
       },
       dirs: ['/srv', '/srv/app'],
     })
@@ -211,9 +219,20 @@ if (!coreRoot) {
     const binary = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/binary.bin' })}`)
     check('a binary file is a 400 FS_NOT_TEXT', binary.status === 400 && binary.json?.code === 'FS_NOT_TEXT', binary.body)
 
+    // A file that is neither UTF-8 nor GB18030. The refusal now names both
+    // attempts, because "not UTF-8" alone is no longer the whole rule.
     const latin = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/latin.txt' })}`)
-    check('a non-UTF-8 file is refused instead of guessed at',
+    check('a file that is neither UTF-8 nor GB18030 is refused',
       latin.status === 400 && latin.json?.code === 'FS_NOT_TEXT', latin.body)
+
+    // The other direction: a GB18030 file must OPEN, which is the whole point of
+    // the encoding work. Reading it and refusing to write it are separate
+    // answers, and both have to be right.
+    const gbk = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/gbk.txt' })}`)
+    check('a GB18030 file is readable rather than "binary"',
+      gbk.status === 200 && gbk.json?.text === '你好', gbk.body)
+    check('...and reports the encoding it was decoded with',
+      gbk.json?.encoding === 'gb18030' && gbk.json?.bom === false, gbk.body)
 
     const missing = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/ghost.txt' })}`)
     check('a missing file is a 404', missing.status === 404, missing.body)
@@ -295,8 +314,16 @@ if (!coreRoot) {
     check('a probe names the reason a binary file is not editable',
       probeBin.status === 200 && probeBin.json?.editable === false && probeBin.json?.reason === 'binary', probeBin.body)
     const probeUtf = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/latin.txt', probe: '1' })}`)
-    check('a probe names the reason a non-UTF-8 file is not editable',
+    check('a probe names the reason a non-text file is not editable',
       probeUtf.status === 200 && probeUtf.json?.reason === 'not-utf8', probeUtf.body)
+    // GB18030 reads but does not write, and the probe is where that has to show
+    // up. Discovering it at save time would mean the first save silently
+    // converts the file.
+    const probeGbk = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/gbk.txt', probe: '1' })}`)
+    check('a probe refuses to offer an edit it could not save',
+      probeGbk.status === 200 && probeGbk.json?.reason === 'not-encodable', probeGbk.body)
+    check('...and says which encoding it means',
+      probeGbk.json?.encoding === 'gb18030', probeGbk.body)
     // The button has to disappear in a read-only session, and it has to
     // disappear for THAT reason: telling someone their file is binary when the
     // real answer is "this session cannot write" sends them looking for a
@@ -384,6 +411,33 @@ if (!coreRoot) {
       bomAfter[0] === 0xEF && bomAfter[1] === 0xBB && bomAfter[2] === 0xBF, bomAfter.subarray(0, 3).toString('hex'))
     check('...and the BOM was not doubled', seeded.tree.read('/srv/app/bom.txt') === '\uFEFFstill a bom\n',
       JSON.stringify(seeded.tree.read('/srv/app/bom.txt')))
+
+    // ---- the encoding survives a save
+    //
+    // This is the case the encoding work exists for. A UTF-16 file that opens
+    // correctly and then saves as UTF-8 is DAMAGED by a one-character edit:
+    // every byte in the file changes, so the whole thing shows up as rewritten
+    // in a diff. The save has to write the bytes back in the encoding it read.
+    const utf16Read = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/utf16.txt' })}`)
+    check('a UTF-16LE file opens as text rather than "binary"',
+      utf16Read.status === 200 && utf16Read.json?.text === 'alpha\nbeta\n', utf16Read.body)
+    check('...and reports its encoding and BOM', utf16Read.json?.encoding === 'utf16le' && utf16Read.json?.bom === true,
+      utf16Read.body)
+
+    const utf16Save = await post(routes, ROUTES.writeText, {
+      sessionId: 's-rw',
+      path: 'ssh://box/srv/app/utf16.txt',
+      text: 'alpha\nbeta\ngamma\n',
+      expected: { version: utf16Read.json.version, revision: utf16Read.json.revision },
+    })
+    check('...and it saves', utf16Save.status === 200, utf16Save.body)
+    const utf16After = seeded.tree.bytes('/srv/app/utf16.txt')
+    check('the saved file is still UTF-16LE, not silently converted to UTF-8',
+      utf16After[0] === 0xFF && utf16After[1] === 0xFE && utf16After.includes(0), utf16After.toString('hex'))
+    check('...and the text round-trips through it',
+      utf16After.subarray(2).toString('utf16le') === 'alpha\nbeta\ngamma\n',
+      JSON.stringify(utf16After.subarray(2).toString('utf16le')))
+    check('...and no UTF-8 BOM crept in at the front', utf16After[0] !== 0xEF, utf16After.subarray(0, 3).toString('hex'))
 
     // ---- the fences
     const roSave = await post(routes, ROUTES.writeText, {

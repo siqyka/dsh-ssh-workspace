@@ -285,8 +285,12 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
 // [6] Encoding, BOM, and the refusal copy (19, 20)
 // ---------------------------------------------------------------------------
 {
+  // The BOM is now one fact among several that the format sniff reports, so the
+  // assertion follows it out of `text.js` rather than pinning an implementation
+  // detail that moved into its own module.
+  const textEncoding = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'text-encoding.js'), 'utf8')
   check('the read route reports a BOM rather than dropping it',
-    textRoutes.includes('hasBom(raw)') && /^\s+bom,$/mu.test(textRoutes))
+    textEncoding.includes('BOM_UTF8') && /^\s+bom: format\.bom,$/mu.test(textRoutes))
   check('the save sends the BOM flag back', editor.includes('bom: state.bom'))
   check('...and the line-ending policy is the server\'s, not the browser\'s',
     editor.includes("eol: 'auto'") && !/\\r\\n/u.test(editor))

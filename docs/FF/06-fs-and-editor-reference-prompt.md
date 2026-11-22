@@ -89,7 +89,7 @@ node tests/dirs-listing-smoke.mjs
 npm run check
 ```
 
-`npm run check` 应输出：`all N modules parse` · `client-map: 1 map(s) describe 17 section(s)` · `=== run.mjs: 97 passed, 2 partial, 3 skipped, 0 failed (102 suite(s)) ===`。
+`npm run check` 应输出：`all N modules parse` · `client-map: 1 map(s) describe 17 section(s)` · `=== run.mjs: 98 passed, 2 partial, 3 skipped, 0 failed (103 suite(s)) ===`。
 
 > 注意：`scripts/reverse-verify-*.mjs` 不在 `npm test` 里，但改了对应代码要手动跑一次。目前已知 `reverse-verify-download-tree.mjs` 与 `reverse-verify-shell-cwd.mjs` 各有一条 **在 `main`（`9aac799`）上就已经失效**的锚点（`SKIP (pattern not present)`），不是本轮引入的，不要顺手修。
 
@@ -107,3 +107,10 @@ npm run check
 
 缺陷 2（UTF-16/GBK 读）· 缺陷 3（编码回写）· 缺陷 6（查找）· 优化 3（单例折叠）· 优化 4（分页读）。
 它们各自需要独立一轮；理由与顺序见方案 §6。
+
+## 进度（按用户指示扩到全清单后追加）
+
+用户的口头指示是「先修缺陷，再做优化」，范围比本文件最初写的四个任务宽，所以按方案 §6 的完整清单推进。
+到这里已完成：**缺陷 4（冲突基线）· 缺陷 1（监视上限）· 缺陷 5（卸载守卫）· 缺陷 2（编码读取）· 缺陷 3（编码回写）**。
+缺陷 2 与 3 合成一轮做，因为它们必须共用同一份 `fileFormatOf`——读写分成两轮会让「读对了、写回去变了」这个最该防的失败正好落在两轮之间。
+仍未开始：缺陷 6（文件内查找）· 优化 1（`listDir` 确定性排序 + 目录优先）· 优化 2（单例折叠）· 优化 4（分页读）。

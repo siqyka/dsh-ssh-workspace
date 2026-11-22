@@ -100,6 +100,7 @@ const SUITES = [
   'host-card',
   'mutations',
   'text-routes',
+  'text-encoding',
   'file-editor',
   'backdrop-dismiss',
   'projection-relax',

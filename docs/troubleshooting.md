@@ -14,7 +14,7 @@
 | `FS_PERMISSION_DENIED` | 远端账号权限不足 | SFTP 返回 Permission denied；挂载前可先用面板「测试连接」+ 目录浏览确认可写。**工作区被停用时也返回此码**，文案带 `the remote workspace is detached` |
 | `FS_STALE_VERSION` / `FS_NOT_OBSERVED` | 并发修改 / 未读先写 | 读过后文件被改动再写回；或直接覆盖一个从未读过的既有文件（先 read 再 write） |
 | `FS_AMBIGUOUS_EDIT` / `FS_EDIT_NOT_FOUND` | `edit` 的 `old_string` 匹配不唯一 / 未命中 | 提供更精确的 `old_string` 或 `replace_all: true`；未命中时先重新 read 确认内容 |
-| `FS_NOT_TEXT` | 二进制或非法 UTF-8 | 读 / 编辑二进制文件被拒；改用 `ssh_workspace_exec` 配合远端命令处理 |
+| `FS_NOT_TEXT` | 既不是 UTF-8 也不是 GB18030 的字节（或含 NUL 且不像 UTF-16） | 读 / 编辑二进制文件被拒；改用 `ssh_workspace_exec` 配合远端命令处理。带 BOM 的 UTF-16 与 GB18030 文件是**可以读**的，所以撞到这个码说明连两种解码都失败 |
 | `FS_TOO_LARGE` | 超过读取上限 | 文件过大，用远端命令查看而非整读 |
 | `FS_TOO_MANY` | 同时监视的远端目标已达上限（64） | 每一棵同时展开的目录树都占一条轮询 / 一个 `inotifywait` 通道并保持连接。关掉不再看的工作区或目录即可腾出槽位——这是并发上限，不是额度，关一个就能再开一个 |
 | `FS_NOT_REGULAR_FILE` / `FS_NOT_DIRECTORY` | 目标类型不符 | 对目录 read、对文件 listDir 等 |
