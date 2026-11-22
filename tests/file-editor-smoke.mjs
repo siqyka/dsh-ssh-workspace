@@ -336,8 +336,47 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
     guardBody.includes('event.preventDefault()') && guardBody.includes('event.returnValue'))
   check('...and no message text is written (no browser shows it)',
     !/returnValue\s*=\s*['"][^'"]+['"]/u.test(guardBody))
-  check('the guard does not add a second Escape handler',
-    (editor.match(/key === 'Escape'/gu) ?? []).length === 1)
+  // The panel must own Escape, and own it on the elements it renders. A
+  // document-level handler (what `useDialogA11y` installs) RACES this one: with
+  // a save in flight, Escape would sometimes close the editor. Two Escape sites
+  // are legitimate and both are element-scoped — the textarea and the find box.
+  check('no document-level keydown handler competes for the panel\'s keys',
+    !/document\.addEventListener\(\s*['"]keydown/u.test(editor) && !/useDialogA11y\s*\(/u.test(editor))
+  check('...and both Escape sites are on elements the panel renders',
+    (editor.match(/key === 'Escape'/gu) ?? []).length === 2)
+}
+
+// ---------------------------------------------------------------------------
+// [7c] Find in file: the keys and the layer order (defect 6)
+// ---------------------------------------------------------------------------
+{
+  // Comments cannot satisfy a rendering or wiring check, so this section reads
+  // code with the comment lines removed.
+  const code = editor.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '')
+
+  check('Ctrl/Cmd+F is taken before the browser opens its own find',
+    /\(event\.key === 'f' \|\| event\.key === 'F'\)/u.test(code) &&
+      /event\.preventDefault\(\)\s*\n\s*openFind\(\)/u.test(code))
+  // The layer order is the whole contract: one press closes the bar, the next
+  // closes the panel. Reversed, Escape with the bar open would throw away the
+  // whole buffer's editing session.
+  const escapeBranch = /if \(find\.open === true\) closeFind\(\)\s*\n\s*else close\(\)/u.exec(code)
+  check('Escape closes the find bar before it closes the panel', escapeBranch !== null)
+  check('...which is why the bar is only drawn while the text is ready',
+    /find\.open !== true \|\| state\.phase !== 'ready'/u.test(code))
+  check('the bar is rendered inside the panel, above the text',
+    code.indexOf("className: 'sshwsp-editor-find'") < code.indexOf("className: 'sshwsp-editor-body'") &&
+      code.includes('findBar,'))
+  check('Enter steps forward and Shift+Enter steps back',
+    /event\.shiftKey \? -1 : 1/u.test(code))
+  check('the count is announced rather than only drawn',
+    /'aria-live': 'polite'/u.test(code))
+  // Closing with the match still selected would mean the next character typed
+  // REPLACES it — an edit nobody asked for. The selection is collapsed instead.
+  check('closing the bar collapses the selection instead of leaving it armed',
+    /setSelectionRange\(area\.selectionEnd, area\.selectionEnd\)/u.test(code))
+  check('no text arrow glyph is drawn beside the plugin\'s icons',
+    !/children:\s*'[↑↓×]'/u.test(code))
 }
 
 // ---------------------------------------------------------------------------
@@ -410,6 +449,67 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
       loaded.movedTokenOnly(null, 'abc') === false)
   check('...so an absent token can never be read as agreement',
     loaded.movedTokenOnly({}, undefined) === false)
+
+  // ---- find in file (defect 6)
+  //
+  // The bar is only useful if the span it selects is the occurrence the user
+  // asked for, so the matcher and the stepper are driven rather than grepped.
+  const haystack = 'alpha\nBeta\nbeta\nALPHA\n'
+  check('findMatches finds every occurrence, case-insensitively by default',
+    loaded.findMatches(haystack, 'beta').matches.length === 2,
+    JSON.stringify(loaded.findMatches(haystack, 'beta')))
+  check('...and the spans it reports are the text it matched',
+    loaded.findMatches(haystack, 'beta').matches.every(match => haystack.slice(match.start, match.end).toLowerCase() === 'beta'))
+  check('case sensitivity is honoured when asked for',
+    loaded.findMatches(haystack, 'beta', { caseSensitive: true }).matches.length === 1)
+  check('an empty query matches nothing rather than everything',
+    loaded.findMatches(haystack, '').matches.length === 0)
+  check('a query is a literal, so a dot does not match any character',
+    loaded.findMatches('a.b axb', '.').matches.length === 1 &&
+      loaded.findMatches('a.b axb', '.').matches[0].start === 1)
+  check('matches do not overlap, so a repeated needle cannot loop forever',
+    loaded.findMatches('aaaa', 'aa').matches.length === 2 &&
+      loaded.findMatches('aaaa', 'aa').matches[1].start === 2)
+  check('the list is capped and says so instead of counting forever',
+    (() => {
+      const huge = 'a'.repeat(loaded.FIND_MATCH_CAP + 50)
+      const foundList = loaded.findMatches(huge, 'a')
+      return foundList.matches.length === loaded.FIND_MATCH_CAP && foundList.capped === true
+    })(), String(loaded.FIND_MATCH_CAP))
+
+  check('stepping with nothing selected lands on the first match',
+    loaded.stepMatchIndex(5, -1, 1) === 0)
+  check('...and on the last one when stepping backwards',
+    loaded.stepMatchIndex(5, -1, -1) === 4)
+  check('stepping wraps at both ends', loaded.stepMatchIndex(3, 2, 1) === 0 &&
+    loaded.stepMatchIndex(3, 0, -1) === 2)
+  check('stepping in an empty list answers "nothing", not -1 modulo zero',
+    loaded.stepMatchIndex(0, 0, 1) === -1 && loaded.stepMatchIndex(0, 3, -1) === -1)
+  check('an out-of-range index is treated as "nothing selected"',
+    loaded.stepMatchIndex(3, 9, 1) === 0)
+
+  check('lineIndexOf counts the lines before an offset',
+    loaded.lineIndexOf('a\nbb\nccc', 0) === 0 &&
+      loaded.lineIndexOf('a\nbb\nccc', 2) === 1 &&
+      loaded.lineIndexOf('a\nbb\nccc', 5) === 2)
+  check('...and an offset on a newline belongs to the line it ends',
+    loaded.lineIndexOf('a\nb', 1) === 0)
+
+  check('revealing a line scrolls it into the upper third',
+    loaded.revealScrollTop(10, 180) === 10 * loaded.EDITOR_LINE_HEIGHT - 60)
+  check('...never above the top of the file', loaded.revealScrollTop(0, 180) === 0 &&
+    loaded.revealScrollTop(1, 3000) === 0)
+  check('...and a viewport it cannot read does not produce a NaN scroll',
+    loaded.revealScrollTop(3, undefined) === 3 * loaded.EDITOR_LINE_HEIGHT &&
+      Number.isFinite(loaded.revealScrollTop(3, Number.NaN)))
+
+  // The scroll arithmetic needs the same line height the stylesheet uses. If
+  // these two drift, find scrolls to the wrong line and nothing else notices.
+  const areaRule = /\.sshwsp-editor-area \{([^}]*)\}/u.exec(styles)
+  const cssLineHeight = areaRule === null ? '' : /line-height:\s*(\d+)px/u.exec(areaRule[1])
+  check('the scroll arithmetic and the stylesheet agree on the line height',
+    cssLineHeight !== null && Number(cssLineHeight[1]) === loaded.EDITOR_LINE_HEIGHT,
+    `css ${cssLineHeight === null ? 'absent' : cssLineHeight[1]}, code ${loaded.EDITOR_LINE_HEIGHT}`)
 }
 
 // ---------------------------------------------------------------------------
