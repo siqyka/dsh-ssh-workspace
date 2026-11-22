@@ -61,11 +61,11 @@ console.log(`\n=== live smoke (alias=${alias}, dir=${sandbox}) ===\n`)
 
 // The plugin's peers (ssh2, @deepseek-ai/dsh-fs) must resolve before the
 // modules can even load; this is the one place that legitimately skips.
-let HostStore, SshWorkspaceEngine, RemoteFileSystem, formatRemotePath, ENGINE_DEFAULTS, shellQuote
+let HostStore, SshWorkspaceEngine, RemoteFileSystem, formatRemotePath, compareEntries, ENGINE_DEFAULTS, shellQuote
 try {
   ;({ HostStore } = await import('../lib/hosts/hosts.js'))
   ;({ SshWorkspaceEngine, ENGINE_DEFAULTS, shellQuote } = await import('../lib/engine/engine.js'))
-  ;({ RemoteFileSystem } = await import('../lib/fs/remote-fs.js'))
+  ;({ RemoteFileSystem, compareEntries } = await import('../lib/fs/remote-fs.js'))
   ;({ formatRemotePath } = await import('../lib/core/protocol.js'))
 } catch (error) {
   console.log(`  SKIP  the plugin's peers are not resolvable here: ${error instanceof Error ? error.message : String(error)}`)
@@ -209,7 +209,8 @@ try {
   check('listDir returns direct children', names.includes('hello.txt') && names.includes('sub'), names.join(','))
   check('listDir classifies a directory', listing.find(entry => entry.name === 'sub')?.type === 'directory', JSON.stringify(listing.find(entry => entry.name === 'sub')))
   check('listDir reports a file size', (listing.find(entry => entry.name === 'hello.txt')?.size ?? -1) > 0, String(listing.find(entry => entry.name === 'hello.txt')?.size))
-  check('listDir entries are sorted', JSON.stringify(names) === JSON.stringify([...names].sort((a, b) => a.localeCompare(b))), names.join(','))
+  check('listDir entries are ordered: directories first, then names',
+    JSON.stringify(names) === JSON.stringify([...listing].sort(compareEntries).map(entry => entry.name)), names.join(','))
   check('listDir gives each child a resolved target', listing.every(entry => entry.target?.targetKey?.startsWith('ssh://')), JSON.stringify(listing[0]?.target))
 
   // --- binary / utf-8 ------------------------------------------------------

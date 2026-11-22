@@ -40,7 +40,7 @@ if (!coreRoot) {
 }
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
-const { RemoteFileSystem } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
+const { RemoteFileSystem, compareEntries } = await import(pathToFileURL(path.join(pluginRoot, 'lib/fs/remote-fs.js')).href)
 
 /** The alias every target below lives on. */
 const ALIAS = 'box'
@@ -110,6 +110,58 @@ const inside = (relative) => `ssh://${ALIAS}/srv/app/${relative}`
   check('listDir sorts its entries by name',
     sorted.map(entry => entry.name).join(',') === 'aaa.txt,notes.md,zzz.txt',
     sorted.map(entry => entry.name).join(','))
+
+  // The order is part of the answer: the tree draws this list as it arrives, and
+  // the same directory must come back in the same order everywhere.
+  tree.mkdir('/srv/app/Zeta')
+  tree.mkdir('/srv/app/alpha')
+  tree.write('/srv/app/Beta.txt', 'b')
+  // Two names that fold to the same string: without a case-sensitive tiebreak
+  // their order would come from whatever `readdir` returned.
+  tree.write('/srv/app/README.md', 'r')
+  tree.write('/srv/app/readme.md', 'r')
+  router.invalidateRemote(ALIAS, '/srv/app')
+  const ordered = (await router.listDir({ targetKey: inside(''), displayPath: inside('') })).map(entry => entry.name)
+  check('directories come before files, whatever their names',
+    ordered.slice(0, 2).join(',') === 'alpha,Zeta',
+    ordered.join(','))
+  check('...because names compare case-insensitively, not by code unit',
+    ordered.indexOf('aaa.txt') < ordered.indexOf('Beta.txt'),
+    ordered.join(','))
+  check('...and the case-sensitive tiebreak makes the order total',
+    ordered.indexOf('README.md') < ordered.indexOf('readme.md'),
+    ordered.join(','))
+  check('the whole order is the one comparator, so the two listings cannot drift',
+    ordered.join(',') === 'alpha,Zeta,aaa.txt,Beta.txt,notes.md,README.md,readme.md,zzz.txt',
+    ordered.join(','))
+
+  // Two listings of an unchanged directory must agree exactly. A comparator
+  // that left ties would let the server's readdir order leak through here.
+  const again = (await router.listDir({ targetKey: inside(''), displayPath: inside('') })).map(entry => entry.name)
+  check('...and it is stable across calls', again.join(',') === ordered.join(','), again.join(','))
+
+  // The comparator on its own, because the listing above can only show what one
+  // directory happens to contain and the tiebreak needs a pair that folds equal.
+  const byName = (a, b) => compareEntries({ name: a, type: 'file' }, { name: b, type: 'file' })
+  check('the comparator folds case', byName('aaa', 'Beta') < 0 && byName('Beta', 'aaa') > 0)
+  check('...breaks a fold tie by code unit, so the order is total',
+    byName('README.md', 'readme.md') < 0 && byName('readme.md', 'README.md') > 0)
+  check('...and answers zero only for the same name', byName('same', 'same') === 0)
+  check('a directory outranks a file whatever the names are',
+    compareEntries({ name: 'zzz', type: 'directory' }, { name: 'aaa', type: 'file' }) < 0 &&
+      compareEntries({ name: 'aaa', type: 'file' }, { name: 'zzz', type: 'directory' }) > 0)
+  check('an unknown type is ordered with the files, not with the directories',
+    compareEntries({ name: 'aaa', type: 'other' }, { name: 'zzz', type: 'directory' }) > 0)
+  check('...and a missing name does not throw',
+    compareEntries({ type: 'file' }, { type: 'file' }) === 0)
+
+  // The two listings are ordered by ONE function. A local copy in the route
+  // would drift the moment either was tuned, and the drift would only show as
+  // a truncated listing that keeps a different set of rows.
+  const { readFileSync } = await import('node:fs')
+  const entriesSource = readFileSync(path.join(pluginRoot, 'lib/routes/entries.js'), 'utf8')
+  check('the truncation cut-off imports that same comparator',
+    entriesSource.includes('compareEntries') && !/function compareForTruncation \(a, b\)/u.test(entriesSource))
 
   // A missing path is an answer, not a crash: stat returns undefined so callers
   // can treat "absent" and "unreadable" differently.
