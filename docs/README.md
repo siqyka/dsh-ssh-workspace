@@ -20,7 +20,7 @@
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
 | [optimization-and-future03.md](./optimization-and-future03.md) | **优化项与 Future（第三辑 · 唯一账本）**：仍未做、判定不做、上游阻塞、验证缺口与已完成 ID 索引；前两辑已合并到这里 | 完成 |
-| [FF/README.md](./FF/README.md) | **待实施工作流**：目录现在为空——01 测试骨架、02 远端 Skills 发现、03 文件编辑、04 代码拆分、05 模块合并均已实施并从本目录删除，索引留在页内 | 完成 |
+| [FF/README.md](./FF/README.md) | **待实施工作流**：现只剩 07 右侧文件树的「新建文件」（任务书）；01 测试骨架、02 远端 Skills 发现、03 文件编辑、04 代码拆分、05 模块合并、06 文件系统与编辑器的参照取舍均已实施并从本目录删除，索引留在页内 | 方案 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 
