@@ -11,8 +11,11 @@
 | 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | — | — | **已实施**（`lib/surface/remote-skills.js`，`tests/remote-skills-smoke.mjs` 55 项；说明见 `docs/features.md` 五之三 与 `docs/architecture.md` 的「远端技能发现」一节） |
 | 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | — | — | **已实施**（`lib/routes/text.js` + `lib/client/client.editor.js`，`tests/text-routes-smoke.mjs` 69 项与 `tests/file-editor-smoke.mjs` 53 项；说明见 `docs/ui.md` 的「文件编辑」一节） |
 | 07 | 右侧文件树的「新建文件」（远端目录行 + 本地空白处同一对话框；`POST /create-file` 独占创建，0 字节，不自动打开） | —（任务书的 §1 兼作现状说明） | [07-new-file-prompt.md](./07-new-file-prompt.md) | 方案 |
+| 08 | 文件树菜单改成「数据模型 + 宿主渲染」（有 `ctx.contextMenus` 时由宿主画，老宿主保留自绘；菜单条目变成纯数据，便于加项） | [08-tree-context-menu.md](./08-tree-context-menu.md) | [08-tree-context-menu-prompt.md](./08-tree-context-menu-prompt.md) | 方案 |
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
+
+**07 与 08 的关系（2026-11-22 核对）**：07 **已经实现但尚未提交**（工作树里有 `create-file` 路由、`API.createFile`、菜单里的新建文件项、`EXPECTED_ROUTES = 37`）。所以现在只剩 08 要做，而且 08 是把**已经存在的**菜单项搬进模型，不需要等 07 再改一遍。07 那一提交落地后，按惯例删除 `07-new-file-prompt.md` 并把本表 07 行移到「已完成的工作流」。
 
 ## 已完成的工作流（文件已删，留一行索引）
 
