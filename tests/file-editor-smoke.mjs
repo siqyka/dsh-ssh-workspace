@@ -299,7 +299,7 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('the refusals are worded for all five reasons', ['edit.readOnly', 'edit.binary', 'edit.notUtf8', 'edit.tooLarge', 'edit.notFile']
     .every((key) => editor.includes(`return '${key}'`)))
   check('the refusal is visible as a title rather than a silent absence',
-    editor.includes('const title = ready ? t(\'edit.actionHint\') :'))
+    editor.includes('const label = ready') && editor.includes('const title = openable ? label :'))
   check('a truncated file cannot be saved', editor.includes('if (state.truncated) return') &&
     editor.includes('disabled: saving || state.phase !== \'ready\' || state.truncated'))
 }
@@ -308,8 +308,14 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
 // [7] Saving does not eat what was typed while it ran
 // ---------------------------------------------------------------------------
 {
+  // Scoped to the SAVE, not the whole chunk: the pager legitimately replaces its
+  // text with what the server sent, and an assertion that swept the file would
+  // either forbid that or stop noticing a save that overwrote the buffer.
+  const saveStart = editor.indexOf('const save = React.useCallback')
+  const saveEnd = editor.indexOf('const reload = React.useCallback', saveStart)
+  const saveBody = saveStart < 0 || saveEnd < 0 ? '' : editor.slice(saveStart, saveEnd)
   check('the baseline advances without replacing the buffer',
-    editor.includes('baseText: sent') && !/setState\([^)]*text: reply\.data/u.test(editor))
+    saveBody !== '' && editor.includes('baseText: sent') && !/setState\([^)]*text: reply\.data/u.test(saveBody))
   check('...so a keystroke during a save survives', editor.includes('const sent = state.text'))
 }
 
@@ -380,6 +386,46 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
 }
 
 // ---------------------------------------------------------------------------
+// [7d] A file past the editing cap opens read-only paging, not an editor
+// ---------------------------------------------------------------------------
+{
+  // `paged` is the ONLY refusal that unlocks the button. Every other reason
+  // (binary, not-utf8, read-only session) must keep it disabled, or the click
+  // opens a panel that can do nothing but fail.
+  check('the probe carries the server\'s "too big to edit, still readable" flag',
+    editor.includes('paged: reply.data?.paged === true'))
+  check('...and only that refusal unlocks the button',
+    editor.includes("const pageable = probe.phase === 'refused' && probe.paged === true") &&
+      editor.includes('disabled: !openable'))
+  check('...which opens the pager instead of the editor',
+    editor.includes('setPaged(pageable)') && editor.includes('children: paged') &&
+      editor.includes('jsx(FilePagerPanel, {'))
+
+  const pagerStart = editor.indexOf('function FilePagerPanel')
+  // The pager's own exports come right after it, so the end of the block is the
+  // next `exports.` line rather than the file end: a future component added
+  // below must not silently widen what this section asserts about.
+  const pagerEnd = editor.indexOf('\n    exports.', pagerStart)
+  const pager = pagerStart < 0 || pagerEnd < 0 ? '' : editor.slice(pagerStart, pagerEnd)
+  check('the pager asks for a byte offset rather than the whole file',
+    pager.includes("offset: String(at)"), String(pager.length))
+  // The encoding is decided once, by the server, from the head. A page that
+  // sniffed itself would decode a GB18030 file two different ways.
+  check('...echoing the encoding and line endings the first page decided',
+    pager.includes("query.set('encoding', encoding)") && pager.includes("query.set('eol', eol)"))
+  check('...and never sniffs an encoding of its own', !/decodeUtf8|TextDecoder/u.test(pager))
+  check('the text is read-only, not disabled, so it can still be selected and scrolled',
+    pager.includes('readOnly: true') && !/disabled: true/u.test(pager))
+  // A read-only view must not reach the write route at all: the shortest path
+  // from "look at a big file" to "overwrite it" is a save button nobody meant
+  // to leave on.
+  check('...and there is no way to save from it',
+    !pager.includes('API.writeText') && !pager.includes('t(\'edit.save\')'))
+  check('a page is walked by nextOffset, not by adding PAGE_BYTES',
+    pager.includes('state.nextOffset') && pager.includes('visited'))
+}
+
+// ---------------------------------------------------------------------------
 // [8] The pure helpers, driven
 // ---------------------------------------------------------------------------
 {
@@ -416,6 +462,8 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
 
   check('the chunk exports the action and the panel',
     typeof loaded.FileEditAction === 'function' && typeof loaded.FileEditorPanel === 'function')
+  check('...and the read-only pager that a too-large file opens',
+    typeof loaded.FilePagerPanel === 'function' && typeof loaded.pageOf === 'function')
   check('...and the dialog it replaced is gone, not merely unused',
     loaded.FileEditorDialog === undefined && !editor.includes('FileEditorDialog'))
   check('...plus the box resolver a suite can drive without a DOM',
@@ -427,6 +475,19 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('gutterNumbers never answers an empty list', loaded.gutterNumbers(0).length === 1)
   check('gutterWidth grows with the line count', loaded.gutterWidth(9) === 1 && loaded.gutterWidth(10) === 2 &&
     loaded.gutterWidth(100) === 3)
+
+  // The page counter is derived from the offset so a jump, a reload and a step
+  // back all agree. Off-by-one here is invisible in code review and obvious to
+  // the user ("page 0 of 0").
+  const page = loaded.PAGE_BYTES
+  check('pageOf counts from one', loaded.pageOf(0, page * 3).page === 1 &&
+    loaded.pageOf(page, page * 3).page === 2 && loaded.pageOf(page * 2, page * 3).page === 3)
+  check('...and knows how many there are', loaded.pageOf(0, page * 3).pages === 3 &&
+    loaded.pageOf(0, page * 3 + 1).pages === 4 && loaded.pageOf(0, 1).pages === 1)
+  check('...and a partial page counts as a page', loaded.pageOf(page * 3 - 1, page * 3).page === 3)
+  check('...and an offset past the end clamps instead of inventing a page',
+    loaded.pageOf(page * 5, page * 2).page === 2)
+  check('...and an empty file is one page, not zero', loaded.pageOf(0, 0).pages === 1)
   check('isDirty is exact, so a deleted trailing newline IS a change',
     loaded.isDirty('a\n', 'a') === true && loaded.isDirty('a', 'a') === false)
   check('refusalKey maps every reason', loaded.refusalKey('binary') === 'edit.binary' &&
