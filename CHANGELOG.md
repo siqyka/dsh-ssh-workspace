@@ -56,7 +56,7 @@
 
 ### 变更
 
-- **`lib/` 顶层模块 62 → 36、总数 83 → 57，一个行为没变**：十六个「其实是一件事、拆开只让读者多跳一次」的模块两两或三三合并，逐组一个提交（`2c43d33` … `2897a21`），每组独立可回滚。合并后的文件名与边界见 `docs/FF/05-module-merges.md` §9。**套件数、路由数（33）、工具数（11）、补丁数（7）一个没动**，import 图的环从 6 降到 5——唯一的功能环（`ssh-config` ↔ `match-eval`）随着两者合成一个文件自然消失，剩下 5 个全是 `lib/routes/routes.js` 与它子模块的互相引用。
+- **`lib/` 顶层模块 62 → 36、总数 83 → 57，一个行为没变**：十六个「其实是一件事、拆开只让读者多跳一次」的模块两两或三三合并，逐组一个提交（`2c43d33` … `2897a21`），每组独立可回滚。合并后的文件名与边界见 `docs/development.md` 的「源码结构」一节。**套件数、路由数（33）、工具数（11）、补丁数（7）一个没动**，import 图的环从 6 降到 5——唯一的功能环（`ssh-config` ↔ `match-eval`）随着两者合成一个文件自然消失，剩下 5 个全是 `lib/routes/routes.js` 与它子模块的互相引用。
 - **合并不是「再抽一层」，而是承认「为一行逻辑开一个文件」是多余的**：`escapeRegExp` / `positive` / `shellQuote` 三个一行函数并成 `lib/core/shared.js`（96 行，文件头写明边界：只收无状态、无依赖、单表达式、被三处以上调用的纯函数）；`tar` + `zip` 并成 `lib/transfer/archive.js`（两者本来就是同一个「写一种归档格式」的问题，只有一个消费者）；`ssh-config` + `match-eval` 合成一个文件（它们互相 import，那个环就是「这是一件事」的诚实陈述）。
 - **合并带出了两处真缺陷**：`lib/hosts/store.js` 里**有两个 `dshHome()`**（密钥写在 A 处、却从 B 处读，症状与「密钥被换掉」无法区分）随 `secrets.js` 合并成一个；`lib/surface/shell.js` 合并后 `quote` 与 `shellQuote` 两个拼法并存，直接 `ReferenceError`，统一成后者。
 - **没合并的也有理由，写在文档里**：`capabilities.js` 留在报告组外——`tests/capabilities-report-smoke.mjs` 精确排除「拥有被检查词表的那一个文件」，并进 984 行的报告面等于把两次扫描整体摘掉，且实测会让 `tput` / `tar` 误判为「被调用」；七个 `patch-*.js` 互不合并（`upstream-contract.js` 按文件登记退役判据、门禁按 `lib/patch-*.js` 计数）；`mode-gate` 与 `command-policy` 不合并（一个是围栏、一个是减速带）。
