@@ -245,6 +245,38 @@ console.log('\n=== text encoding smoke ===\n')
   check('...and the same bytes read whole say UTF-8 too',
     format(raw.subarray(0, (SAMPLE_BYTES / 3 | 0) * 3), { truncated: false }).encoding === 'utf8')
 
+  // A COMPLETE read is not the same thing as a complete SAMPLE. A whole-file read
+  // of anything larger than SAMPLE_BYTES hands `fileFormatOf` the full buffer
+  // (`truncated: false`) while the sniffer still inspects only the first 8 KiB —
+  // and that head can end mid-character. Judging it with the strict decoder
+  // refused the file as "neither UTF-8 nor GB18030" AFTER the probe (which does
+  // pass `truncated`) said it was openable: the button appeared, and clicking it
+  // failed. That is the exact pair of answers a user reported.
+  const longer = Buffer.concat([Buffer.from('界'.repeat(4000), 'utf8'), Buffer.from('tail\n', 'utf8')])
+  check('a whole file longer than the sample is still judged on a trimmed head',
+    (SAMPLE_BYTES % 3) !== 0 && format(longer, { truncated: false }).encoding === 'utf8',
+    JSON.stringify(format(longer, { truncated: false })))
+  // GB18030 bytes have no encoder in Node, so the sample is built by hand: one
+  // ASCII byte shifts every following pair, putting the 8 KiB cut inside a
+  // two-byte character.
+  const gbBytes = Buffer.alloc(1 + 5000 * 2)
+  gbBytes[0] = 0x61
+  for (let index = 0; index < 5000; index += 1) {
+    gbBytes[1 + index * 2] = 0xC4
+    gbBytes[2 + index * 2] = 0xE3
+  }
+  check('...and a GB18030 file cut inside a two-byte character is still GB18030',
+    format(gbBytes, { truncated: false }).encoding === 'gb18030', JSON.stringify(format(gbBytes, { truncated: false })))
+  // The trim rule is for a PREFIX, not a licence to accept damage at the end of
+  // a file we hold completely: this buffer is exactly the sample length, so its
+  // last two bytes really are the end of the file and must not be read as a
+  // character nobody wrote. (The fallback answer is GB18030, which is readable
+  // but not writable — the button says so rather than opening an editor that
+  // would save different bytes.)
+  check('...while an exact sample that really ends mid-character is not called UTF-8',
+    format(raw.subarray(0, SAMPLE_BYTES), { truncated: false }).encoding !== 'utf8',
+    JSON.stringify(format(raw.subarray(0, SAMPLE_BYTES), { truncated: false })))
+
   // The page seam: 128 KiB of three-byte characters is cut on a boundary only
   // once in three, so a page that assumed the cut was clean would garble the
   // last character of every page.

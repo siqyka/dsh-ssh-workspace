@@ -3,7 +3,7 @@
  *
  * ## Why this is shared
  *
- * `shell-smoke` and `terminal-smoke` each grew this same object: a queue of
+ * `terminal-smoke`'s two sections (shell and terminal) each grew this same
  * pre-built channels, `openChannel` popping one per call, and a log of what was
  * asked for. The two copies were byte-identical in shape and had already drifted
  * once -- the terminal copy grew `abortedAtOpen` because a signal that fires

@@ -10,7 +10,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const SUITES = ['tests/command-policy-smoke.mjs', 'tests/command-confirm-smoke.mjs']
+const SUITES = ['tests/command-approval-smoke.mjs']
 
 const MUTATIONS = [
   {

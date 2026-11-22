@@ -13,7 +13,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const SUITE = 'tests/watch-recovery-smoke.mjs'
+const SUITE = 'tests/watch-smoke.mjs'
 const CORE = path.join(root, 'tests/.peer-stubs')
 
 const MUTATIONS = [

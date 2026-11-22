@@ -17,35 +17,35 @@ const MUTATIONS = [
     file: 'lib/transfer/transfer-rules.js',
     find: "  if (options.recordedIdentity !== options.currentIdentity) {",
     replace: '  if (false) {',
-    suites: ['tests/resume-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'a partial bigger than the source is resumed',
     file: 'lib/transfer/transfer-rules.js',
     find: '  if (partial > total) {',
     replace: '  if (false) {',
-    suites: ['tests/resume-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'a fully-staged file is treated as "nothing staged"',
     file: 'lib/transfer/transfer-rules.js',
     find: '  if (partial === total) {',
     replace: '  if (false) {',
-    suites: ['tests/resume-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'a sidecar with no identity is trusted',
     file: 'lib/transfer/transfer-rules.js',
     find: "  if (typeof value.identity !== 'string' || value.identity === '') return undefined",
     replace: '  if (false) return undefined',
-    suites: ['tests/resume-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'the staging name is randomised again (nothing to resume into)',
     file: 'lib/transfer/transfer-rules.js',
     find: '  return `${String(target).replace(/\\/+$/u, \'\')}.dsh-up-partial`',
     replace: '  return `${String(target)}.dsh-up-partial-${Math.random().toString(36).slice(2)}`',
-    suites: ['tests/resume-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'the resumed tail is written at offset 0 (overwrites the prefix)',
@@ -106,6 +106,6 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const restored = run(['tests/resume-smoke.mjs', 'tests/transfer-smoke.mjs'])
+const restored = run(['tests/transfer-rules-smoke.mjs', 'tests/transfer-smoke.mjs'])
 console.log(`\nrestored: ${restored === 0 ? 'suites green again' : `STILL ${restored} RED`}`)
 if (restored !== 0 || !allGood) process.exit(1)

@@ -1,7 +1,7 @@
 /**
- * The engine double the two port-forward suites share.
+ * The engine double the forwarding suite's two loops share.
  *
- * `forward-smoke` and `forward-persist-smoke` had byte-identical copies of this
+ * The forward and forward-persist sections had byte-identical copies of this
  * function: same `once`/`off`/`emit` shim, same `forwardOut` that dials a real
  * loopback server, same record shape. Two copies of a double is not a style
  * problem — the two suites drifted, and a change to what a spliced socket sees

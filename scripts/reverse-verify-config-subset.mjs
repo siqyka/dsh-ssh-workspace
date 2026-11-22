@@ -19,7 +19,7 @@ const MUTATIONS = [
     file: 'lib/hosts/hosts.js',
     find: '          for (const included of matched) out.push(read(included, depth + 1))',
     replace: '          for (const included of matched) trailing.push(read(included, depth + 1))',
-    suites: ['tests/include-chain-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
     // Needs the accumulator to exist; if it is absent the mutation is skipped.
     extra: {
       file: 'lib/hosts/hosts.js',
@@ -36,49 +36,49 @@ const MUTATIONS = [
     file: 'lib/hosts/hosts.js',
     find: '      canonical = realpathSync(file)',
     replace: '      canonical = file',
-    suites: ['tests/include-chain-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
   },
   {
     name: 'the nesting cap is removed',
     file: 'lib/hosts/hosts.js',
     find: '    if (depth > maxDepth) {',
     replace: '    if (false) {',
-    suites: ['tests/include-chain-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
   },
   {
     name: 'glob order is not deterministic',
     file: 'lib/hosts/hosts.js',
     find: '      for (const entry of entries.sort()) {',
     replace: '      for (const entry of entries.reverse()) {',
-    suites: ['tests/include-chain-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
   },
   {
     name: 'directories are accepted as config files',
     file: 'lib/hosts/hosts.js',
     find: '      return statSync(candidate).isFile()',
     replace: '      statSync(candidate); return true',
-    suites: ['tests/include-chain-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
   },
   {
     name: '`Match exec` is evaluated instead of refused',
     file: 'lib/hosts/ssh-config.js',
     find: '    if (REFUSED_CRITERIA.has(condition.criterion)) {',
     replace: '    if (false) {',
-    suites: ['tests/match-eval-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
   },
   {
     name: 'an undecidable criterion is treated as TRUE',
     file: 'lib/hosts/ssh-config.js',
     find: '    if (DEFERRED_CRITERIA.has(condition.criterion)) {',
     replace: '    if (false) {\n      continue\n    }\n    if (false) {',
-    suites: ['tests/match-eval-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
   },
   {
     name: 'the negation in a host condition is ignored',
     file: 'lib/hosts/ssh-config.js',
     find: '    if (!matched || negative.some(pattern => patternMatches(pattern, alias))) return { selects: false }',
     replace: '    if (!matched) return { selects: false }',
-    suites: ['tests/match-eval-smoke.mjs'],
+    suites: ['tests/ssh-config-smoke.mjs'],
   },
   {
     name: 'selects() ignores Match again',
@@ -129,6 +129,6 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const restored = run(['tests/include-chain-smoke.mjs', 'tests/match-eval-smoke.mjs', 'tests/ssh-config-smoke.mjs'])
+const restored = run(['tests/ssh-config-smoke.mjs'])
 console.log(`\nrestored: ${restored === 0 ? 'suites green again' : `STILL ${restored} RED`}`)
 if (restored !== 0 || !allGood) process.exit(1)

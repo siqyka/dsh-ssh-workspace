@@ -1,7 +1,7 @@
 /**
  * Reverse verification for F-01's shell half (start-directory recovery).
  *
- * Five mutations, each of which must turn `shell-smoke` red.
+ * Five mutations, each of which must turn `terminal-smoke` red.
  * Audit action, not a CI step: it rewrites source in place and restores it.
  *
  * Run: node scripts/reverse-verify-shell-cwd.mjs
@@ -13,7 +13,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const SUITE = 'tests/shell-smoke.mjs'
+const SUITE = 'tests/terminal-smoke.mjs'
 
 const MUTATIONS = [
   {

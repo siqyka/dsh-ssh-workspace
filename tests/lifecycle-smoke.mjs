@@ -59,8 +59,8 @@ const EXPECTED_TOOLS = [
 // test, ls, git-history, status, self-check, passthrough settings,
 // support-bundle, mount, unmount, enable, forward, unforward, the six
 // saved-forward routes (save/toggle/delete/remember/probe/settings), transfer,
-// download, download-tree, upload, upload-chunk, rename, delete, mkdir and
-// mutation-policy.
+// download, download-tree, upload, upload-chunk, rename, delete, mkdir,
+// create-file and mutation-policy.
 //
 // The number is pinned rather than derived on purpose: deriving it from ROUTES
 // would make "a route was added but never registered" pass, which is the thing
@@ -68,7 +68,7 @@ const EXPECTED_TOOLS = [
 // covers the other half — a path that IS in ROUTES but never reached the
 // web server — without giving up the acknowledgement this pin forces: adding a
 // route still turns the count assertion red until someone edits this number.
-const EXPECTED_ROUTES = 36
+const EXPECTED_ROUTES = 37
 
 // The one route that carries a bound on HOW MUCH of a repository it may read,
 // and the only one whose entire input is a Session id. Named here so that

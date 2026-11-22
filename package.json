@@ -20,8 +20,10 @@
     "lint": "node scripts/lint.mjs",
     "check:docs": "node scripts/check-doc-links.mjs && node scripts/doc-numbers.mjs --check",
     "check:client-map": "node scripts/client-map.mjs",
-    "check": "npm run lint && npm run check:docs && npm run check:client-map && npm test && npm pack --dry-run",
-    "doc-numbers": "node scripts/doc-numbers.mjs"
+    "check": "npm run lint && npm run check:editor && npm run check:docs && npm run check:client-map && npm test && npm pack --dry-run",
+    "doc-numbers": "node scripts/doc-numbers.mjs",
+    "build:editor": "node scripts/build-editor-engine.mjs",
+    "check:editor": "node scripts/build-editor-engine.mjs --check"
   },
   "exports": {
     ".": {
@@ -51,8 +53,8 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.0-rc.1",
     "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh": ">=0.2.0-rc.1",
     "@deepseek-ai/dsh-fs": "*",
     "@deepseek-ai/dsh-tools": "*"
   },
@@ -90,5 +92,23 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-go": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/legacy-modes": "^6.5.5",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "esbuild": "^0.28.2"
   }
 }

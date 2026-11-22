@@ -17,56 +17,56 @@ const MUTATIONS = [
     file: 'lib/transfer/transfer-rules.js',
     find: "  if (typeof expected !== 'string' || expected === '') {",
     replace: "  if (false) {",
-    suites: ['tests/verify-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'a truncated hex token is accepted as a digest',
     file: 'lib/transfer/transfer-rules.js',
     find: '  return /^[0-9a-f]{64}$/iu.test(first) ? first.toLowerCase() : undefined',
     replace: '  return /^[0-9a-f]+$/iu.test(first) ? first.toLowerCase() : undefined',
-    suites: ['tests/verify-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'the hasher preference order is inverted',
     file: 'lib/transfer/transfer-rules.js',
     find: "  return REMOTE_HASHERS.find(entry => reported.has(entry.name))",
     replace: "  return [...REMOTE_HASHERS].reverse().find(entry => reported.has(entry.name))",
-    suites: ['tests/verify-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'the remote path is not shell-quoted',
     file: 'lib/transfer/transfer-rules.js',
     find: "  const outcome = await engine.exec(alias, `${hasher.command} ${shellQuote(remotePath)}`, {",
     replace: "  const outcome = await engine.exec(alias, `${hasher.command} ${remotePath}`, {",
-    suites: ['tests/verify-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'an unknown conflict policy silently becomes rename',
     file: 'lib/transfer/transfer-rules.js',
     find: "  return CONFLICT_POLICIES.includes(text) ? text : DEFAULT_CONFLICT_POLICY",
     replace: "  return CONFLICT_POLICIES.includes(text) ? text : 'rename'",
-    suites: ['tests/conflict-policy-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'skip is reported as a refusal',
     file: 'lib/transfer/transfer-rules.js',
     find: "      action: 'skip',\n      note: `the destination already exists and the conflict policy is \"skip\"",
     replace: "      action: 'refuse',\n      note: `the destination already exists and the conflict policy is \"skip\"",
-    suites: ['tests/conflict-policy-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'rename overwrites instead of picking a free name',
     file: 'lib/transfer/transfer-rules.js',
     find: '    const free = await freeName(options.destination ?? \'\', options.existsAt)',
     replace: '    const free = options.destination ?? \'\'',
-    suites: ['tests/conflict-policy-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'the number goes after the extension',
     file: 'lib/transfer/transfer-rules.js',
     find: "    const candidate = `${stem}.${index}${suffix}`",
     replace: "    const candidate = `${target}.${index}`",
-    suites: ['tests/conflict-policy-smoke.mjs'],
+    suites: ['tests/transfer-rules-smoke.mjs'],
   },
   {
     name: 'the transfer ignores the conflict decision',
@@ -123,6 +123,6 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const restored = run(['tests/verify-smoke.mjs', 'tests/conflict-policy-smoke.mjs', 'tests/transfer-smoke.mjs'])
+const restored = run(['tests/transfer-rules-smoke.mjs', 'tests/transfer-smoke.mjs'])
 console.log(`\nrestored: ${restored.failed === 0 ? 'suites green again' : `STILL ${restored.failed} RED`}`)
 if (restored.failed !== 0 || !allGood) process.exit(1)

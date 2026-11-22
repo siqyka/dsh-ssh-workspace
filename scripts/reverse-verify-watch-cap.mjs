@@ -1,7 +1,7 @@
 /**
  * Reverse verification for the watcher concurrency cap.
  *
- * Each mutation must turn `tests/watch-sharing-smoke.mjs` red. This is an audit
+ * Each mutation must turn `tests/watch-smoke.mjs` red. This is an audit
  * action, not a CI step: it rewrites the source in place and restores it.
  *
  * Run: node scripts/reverse-verify-watch-cap.mjs
@@ -13,7 +13,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const SUITE = 'tests/watch-sharing-smoke.mjs'
+const SUITE = 'tests/watch-smoke.mjs'
 const WATCH = path.join('lib', 'fs', 'remote-watch.js')
 const CORE = path.join(root, 'tests/.peer-stubs')
 

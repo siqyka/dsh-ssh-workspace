@@ -228,7 +228,12 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   // which must not swallow Escape while the composer or a stacked dialog has
   // focus. The old modal assertions said "no Escape handler at all"; that rule
   // died with the modal, so this one replaces it rather than deleting it.
-  check('Escape closes the panel', /event\.key === 'Escape'[\s\S]{0,200}?close\(\)/u.test(editor))
+  // Escape is one policy shared by both surfaces: the keydown handler and the
+  // CodeMirror keymap both call `handleEscape`, and only that function decides
+  // between "close the find bar" and "close the panel".
+  check('Escape closes the find bar first, then the panel',
+    /const handleEscape = React\.useCallback\(\(\) => \{[\s\S]{0,160}?find\.open === true\) closeFind\(\)[\s\S]{0,80}?else close\(\)/u.test(editor) &&
+      /event\.key === 'Escape'[\s\S]{0,160}?handleEscape\(\)/u.test(editor))
   check('...scoped to the panel, with no document-level listener',
     !/document\.addEventListener\('keydown'/u.test(editor) &&
       !editor.includes('useDialogA11y({'))
@@ -326,8 +331,8 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   // The close button asks, but a refresh or a tab close never reaches it. This
   // is the only hook the page gets for those.
   check('a beforeunload guard is registered', editor.includes("addEventListener('beforeunload'"))
-  check('...bound to dirty, so a saved buffer does not block a refresh',
-    /if \(dirty !== true\) return undefined/u.test(editor) && /\}, \[dirty\]\)/u.test(editor))
+  check('...bound to the strip, so a saved buffer does not block a refresh and a dirty tab behind the visible one still does',
+    /if \(dirtyPaths\.size === 0\) return undefined/u.test(editor) && /\}, \[dirtyPaths\]\)/u.test(editor))
   check('...and unbound on unmount, so a closed editor leaves nothing behind',
     editor.includes("removeEventListener('beforeunload'"))
   // Browsers disagree about which of the two is honoured; neither is a message,
@@ -390,13 +395,15 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
 // ---------------------------------------------------------------------------
 {
   // `paged` is the ONLY refusal that unlocks the button. Every other reason
-  // (binary, not-utf8, read-only session) must keep it disabled, or the click
-  // opens a panel that can do nothing but fail.
+  // (binary, not-utf8, read-only session) must keep the click inert, or the panel
+  // opens only to fail. "Inert" is now `aria-disabled` plus a guarded click, not
+  // the HTML `disabled` attribute: a disabled control does not reliably hover its
+  // own title, which used to be the only place the reason was written.
   check('the probe carries the server\'s "too big to edit, still readable" flag',
     editor.includes('paged: reply.data?.paged === true'))
   check('...and only that refusal unlocks the button',
     editor.includes("const pageable = probe.phase === 'refused' && probe.paged === true") &&
-      editor.includes('disabled: !openable'))
+      editor.includes("'aria-disabled': openable ? undefined : 'true'"))
   check('...which opens the pager instead of the editor',
     editor.includes('setPaged(pageable)') && editor.includes('children: paged') &&
       editor.includes('jsx(FilePagerPanel, {'))
@@ -423,6 +430,37 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
     !pager.includes('API.writeText') && !pager.includes('t(\'edit.save\')'))
   check('a page is walked by nextOffset, not by adding PAGE_BYTES',
     pager.includes('state.nextOffset') && pager.includes('visited'))
+}
+
+// ---------------------------------------------------------------------------
+// [7e] A file that cannot be edited says so: red dot, reason on hover
+// ---------------------------------------------------------------------------
+{
+  // The refusal used to be a `disabled` button whose tooltip said why — which is
+  // the same as saying nothing, because a disabled control does not hover its
+  // title in every browser. So the button stays live (guarded click, `aria-
+  // disabled` for assistive tech), carries a red dot so the refusal is visible
+  // before anyone hovers, and keeps the reason in its title.
+  check('a refused file keeps the pencil and marks it with a dot',
+    editor.includes('const blocked = !ready') &&
+      editor.includes("(blocked ? ' sshwsp-fileaction-blocked' : '')") &&
+      editor.includes("className: 'sshwsp-fileaction-dot', 'aria-hidden': 'true'"))
+  check('...the dot is decoration, not a second hit target',
+    styles.includes('.sshwsp-fileaction-dot') && styles.includes('pointer-events: none'))
+  check('...and it is painted from the theme\'s error token, not a hardcoded red',
+    styles.includes('--dsw-alias-state-error-primary'))
+  check('...the button is live so hover and focus can show the reason',
+    !/disabled: !openable/u.test(editor) &&
+      editor.includes("'aria-disabled': openable ? undefined : 'true'") &&
+      // The refusal still cannot open an editor: the click guard is what makes
+      // `aria-disabled` honest rather than decorative.
+      editor.includes('if (!openable) return'))
+  check('...and the title carries the localised reason plus the server\'s own words',
+    editor.includes('const title = openable ? label :') &&
+      editor.includes('probe.message === \'\' ? \'\' :'))
+  check('the dot sits on the icon corner rather than reflowing the header',
+    /\.sshwsp-fileaction-edit \{[^}]*position: relative/u.test(styles) &&
+      /\.sshwsp-fileaction-dot \{[^}]*position: absolute/u.test(styles))
 }
 
 // ---------------------------------------------------------------------------
@@ -568,14 +606,418 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   // these two drift, find scrolls to the wrong line and nothing else notices.
   const areaRule = /\.sshwsp-editor-area \{([^}]*)\}/u.exec(styles)
   const cssLineHeight = areaRule === null ? '' : /line-height:\s*(\d+)px/u.exec(areaRule[1])
-  check('the scroll arithmetic and the stylesheet agree on the line height',
-    cssLineHeight !== null && Number(cssLineHeight[1]) === loaded.EDITOR_LINE_HEIGHT,
-    `css ${cssLineHeight === null ? 'absent' : cssLineHeight[1]}, code ${loaded.EDITOR_LINE_HEIGHT}`)
+  // ---- syntax highlighting (the colour layer)
+  //
+  // The tokenizer is load-bearing and invisible: a scanner that colours a
+  // comment as a string looks plausible in source and wrong on screen, so the
+  // sections here DRIVE it. Every case is a line whose correct answer is known,
+  // and the reconstruction check turns "the layer renders the same text" into
+  // an assertion rather than a hope.
+  const kindsOf = step => step.tokens.map(token => token.type).join(',')
+  const scan = (language, line, state) => loaded.highlightLine(language, state ?? { mode: 'code' }, line)
+
+  check('every language has a unique id and at least one extension',
+    new Set(loaded.LANGUAGES.map(def => def.id)).size === loaded.LANGUAGES.length &&
+      loaded.LANGUAGES.every(def => (def.exts ?? []).length > 0))
+  check('...and no extension is claimed by two languages',
+    new Set(loaded.LANGUAGES.flatMap(def => def.exts ?? [])).size ===
+      loaded.LANGUAGES.flatMap(def => def.exts ?? []).length)
+
+  check('the language is chosen by the LAST extension, case-insensitively',
+    loaded.languageOfPath('src/a.test.js') === 'javascript' &&
+      loaded.languageOfPath('a.TSX') === 'javascript' &&
+      loaded.languageOfPath('NOTES.MD') === 'markdown' &&
+      loaded.languageOfPath('x.json') === 'json')
+  check('...and by the two names that have no extension',
+    loaded.languageOfPath('Dockerfile') === 'dockerfile' && loaded.languageOfPath('Makefile') === 'make' &&
+      loaded.languageOfPath('.env.local') === 'shell')
+  check('...while a dotfile and an unknown extension claim no colour',
+    loaded.languageOfPath('.gitignore') === null && loaded.languageOfPath('a.log') === null)
+
+  const scriptLine = 'const value = "hi" + 42 // note'
+  check('a JavaScript line splits into keyword, string, number and comment',
+    kindsOf(scan('javascript', scriptLine)) === 'keyword,string,number,comment',
+    kindsOf(scan('javascript', scriptLine)))
+  check('...a call name and a property are told apart',
+    kindsOf(scan('javascript', 'obj.value = call()')) === 'prop,fn',
+    kindsOf(scan('javascript', 'obj.value = call()')))
+  const openComment = scan('javascript', '/* start')
+  const insideComment = scan('javascript', 'still comment', openComment.state)
+  const afterComment = scan('javascript', 'end */ const x = 1', insideComment.state)
+  check('a block comment carries across lines',
+    openComment.state.mode === 'block' && kindsOf(insideComment) === 'comment')
+  check('...and the code after its close is scanned again',
+    kindsOf(afterComment) === 'comment,keyword,number', kindsOf(afterComment))
+  const openTemplate = scan('javascript', 'const t = `one')
+  check('a template literal carries across lines',
+    openTemplate.state.mode === 'template' &&
+      kindsOf(scan('javascript', 'two` + 1', openTemplate.state)) === 'string,number')
+  check('an unterminated single-line string does not swallow the next line',
+    scan('javascript', 'const s = "oops').state.mode === 'code')
+
+  // A regex literal is the one JavaScript construct where a quote is not a
+  // string: without this, `/ab"c/` opened a string and painted the rest of the
+  // line as one. The division cases are the other half of the same decision —
+  // a scanner that sees a regex everywhere is as wrong as one that sees none.
+  const regexLine = 'const re = /ab"c/g'
+  const regexStep = scan('javascript', regexLine)
+  check('a regex literal is one token, quotes and all',
+    kindsOf(regexStep) === 'keyword,string' && regexStep.tokens[1].start === 11 &&
+      regexStep.tokens[1].end === regexLine.length,
+    kindsOf(regexStep))
+  check('...while a division is not mistaken for one',
+    kindsOf(scan('javascript', 'const x = a / b')) === 'keyword' &&
+      kindsOf(scan('javascript', 'const x = a / b / c')) === 'keyword' &&
+      // `++` ends a value like a name does, so the slash after it divides.
+      kindsOf(scan('javascript', 'x = y++ / 2 / 3')) === 'number,number',
+    kindsOf(scan('javascript', 'x = y++ / 2 / 3')))
+  check('...and a regex after a keyword or a bracket still opens',
+    kindsOf(scan('javascript', 'return /x/.test(s)')) === 'keyword,string,prop' &&
+      kindsOf(scan('javascript', 'if (/x/.test(s)) {}')) === 'keyword,string,prop')
+  check('...and a slash inside a character class does not close it',
+    kindsOf(scan('javascript', 'x = /[a/]/')) === 'string',
+    kindsOf(scan('javascript', 'x = /[a/]/')))
+
+  // Rust gives the same quote to a lifetime and a character literal. Only the
+  // closing quote tells them apart; without the test, every `&'a str` borrow
+  // painted the rest of its line as a string.
+  const lifetime = scan('rust', "fn f<'a>(x: &'a str) -> &'a str { x }")
+  check('a Rust lifetime is not a string, while a char literal still is',
+    lifetime.tokens.every(token => token.type !== 'string') &&
+      kindsOf(scan('rust', "let c = 'x';")) === 'keyword,string' &&
+      kindsOf(scan('rust', "let n = '\\n';")) === 'keyword,string',
+    kindsOf(lifetime))
+
+  check('a quoted JSON key is a property, its value is not',
+    kindsOf(scan('json', '"key": [1, true]')) === 'prop,number,constant',
+    kindsOf(scan('json', '"key": [1, true]')))
+  check('SQL keywords are matched case-insensitively',
+    kindsOf(scan('sql', 'Select * From t')) === 'keyword,keyword',
+    kindsOf(scan('sql', 'Select * From t')))
+
+  check('a markdown heading is a marker plus a strong line',
+    kindsOf(scan('markdown', '# Title')) === 'keyword,strong')
+  const fenceOpen = scan('markdown', '```js')
+  const fenceBody = scan('markdown', 'const a = 1', fenceOpen.state)
+  const fenceClose = scan('markdown', '```', fenceBody.state)
+  check('a fenced code block is one colour and ends where the fence does',
+    fenceOpen.state.fence === '```' && kindsOf(fenceBody) === 'string' &&
+      kindsOf(fenceClose) === 'keyword' && fenceClose.state.fence === '')
+  check('a markdown link and inline code are recognised',
+    kindsOf(scan('markdown', 'see `x` and [y](z)')) === 'string,link')
+
+  check('markup tags, attributes and values are told apart',
+    kindsOf(scan('markup', '<div class="x" id=y>t</div>')) === 'keyword,prop,string,prop,string,keyword')
+  const openNote = scan('markup', '<!-- note')
+  check('a markup comment carries across lines',
+    openNote.state.comment === true && kindsOf(scan('markup', 'end -->', openNote.state)) === 'comment')
+
+  const openDoc = scan('python', '    """doc')
+  const inDoc = scan('python', '    more', openDoc.state)
+  const afterDoc = scan('python', '    """', inDoc.state)
+  check('a Python triple-quoted string spans lines',
+    openDoc.state.mode === 'block' && kindsOf(inDoc) === 'string' &&
+      kindsOf(afterDoc) === 'string' && afterDoc.state.mode === 'code')
+  check('...and the code after it is scanned again',
+    kindsOf(scan('python', '    return None', afterDoc.state)) === 'keyword,constant')
+
+  const reconstruction = [
+    ['javascript', scriptLine],
+    ['javascript', 'obj.value = call()'],
+    ['javascript', '\tconst t = `x${y}`'],
+    ['javascript', 'const re = /ab"c/g'],
+    ['json', '"key": [1, true]'],
+    ['css', '.a > b { color: "red"; }'],
+    ['markdown', '- item with `code`'],
+    ['markup', '<div class="x" id=y>t</div>'],
+    ['python', 'def f (a): return None'],
+    ['sql', 'select * from t'],
+  ]
+  check('the token spans put the line back together exactly',
+    reconstruction.every(([language, line]) =>
+      loaded.tokenSpans(line, scan(language, line).tokens).map(part => part.text).join('') === line),
+    reconstruction.map(([language, line]) => language).join(','))
+  check('...and tokens never overlap or run past the line',
+    reconstruction.every(([language, line]) => {
+      let end = 0
+      return scan(language, line).tokens.every((token) => {
+        const ok = token.start >= end && token.end > token.start && token.end <= line.length
+        end = token.end
+        return ok
+      })
+    }))
+  check('a token that runs past the line is clipped, not crashed',
+    loaded.tokenSpans('ab', [{ start: 1, end: 9, type: 'string' }]).map(part => part.text).join('') === 'ab')
+
+  check('the changed line is where the token cache resumes',
+    loaded.firstChangedLine('a\nb\nc', 'a\nb\nc') === -1 &&
+      loaded.firstChangedLine('a\nb\nc', 'a\nB\nc') === 1 &&
+      loaded.firstChangedLine('a\nb', 'a\nb\nc') === 1 &&
+      loaded.firstChangedLine('a\nb', 'a') === 0)
+
+  const topWindow = loaded.visibleLineRange(0, 180, 100, 12)
+  const middleWindow = loaded.visibleLineRange(900, 180, 100, 12)
+  check('the window follows the scroll and stays inside the file',
+    topWindow.first === 0 && middleWindow.first === 38 &&
+      loaded.visibleLineRange(9999, 180, 100, 12).last === 100 &&
+      loaded.visibleLineRange(9999, 180, 100, 12).first === 99)
+  check('...and an empty file or an unreadable viewport asks for nothing impossible',
+    loaded.visibleLineRange(0, 180, 0, 12).last === 0 &&
+      Number.isFinite(loaded.visibleLineRange(Number.NaN, Number.NaN, 10, 12).first))
+
+  const ready = { phase: 'ready', language: 'javascript', wrap: false, composing: false, length: 10 }
+  check('the layer is on only where colouring is correct',
+    loaded.highlightEnabled(ready) === true &&
+      loaded.highlightEnabled({ ...ready, wrap: true }) === false &&
+      loaded.highlightEnabled({ ...ready, composing: true }) === false &&
+      loaded.highlightEnabled({ ...ready, language: null }) === false &&
+      loaded.highlightEnabled({ ...ready, length: loaded.HIGHLIGHT_MAX_CHARS + 1 }) === false &&
+      loaded.highlightEnabled({ ...ready, phase: 'loading' }) === false)
+  check('the size cap is a real number below the editor\'s own limit',
+    Number.isInteger(loaded.HIGHLIGHT_MAX_CHARS) && loaded.HIGHLIGHT_MAX_CHARS > 0 &&
+      loaded.HIGHLIGHT_MAX_CHARS <= 2 * 1024 * 1024)
+
+  // The cache is the difference between a per-keystroke cost bounded by the
+  // window and one bounded by the file. Retaining the STATE at a line is only
+  // sound if an edit invalidates every state after it, which is what the second
+  // half of this check would catch.
+  const cache = loaded.createHighlightCache()
+  loaded.syncHighlightCache(cache, 'javascript', 'const a = 1\n/* open\nconst b = 2\nconst c = 3')
+  check('an open block comment colours the lines it covers',
+    kindsOf({ tokens: loaded.tokensAt(cache, 3) }) === 'comment',
+    kindsOf({ tokens: loaded.tokensAt(cache, 3) }))
+  loaded.syncHighlightCache(cache, 'javascript', 'const a = 1\n// open\nconst b = 2\nconst c = 3')
+  check('...and rewriting its opener re-colours every line below it',
+    kindsOf({ tokens: loaded.tokensAt(cache, 3) }) === 'keyword,number',
+    kindsOf({ tokens: loaded.tokensAt(cache, 3) }))
+  check('a line outside the file answers no tokens', loaded.tokensAt(cache, 99).length === 0 &&
+    loaded.tokensAt(cache, -1).length === 0)
+
+  // -- and the shape that keeps the layer underneath without stealing a job
+  const layerAreaRule = /\.sshwsp-editor-area \{([^}]*)\}/u.exec(styles)
+  const lineRule = /\.sshwsp-editor-hl-line \{([^}]*)\}/u.exec(styles)
+  const metrics = (rule) => ['font-family', 'font-size', 'line-height', 'tab-size', 'white-space']
+    .map((name) => {
+      const found = rule === undefined ? null : new RegExp(`${name}:\\s*([^;]+);`, 'u').exec(rule)
+      return found === null ? `${name}=absent` : `${name}=${found[1].trim()}`
+    }).join('|')
+  check('the colour layer repeats the textarea\'s metrics exactly',
+    layerAreaRule !== null && lineRule !== null && metrics(layerAreaRule[1]) === metrics(lineRule[1]),
+    `${metrics(layerAreaRule?.[1])} vs ${metrics(lineRule?.[1])}`)
+  check('the layer is a clip, not a second scroll port',
+    /\.sshwsp-editor-hl \{[^}]*overflow: hidden/u.test(styles) &&
+      /\.sshwsp-editor-hl \{[^}]*pointer-events: none/u.test(styles))
+  check('...and the textarea is transparent only while the layer paints',
+    /\.sshwsp-editor-area-box-hl \.sshwsp-editor-area \{[^}]*color: transparent/u.test(styles) &&
+      /\.sshwsp-editor-area-box-hl \.sshwsp-editor-area \{[^}]*caret-color/u.test(styles))
+  check('...with a translucent selection, so the colour underneath survives it',
+    /\.sshwsp-editor-area-box-hl \.sshwsp-editor-area::selection \{[^}]*rgba\(/u.test(styles))
+  // The light palette must follow the app's theme, not the desktop's: DSH
+  // publishes `data-ds-theme-source` on <html> (the preference, `system`
+  // included) and the OS query is only right when the app is following it.
+  check('the light palette follows the host\'s theme source, not the OS alone',
+    styles.includes('[data-ds-theme-source="light"] .sshwsp-editor-panel') &&
+      styles.includes('[data-ds-theme-source="system"] .sshwsp-editor-panel') &&
+      !/@media \(prefers-color-scheme: light\) \{\s*\n\s*\.sshwsp-editor-panel/u.test(styles))
+  // A colour that looks fine in one theme can be unreadable in the other: One
+  // Light's string green measured 3.1:1 on white while the same role clears 6:1
+  // in the dark palette. Both palettes are measured against their own
+  // background, with 4.5:1 as the WCAG AA floor for body text.
+  const relativeLuminance = (hex) => {
+    const channel = (value) => {
+      const ratio = value / 255
+      return ratio <= 0.03928 ? ratio / 12.92 : ((ratio + 0.055) / 1.055) ** 2.4
+    }
+    return 0.2126 * channel(parseInt(hex.slice(1, 3), 16)) +
+      0.7152 * channel(parseInt(hex.slice(3, 5), 16)) +
+      0.0722 * channel(parseInt(hex.slice(5, 7), 16))
+  }
+  const contrastOn = (hex, background) => {
+    const [high, low] = [relativeLuminance(hex), relativeLuminance(background)].sort((a, b) => b - a)
+    return (high + 0.05) / (low + 0.05)
+  }
+  const paletteOf = (block) => Object.fromEntries(
+    [...block.matchAll(/--sshwsp-hl-([a-z]+):\s*(#[0-9a-f]{6});/gu)].map(match => [match[1], match[2]]))
+  const darkPalette = paletteOf(
+    [...styles.matchAll(/\.sshwsp-editor-panel \{([^}]*)\}/gu)]
+      .map(match => match[1]).find(block => block.includes('--sshwsp-hl-comment')) ?? '')
+  const lightPalette = paletteOf(
+    /\[data-ds-theme-source="light"\] \.sshwsp-editor-panel,[\s\S]*?\{([^}]*)\}/u.exec(styles)?.[1] ?? '')
+  check('both palettes name the same colours',
+    Object.keys(darkPalette).length === 11 && Object.keys(lightPalette).length === 11 &&
+      Object.keys(lightPalette).sort().join(',') === Object.keys(darkPalette).sort().join(','),
+    `${Object.keys(darkPalette).length}/${Object.keys(lightPalette).length}`)
+  check('...and every colour stays readable on its own background',
+    Object.values(darkPalette).every(hex => contrastOn(hex, '#1e1e1e') >= 4.5) &&
+      Object.values(lightPalette).every(hex => contrastOn(hex, '#ffffff') >= 4.5),
+    Object.entries(darkPalette).map(([name, hex]) => `${name}=${contrastOn(hex, '#1e1e1e').toFixed(1)}`)
+      .concat(Object.entries(lightPalette).map(([name, hex]) => `light.${name}=${contrastOn(hex, '#ffffff').toFixed(1)}`))
+      .join(','))
+  check('...and the layer is drawn where the textarea can paint over it',
+    /z-index: 1/u.test(layerAreaRule?.[1] ?? '') && /z-index: 0/u.test(
+      /\.sshwsp-editor-hl \{[^}]*\}/u.exec(styles)?.[0] ?? ''
+    ))
+  check('the panel puts the layer before the textarea in its own box',
+    editor.indexOf('jsx(HighlightLayer') > 0 && editor.indexOf('jsx(HighlightLayer') < editor.indexOf("className: 'sshwsp-editor-area' +"))
+  check('an IME composition hands the glyphs back to the textarea',
+    editor.includes('onCompositionStart: () => setComposing(true)') &&
+      editor.includes('onCompositionEnd: () => setComposing(false)'))
+  // The wrap toggle used to be labelled with the Tab hint ("Tab inserts two
+  // spaces"), which describes none of what the button does — and now it also
+  // turns the colours off, so the label has to say what it IS.
+  check('the wrap toggle is labelled as wrapping, not as the Tab hint',
+    editor.includes("title: t('edit.wrapHint')") && editor.includes("children: t('edit.wrap')") &&
+      !editor.includes("children: t('edit.tabHint')"))
 }
 
 // ---------------------------------------------------------------------------
-// [9] Every key the chunk asks for exists in both dictionaries
+// [8a] Open tabs: the store that outlives the panel, and the strip that shows it
 // ---------------------------------------------------------------------------
+{
+  const saved = globalThis.window
+  let factory
+  globalThis.window = { __ModuleLoader__: { load (spec) { factory = spec.factory } } }
+  let loaded
+  try {
+    // eslint-disable-next-line no-new-func
+    const run = new Function('window', 'require', 'module', 'exports', readFileSync(editorPath, 'utf8'))
+    const shim = { exports: {} }
+    run(globalThis.window, () => ({}), shim, shim.exports)
+    loaded = factory((name) => ({ react: {}, 'react/jsx-runtime': {} })[name] ?? {
+      API: {},
+      CloseIcon: () => null,
+      formatBytes: () => '',
+      requestJson: async () => ({ ok: true, status: 200, data: {} }),
+    })
+  } finally {
+    globalThis.window = saved
+  }
+
+  check('the tab store is exported, so its rules are asserted rather than rewritten',
+    typeof loaded.createTabStore === 'function')
+  const tabs = loaded.createTabStore()
+  check('a session starts with no tabs and nothing in front',
+    tabs.list('s').length === 0 && tabs.active('s') === '')
+  tabs.open('s', '/a')
+  tabs.open('s', '/b')
+  tabs.open('s', '/a')
+  check('...opening a file twice keeps one tab and brings it forward',
+    tabs.list('s').join(',') === '/a,/b' && tabs.active('s') === '/a')
+
+  let notified = 0
+  const stop = tabs.subscribe('s', () => { notified += 1 })
+  tabs.remember('s', '/b', { text: 'x' })
+  tabs.remember('s', '/b', { text: 'xy' })
+  check('...a dirty buffer is remembered, and the strip is not woken for every keystroke',
+    tabs.draft('s', '/b')?.text === 'xy' && notified === 1)
+  tabs.remember('s', '/b', null)
+  check('...forgetting a draft is a flip the strip does hear about',
+    tabs.draft('s', '/b') === null && notified === 2)
+  check('...closing the active tab puts its right neighbour in front',
+    tabs.close('s', '/a') === '/b' && tabs.list('s').join(',') === '/b')
+  check('...and closing the last tab leaves nothing in front',
+    tabs.close('s', '/b') === '' && tabs.list('s').length === 0)
+  stop()
+  notified = 0
+  tabs.remember('s', '/c', { text: 'z' })
+  check('...an unsubscribed listener is not called', notified === 0)
+  check('...and every store is its own', loaded.createTabStore().list('s').length === 0)
+
+  check('the panel shows the strip of every file the session opened, not just its own',
+    editor.includes("jsx('div', { className: 'sshwsp-editor-tabs'") &&
+      editor.includes('tabPaths.map') &&
+      editor.includes('openTabs.list(sessionId)'))
+  check('...restores an unsaved draft instead of re-reading the file it belongs to',
+    /const draft = openTabs\.draft\(sessionId, target\)\s*\n\s*if \(draft !== null\) \{/u.test(editor))
+  check('...checks the draft BEFORE it starts a read',
+    editor.indexOf('openTabs.draft(sessionId, target)') > 0 &&
+      editor.indexOf('openTabs.draft(sessionId, target)') < editor.indexOf('new AbortController()', editor.indexOf('One load path, driven')))
+  check('...mirrors the buffer into the store as it changes',
+    /React\.useEffect\(\(\) => \{\s*\n\s*rememberActive\(\)\s*\n\s*\}, \[state, rememberActive\]\)/u.test(editor))
+  check('...asks before closing a dirty tab',
+    editor.includes("if (window.confirm(t('edit.unsavedPrompt')) !== true) return"))
+  check('...and a save no longer closes the panel that holds the file in a tab',
+    /onSaved: \(\) => undefined/u.test(editor))
+  // Two bugs the first version had, both born from `target` changing before
+  // `state` did: the previous file's buffer was mirrored under the new tab, and
+  // closing a tab behind the visible one pushed the visible buffer into a
+  // loading state that no effect would ever leave.
+  check('...a buffer carries the path it came from, and the draft mirror checks it',
+    editor.includes('current.path !== target') &&
+      editor.includes("path: target,\n              text,"))
+  check('...and closing a tab behind the visible one leaves the visible one alone',
+    editor.includes('if (closedPath !== target) return'))
+  check('...while the engine is created only once the body it mounts into exists',
+    /state\.phase !== 'ready'\) return undefined/u.test(editor) &&
+      /\[engineModule, target, state\.phase\]/u.test(editor))
+  check('...and a session has ONE panel on screen: a newer mount closes the older',
+    editor.indexOf('const panelOwners = new Map()') > 0 &&
+      editor.indexOf('const panelOwners = new Map()') < editor.indexOf('function FileEditorPanel') &&
+      /if \(previous !== undefined && previous !== handle\) previous\.close\(\)/u.test(editor))
+}
+
+// ---------------------------------------------------------------------------
+// [8b] The editor engine chunk (CodeMirror), and the fallback that outlives it
+// ---------------------------------------------------------------------------
+{
+  const enginePath = path.join(pluginRoot, 'lib', 'client', 'client.editor-engine.js')
+  const engineSource = readFileSync(enginePath, 'utf8')
+  const manifest = JSON.parse(readFileSync(path.join(pluginRoot, 'package.json'), 'utf8'))
+
+  // The chunk is generated, and generated files rot silently. Three things keep
+  // it honest: the size (a stray empty file would "work" and mount nothing),
+  // the registration footer (the Host evaluates chunks, it does not import
+  // them), and the build scripts being declared at all.
+  check('the engine ships as its own chunk, large enough to be worth a lazy load',
+    engineSource.length > 300 * 1024, `${Math.round(engineSource.length / 1024)} KiB`)
+  check('...and registers itself the way the Host loads chunks',
+    /window\.__ModuleLoader__\.load\(\{[\s\S]{0,200}?chunk: 'client\.editor-engine\.js'[\s\S]{0,120}?factory: \(\) => window\.__sshwsp_engine/u
+      .test(engineSource))
+  check('...with build and staleness scripts, so the artifact cannot drift',
+    /node scripts\/build-editor-engine\.mjs/u.test(manifest.scripts?.['build:editor'] ?? '') &&
+      /--check/u.test(manifest.scripts?.['check:editor'] ?? ''))
+
+  // Evaluating the real bundle is the difference between "a file exists" and
+  // "mounting an editor is possible": it proves the factory returns a real
+  // `createEditorEngine`, not an empty namespace.
+  const savedEngineWindow = globalThis.window
+  let engineFactory
+  let engineExports = null
+  try {
+    globalThis.window = { __ModuleLoader__: { load (spec) { engineFactory = spec.factory } } }
+    // eslint-disable-next-line no-new-func
+    new Function('window', engineSource)(globalThis.window)
+    engineExports = engineFactory()
+  } catch {
+    engineExports = null
+  } finally {
+    globalThis.window = savedEngineWindow
+  }
+  check('the bundle evaluates and exports a mount function',
+    typeof engineExports?.createEditorEngine === 'function')
+
+  // The panel owns the fallback: if the engine chunk never arrives, the textarea
+  // has to still be there, which means the CM branch must be conditional rather
+  // than a replacement in source.
+  check('the panel asks for the engine lazily, and only after a file loaded',
+    editor.includes("require.async('./client.editor-engine.js')") &&
+      editor.includes('engineModulePromise') &&
+      /if \(state\.phase !== 'ready' \|\| engineModule !== null\) return undefined/u.test(editor))
+  check('...remembers a failed load instead of retrying on every render',
+    /\.catch\(\(\) => null\)/u.test(editor) && editor.includes('if (engineModulePromise === null)'))
+  check('...keeps the textarea as the editor when the engine is absent',
+    editor.includes("className: 'sshwsp-editor-cm'") &&
+      editor.includes("className: 'sshwsp-editor-area'") &&
+      editor.includes('engineModule !== null'))
+  check('...and hands the engine the panel\'s own save, find and escape policy',
+    editor.includes('onSave: () => handlersRef.current.save?.()') &&
+      editor.includes('onFind: () => handlersRef.current.openFind?.()') &&
+      editor.includes('onEscape: () => handlersRef.current.escape?.()'))
+  check('the engine host is the only scroller where it mounts',
+    /\.sshwsp-editor-cm \{[^}]*min-height: 0/u.test(styles) &&
+      /\.sshwsp-editor-cm \{[^}]*display: flex/u.test(styles))
+}
+
 {
   const locale = readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.locale.js'), 'utf8')
   const asked = [...editor.matchAll(/\bt\('(edit\.[A-Za-z]+)'/gu)].map(match => match[1])

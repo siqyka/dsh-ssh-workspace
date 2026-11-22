@@ -1,5 +1,6 @@
 /**
- * Rename / delete: the pure rules, the route fences, and the local authority.
+ * Rename / delete / mkdir / create-file: the pure rules, the route fences, and
+ * the local authority.
  *
  * The pure half runs on a bare checkout. The route half needs the assembled DSH
  * tree (`DSH_CORE_ROOT`) because the route family imports the host's peer packages,
@@ -12,7 +13,7 @@
  * Run: node tests/mutations-smoke.mjs
  */
 
-import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -90,6 +91,37 @@ console.log('\n=== mutations smoke ===\n')
   check('...and the successful action re-lists and selects the new row',
     client.includes('fetchJson(API.mkdir') &&
       client.includes('selectCreatedRow(data?.path, request)'))
+  check('the route table has a create-file endpoint',
+    routes.includes("createFile: '/api/dsh-ssh-workspace/create-file'"))
+  // Sliced to this ONE function: the mkdir twin contains the same two calls,
+  // and a whole-file `includes` would let either fence be deleted here and
+  // still find the other function's copy.
+  const createFileRemoteFn = (() => {
+    const start = routes.indexOf('async function createFileRemoteEntry')
+    if (start < 0) return ''
+    const end = routes.indexOf('async function createFileLocalEntry', start)
+    return routes.slice(start, end < 0 ? undefined : end)
+  })()
+  check('create-file fences the CHILD it creates and creates exclusively',
+    createFileRemoteFn.includes("assertMutationAllowed(ctx, body, child.displayPath, 'create a file')") &&
+      createFileRemoteFn.includes('assertRemoteFence(router, child)') &&
+      /openRemoteFile\(sftp, childPath, 'wx', child\.displayPath\)/u.test(createFileRemoteFn))
+  // The new-file dialog is its own function; slice it so "the success path
+  // re-lists and selects" cannot be satisfied by the new-folder twin.
+  const newFilePrompt = (() => {
+    const start = client.indexOf('function requestRowNewFile')
+    if (start < 0) return ''
+    const end = client.indexOf('function selectCreatedRow', start)
+    return client.slice(start, end < 0 ? undefined : end)
+  })()
+  check('the row menu offers new file before new folder for a remote directory',
+    client.indexOf('const newFileItem') >= 0 &&
+      client.indexOf('const newFileItem') < client.indexOf('const newFolderItem') &&
+      client.includes("translate('rowmenu.newFile')"))
+  check('...and the new-file prompt posts create-file, re-lists and selects the row',
+    newFilePrompt.includes('fetchJson(API.createFile') &&
+      newFilePrompt.includes('refreshFilesPanel()') &&
+      newFilePrompt.includes('selectCreatedRow(data?.path, request)'))
   check('the local branch re-reads the root from the session/policy, not the body',
     /function localRootOf \(owner\)/u.test(routes) &&
       /owner\?\.policy\?\.workspaceRoot/u.test(routes) &&
@@ -183,9 +215,13 @@ if (!coreRoot) {
     socketPaths.set('/srv/proj/dir/inner.txt', { type: 'file' })
     socketPaths.set('/srv/proj/link', { type: 'link' })
     socketPaths.set('/srv/proj/detached.txt', { type: 'file' })
-    const calls = { renames: [], unlinks: [], rmdirs: [], mkdirs: [] }
+    const calls = { renames: [], unlinks: [], rmdirs: [], mkdirs: [], opens: [], closes: [] }
+    // Paths lstat pretends not to see, so a test can model the window between
+    // the existence precheck and the exclusive open.
+    const hiddenFromLstat = new Set()
     const sftp = {
       lstat (target, cb) {
+        if (hiddenFromLstat.has(target)) { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
         const entry = socketPaths.get(target)
         if (entry === undefined) { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
         cb(null, {
@@ -234,6 +270,28 @@ if (!coreRoot) {
       },
       unlink (target, cb) { calls.unlinks.push(target); socketPaths.delete(target); cb(null) },
       rmdir (target, cb) { calls.rmdirs.push(target); socketPaths.delete(target); cb(null) },
+      // Exclusive create, as the real server answers it: `wx` on an existing
+      // path FAILS (code 4, SFTP FAILURE) instead of truncating; the file it
+      // does create starts at zero bytes because nothing is written.
+      open (target, flags, cb) {
+        // `w` truncates an existing file; `wx` REFUSES it. Modeling both is the
+        // point: the route must never rely on the precheck alone.
+        if (flags === 'w' && socketPaths.has(target)) {
+          calls.opens.push([target, flags])
+          socketPaths.get(target).size = 0
+          cb(null, { path: target })
+          return
+        }
+        if (flags !== 'wx') { cb(Object.assign(new Error('unsupported flags'), { code: 4 })); return }
+        if (socketPaths.has(target)) { cb(Object.assign(new Error('failure'), { code: 4 })); return }
+        const parent = target.slice(0, target.lastIndexOf('/')) || '/'
+        const entry = socketPaths.get(parent)
+        if (entry === undefined || entry.type !== 'dir') { cb(Object.assign(new Error('no such file'), { code: 2 })); return }
+        calls.opens.push([target, flags])
+        socketPaths.set(target, { type: 'file', size: 0 })
+        cb(null, { path: target })
+      },
+      close (handle, cb) { calls.closes.push(handle.path); cb(null) },
     }
     const detached = new Set()
     const router = {
@@ -292,6 +350,70 @@ if (!coreRoot) {
     const madeMissing = await post(routes, ROUTES.mkdir, { path: 'ssh://qy/srv/proj/missing', name: 'x', sessionId: 's-remote' })
     check('a missing parent directory is a 404',
       madeMissing.status === 404 && /does not exist/u.test(madeMissing.body), JSON.stringify(madeMissing))
+
+    // ---- remote create-file -------------------------------------------------
+    const createdFile = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: 'notes.md', sessionId: 's-remote' })
+    check('creating a file below the mounted root works',
+      createdFile.status === 200 &&
+        calls.opens.some(([target, flags]) => target === '/srv/proj/notes.md' && flags === 'wx'),
+      JSON.stringify({ createdFile, opens: calls.opens }))
+    check('...and the file really is zero bytes',
+      socketPaths.get('/srv/proj/notes.md')?.type === 'file' && socketPaths.get('/srv/proj/notes.md')?.size === 0,
+      JSON.stringify(socketPaths.get('/srv/proj/notes.md')))
+    check('...and the route reports the created spelling',
+      JSON.parse(createdFile.body).path === 'ssh://qy/srv/proj/notes.md', createdFile.body)
+    check('...and the handle is closed rather than leaked',
+      calls.closes.includes('/srv/proj/notes.md'), JSON.stringify(calls.closes))
+
+    const createdTwice = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: 'notes.md', sessionId: 's-remote' })
+    check('creating an existing file name is a 409',
+      createdTwice.status === 409 && /already exists/u.test(createdTwice.body), JSON.stringify(createdTwice))
+    check('...and the existing file was not touched',
+      socketPaths.get('/srv/proj/notes.md')?.size === 0 &&
+        calls.opens.filter(([target]) => target === '/srv/proj/notes.md').length === 1,
+      JSON.stringify({ entry: socketPaths.get('/srv/proj/notes.md'), opens: calls.opens }))
+
+    const createdDot = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: '.gitignore', sessionId: 's-remote' })
+    check('a dot-leading file name is accepted', createdDot.status === 200, JSON.stringify(createdDot))
+
+    const createdMissing = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj/missing', name: 'x.txt', sessionId: 's-remote' })
+    check('a missing parent directory is a 404',
+      createdMissing.status === 404 && /does not exist/u.test(createdMissing.body), JSON.stringify(createdMissing))
+
+    const createdOnFile = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj/b.txt', name: 'x.txt', sessionId: 's-remote' })
+    check('creating below a file is a 400',
+      createdOnFile.status === 400 && /not a directory/u.test(createdOnFile.body), JSON.stringify(createdOnFile))
+
+    const createdOutside = await post(routes, ROUTES.createFile, { path: 'ssh://qy/other', name: 'x.txt', sessionId: 's-remote' })
+    check('creating outside every mounted root is a 403',
+      createdOutside.status === 403 && /outside every mounted/u.test(createdOutside.body), JSON.stringify(createdOutside))
+
+    const createdBadName = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: 'x/y.txt', sessionId: 's-remote' })
+    check('a file name carrying a separator is a 400',
+      createdBadName.status === 400 && /single path segment/u.test(createdBadName.body), JSON.stringify(createdBadName))
+
+    const createdReadOnly = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: 'ro.txt', sessionId: 's-remote-ro' })
+    check('a read-only session cannot create a file',
+      createdReadOnly.status === 403 && /read-only/u.test(createdReadOnly.body), JSON.stringify(createdReadOnly))
+
+    const createdDetached = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: 'locked.txt', sessionId: 's-remote' })
+    detached.add('qy:/srv/proj/locked.txt')
+    const createdDetachedNow = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: 'locked.txt', sessionId: 's-remote' })
+    detached.delete('qy:/srv/proj/locked.txt')
+    check('a workspace detached for this path refuses before any SFTP call',
+      createdDetachedNow.status === 403 && /detached/u.test(createdDetachedNow.body), JSON.stringify(createdDetachedNow))
+    check('...and the earlier, enabled attempt had created it', createdDetached.status === 200, JSON.stringify(createdDetached))
+
+    // The precheck is not the boundary: a file can appear between it and the
+    // open. `'wx'` then refuses and the file is left alone; a plain `'w'` would
+    // truncate it and answer 200 — the failure mode this assertion pins.
+    socketPaths.set('/srv/proj/racing.txt', { type: 'file', size: 5 })
+    hiddenFromLstat.add('/srv/proj/racing.txt')
+    const raced = await post(routes, ROUTES.createFile, { path: 'ssh://qy/srv/proj', name: 'racing.txt', sessionId: 's-remote' })
+    hiddenFromLstat.delete('/srv/proj/racing.txt')
+    check('a file that appears after the existence check is refused, not truncated',
+      raced.status !== 200 && socketPaths.get('/srv/proj/racing.txt')?.size === 5,
+      JSON.stringify({ raced, entry: socketPaths.get('/srv/proj/racing.txt') }))
 
     const root = await post(routes, ROUTES.deleteEntry, { path: 'ssh://qy/srv/proj', sessionId: 's-remote' })
     check('deleting the mounted root itself is refused', root.status === 403 && /root itself/u.test(root.body), JSON.stringify(root))
@@ -443,6 +565,30 @@ if (!coreRoot) {
     console.log('  NOTE  no symlink/junction support (the realpath fence is unproven on this machine)')
   }
 
+  // ---- local create-file ----------------------------------------------------
+  // Same route shape as mkdir, and the same rule: the root comes from the
+  // session, never from the request.
+  const madeFile = await post(routes, ROUTES.createFile, { path: localRoot, name: 'notes.md', sessionId: 's-local' })
+  check('creating a file in the local workspace works',
+    madeFile.status === 200 && lstatSync(path.join(localRoot, 'notes.md')).isFile(), JSON.stringify(madeFile))
+  check('...and it is zero bytes', statSync(path.join(localRoot, 'notes.md')).size === 0)
+  const madeFileTwice = await post(routes, ROUTES.createFile, { path: localRoot, name: 'notes.md', sessionId: 's-local' })
+  check('creating an existing local file name is a 409',
+    madeFileTwice.status === 409 && /already exists/u.test(madeFileTwice.body), JSON.stringify(madeFileTwice))
+  const madeFileOutside = await post(routes, ROUTES.createFile, { path: outsideRoot, name: 'escape.txt', sessionId: 's-local' })
+  check('creating a file outside the session workspace is refused',
+    madeFileOutside.status === 403 && /outside the session workspace/u.test(madeFileOutside.body), JSON.stringify(madeFileOutside))
+  check('...and nothing was created there', !exists(path.join(outsideRoot, 'escape.txt')))
+  const madeFileSeparator = await post(routes, ROUTES.createFile, { path: localRoot, name: 'a/b.txt', sessionId: 's-local' })
+  check('a local file name carrying a separator is a 400',
+    madeFileSeparator.status === 400 && /single path segment/u.test(madeFileSeparator.body), JSON.stringify(madeFileSeparator))
+  const madeFileOnFile = await post(routes, ROUTES.createFile, { path: path.join(localRoot, 'renamed.txt'), name: 'x.txt', sessionId: 's-local' })
+  check('creating a file below a file is a 400',
+    madeFileOnFile.status === 400 && /not a directory/u.test(madeFileOnFile.body), JSON.stringify(madeFileOnFile))
+  const madeDotFile = await post(routes, ROUTES.createFile, { path: localRoot, name: '.gitignore', sessionId: 's-local' })
+  check('a dot-leading local file name is accepted',
+    madeDotFile.status === 200 && lstatSync(path.join(localRoot, '.gitignore')).isFile(), JSON.stringify(madeDotFile))
+
   const readOnlySessions = sessions.concat([{ id: 's-local-ro', header: { cwd: localRoot }, mode: 'read-only' }])
   const readOnlyCtx = createHost({
     services: {
@@ -461,6 +607,10 @@ if (!coreRoot) {
   check('a read-only local session cannot create a folder',
     madeReadOnlyLocal.status === 403 && /read-only/u.test(madeReadOnlyLocal.body), JSON.stringify(madeReadOnlyLocal))
   check('...and nothing was created', !exists(path.join(localRoot, 'nope')))
+  const madeReadOnlyFile = await post(readOnlyRoutes, ROUTES.createFile, { path: localRoot, name: 'nope.txt', sessionId: 's-local-ro' })
+  check('a read-only local session cannot create a file',
+    madeReadOnlyFile.status === 403 && /read-only/u.test(madeReadOnlyFile.body), JSON.stringify(madeReadOnlyFile))
+  check('...and nothing was created either', !exists(path.join(localRoot, 'nope.txt')))
   mkdirSync(path.join(localRoot, 'sub'))
   const existsAfter = await post(routes, ROUTES.rename, {
     path: path.join(localRoot, 'renamed.txt'),

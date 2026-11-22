@@ -24,3 +24,5 @@ cl[0-9]*.py
 mutate.py
 docpatch.py
 inspect.py
+.test-run.log
+.tmp-proto.log
