@@ -310,6 +310,33 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
 }
 
 // ---------------------------------------------------------------------------
+// [7b] A page unload that would discard the draft is guarded (defect 5)
+// ---------------------------------------------------------------------------
+{
+  // The close button asks, but a refresh or a tab close never reaches it. This
+  // is the only hook the page gets for those.
+  check('a beforeunload guard is registered', editor.includes("addEventListener('beforeunload'"))
+  check('...bound to dirty, so a saved buffer does not block a refresh',
+    /if \(dirty !== true\) return undefined/u.test(editor) && /\}, \[dirty\]\)/u.test(editor))
+  check('...and unbound on unmount, so a closed editor leaves nothing behind',
+    editor.includes("removeEventListener('beforeunload'"))
+  // Browsers disagree about which of the two is honoured; neither is a message,
+  // so no text is put in either. Scoped to the handler body on purpose: other
+  // `preventDefault()` calls in this file (Tab, Ctrl+S, Escape) would otherwise
+  // keep the assertion green with the guard's own calls deleted.
+  const guardStart = editor.indexOf('const guard = (event) => {')
+  const guardEnd = editor.indexOf('window.addEventListener', guardStart)
+  const guardBody = guardStart >= 0 && guardEnd > guardStart ? editor.slice(guardStart, guardEnd) : ''
+  check('the guard body was located', guardBody !== '', `start ${guardStart}, end ${guardEnd}`)
+  check('both the modern and the legacy suppression are set',
+    guardBody.includes('event.preventDefault()') && guardBody.includes('event.returnValue'))
+  check('...and no message text is written (no browser shows it)',
+    !/returnValue\s*=\s*['"][^'"]+['"]/u.test(guardBody))
+  check('the guard does not add a second Escape handler',
+    (editor.match(/key === 'Escape'/gu) ?? []).length === 1)
+}
+
+// ---------------------------------------------------------------------------
 // [8] The pure helpers, driven
 // ---------------------------------------------------------------------------
 {
