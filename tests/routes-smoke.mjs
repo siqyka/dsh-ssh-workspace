@@ -2177,6 +2177,40 @@ async function postChunk (route, body, chunks = []) {
     }
 
     {
+      // A folded chain arrives as ONE row whose name carries the slashes. The
+      // picker joins it with the directory it is browsing, so the row has to
+      // stay a single entry rather than being split into three.
+      const { body, calls } = await runListing(
+        '&path=%2Fhome%2Fdev%2Fproject&dirs=1',
+        { exitCode: 0, stdout: 'src/app\n', stderr: meta(1, 1, '/home/dev/project') },
+      )
+      check('a folded chain is one row, not one row per level',
+        body.entries.length === 1 && body.entries[0].name === 'src/app' && body.entries[0].type === 'directory',
+        JSON.stringify(body.entries))
+      check('...and the listing still names the directory the caller asked for',
+        body.path === '/home/dev/project', body.path)
+      // The fold has to happen on the remote side of the ONE round trip: doing
+      // it with one listing per level would cost what it saves.
+      const script = calls.exec[0].command
+      check('the fold runs inside that single command',
+        script.includes('-mindepth 1 -maxdepth 1 -type d') && script.includes('prefix=') &&
+          script.includes('depth=$((depth + 1))'),
+        script.slice(0, 200))
+      check('...bounded, so a pathological chain cannot spin', script.includes('[ "$depth" -lt 16 ]'))
+      check('...stopping the first time a level offers a choice',
+        script.includes('wc -l)" -eq 1 ] || break'), script.slice(0, 300))
+      check('...and emitting the chain as the row, with no trailing slash',
+        script.includes('printf \'%s/\\n\' "${prefix%/}"'), script.slice(0, 300))
+      // `find -type d` uses lstat, so a symlinked directory is never folded.
+      // That is not cosmetic: a link can leave the directory being browsed, and
+      // one pointing at its own parent would fold for ever.
+      check('...and only real directories fold, so a symlink cannot walk out',
+        script.includes('-type d') && !/find "\$dir"[^\n]*-type l/u.test(script))
+      check('...with the marker echoing the root, not the end of the chain',
+        script.includes('root="$dir"') && script.includes('export LS_DIR="$root"'))
+    }
+
+    {
       const { body, calls } = await runListing(
         '&dirs=1&limit=2',
         { exitCode: 0, stdout: '\n', stderr: meta(0, 1, '/home/dev') },
