@@ -37,19 +37,28 @@ const DIRECTORIES = ['lib', 'scripts', 'tests']
  * crash at runtime, or into a suite that fails for a reason that looks like
  * anything but a typo.
  *
- * @returns {string[]} paths relative to the repository root.
+ * @returns {{ files: string[], absent: string[] }} the module paths (relative to
+ *   the repository root) and the roots that are not in this tree at all.
  */
 function moduleFiles () {
   const files = []
+  const absent = []
   /** @param {string} directory - relative to the root. */
   const walk = (directory) => {
     let entries
     try {
       entries = readdirSync(path.join(root, directory), { withFileTypes: true })
-    } catch {
-      // A missing directory is not a failure: a published tarball ships `lib/`
-      // only, and `npm run lint` there should still pass rather than explode.
-      return
+    } catch (error) {
+      // A published tarball ships `lib/` only, so an ABSENT root is expected —
+      // but it is REPORTED, because "lint passed" over a tree that has no
+      // `tests/` is a different claim from "lint passed over all of it". What
+      // must not pass at all is a root that exists and cannot be read: the
+      // count would be silently short with no mention of it.
+      if (error.code === 'ENOENT') {
+        absent.push(directory)
+        return
+      }
+      throw new Error(`lint: cannot list ${directory} — the module count would be silently short (${error.code ?? error.message})`)
     }
     for (const entry of entries) {
       const relative = `${directory}/${entry.name}`
@@ -65,10 +74,13 @@ function moduleFiles () {
     }
   }
   for (const directory of DIRECTORIES) walk(directory)
-  return files.sort()
+  return { files: files.sort(), absent }
 }
 
-const files = moduleFiles()
+const { files, absent } = moduleFiles()
+if (absent.length > 0) {
+  console.log(`lint: skipped ${absent.length} directory root(s) absent from this tree: ${absent.join(', ')}`)
+}
 if (files.length === 0) {
   console.error('lint: no module files found — the directory list is probably wrong')
   process.exit(1)

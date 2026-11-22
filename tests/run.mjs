@@ -67,6 +67,7 @@ const SUITES = [
   'config-audit',
   'scratch-safety',
   'doc-numbers',
+  'source-scanners',
   'run-state',
   'upstream-contract',
   'patch-sandbox',

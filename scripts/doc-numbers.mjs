@@ -44,28 +44,13 @@ const BEGIN = '<!-- doc-numbers:begin -->'
 const END = '<!-- doc-numbers:end -->'
 
 /**
- * Read a file, or '' when it does not exist.
- *
- * Only for the document being spliced: there, "absent" is a real answer the
- * caller reports on its own ("the document does not exist"). Every counter uses
- * `readRequired` instead, because for a count a missing file is not an answer.
- */
-function readOrEmpty (file) {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return ''
-  }
-}
-
-/**
  * Read a file that must exist, or fail loudly.
  *
- * `readOrEmpty` answers a different question — "is there anything here?" — and
- * is safe only where absence is itself the answer. A counter that reads a file
- * it cannot find and returns zero does not report "missing": it reports a
- * number, and the number is then written into the document. That is how a moved
- * or renamed file turns into a documented `0` instead of a red gate.
+ * There is deliberately no `readOrEmpty` beside this. A reader that answers ''
+ * for a missing file does not report "missing": it reports an empty answer, and
+ * every caller then turns that into a number (0 tools), a passing claim (over
+ * an empty set), or a second error that names the wrong thing. A moved or
+ * renamed file has to turn into a red gate that names the file.
  *
  * @param {string} file - the file to read.
  * @returns {string} the file's text.
@@ -345,9 +330,11 @@ function main () {
   const sampledAtIndex = args.indexOf('--sampled-at')
   const sampledAt = sampledAtIndex >= 0 ? args[sampledAtIndex + 1] : undefined
 
-  const document = readOrEmpty(TARGET)
-  if (document === '') {
-    console.error(`doc-numbers: ${path.relative(root, TARGET)} does not exist`)
+  let document
+  try {
+    document = fs.readFileSync(TARGET, 'utf8')
+  } catch (error) {
+    console.error(`doc-numbers: cannot read ${path.relative(root, TARGET)} (${error.code ?? error.message})`)
     process.exit(1)
   }
   // A sampled number cannot be regenerated from the source — it comes from a

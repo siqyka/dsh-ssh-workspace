@@ -35,8 +35,15 @@ export function modulePaths (directory) {
   let entries
   try {
     entries = readdirSync(directory, { withFileTypes: true })
-  } catch {
-    return found
+  } catch (error) {
+    // Returning an empty list here does not report "the walk failed" — it
+    // reports "there are no modules", and every caller turns that into a check
+    // that cannot fail: `every patch has a contract` over nothing, `expandPrefix
+    // is defined once` over nothing. A caller that genuinely cannot see the
+    // directory has to say so, not answer zero.
+    throw new Error(
+      `lib-modules: cannot list ${directory} — a caller asking "how many / which" would be answered 0 (${error.code ?? error.message})`
+    )
   }
   for (const entry of entries) {
     const full = path.join(directory, entry.name)
@@ -63,8 +70,10 @@ export function topLevelModulePaths (directory) {
   let entries
   try {
     entries = readdirSync(directory, { withFileTypes: true })
-  } catch {
-    return []
+  } catch (error) {
+    throw new Error(
+      `lib-modules: cannot list ${directory} — a caller asking "which modules are at the top level" would be answered "none" (${error.code ?? error.message})`
+    )
   }
   return entries
     .filter(entry => entry.isFile() && entry.name.endsWith('.js'))

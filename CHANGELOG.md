@@ -32,6 +32,11 @@
 - **注释瘦身**：全仓注释行从 27,457 降到 25,905（29.8% → 28.6%）。四类改动：① 修正 `lib/client/client.js` 里 5 处过时/自相矛盾的说明（chunk 数、boot 顺序、重发布名字数、picker helper 位置）；② 删掉两个空 section banner 并给 `scripts/client-map.mjs` 加「banner 下无代码也算不一致」的断言；③ 删除 15 块共 239 行「这个文件以前叫什么」的迁移叙事，只留下它要守的约束（行为性的「为什么」全部保留）；④ 去掉 1,491 行只复述签名的单行 JSDoc `@param` / `@returns`（保留多行、带约束说明的，以及 `@typedef` / `@type` / `@throws`）。`CONTRIBUTING.md` 的注释约定改为「总体写做什么，关键处写为什么，危险处多写，尽量精简；不留迁移史」。测试锚点已核对：0 条反验证锚点钉在被删的 JSDoc 或迁移叙事上。
 - **七个补丁搬进 `lib/patch/`**：`patch-fs` / `patch-sandbox` / `patch-shell` / `patch-subprocess` / `patch-ptc` / `patch-terminal` / `patch-projection` 从 `lib/` 顶层移进 `lib/patch/`，**basename 一个都没改**——`lib/upstream-contract.js` 按文件登记退役判据、`docs/upstream-workarounds.md` 按文件名认人，改名会打乱退役信号，而这里要的只是「补丁族有自己的目录」。改动只有三类：8 条对外 import（`lib/index.js` 7 条 + `lib/fs-shim.js` 1 条）、15 条 JSDoc 类型路径、以及 7 个 `file:` 字段与 39 处文档路径。3 条同族引用（`patch-ptc` → `patch-sandbox`、`patch-subprocess` → `patch-projection`、`patch-terminal` → `patch-subprocess`）保持 `./`。**0 条变异锚点**——这是这组便宜的根本原因：`scripts/reverse-verify-*.mjs` 里没有一条钉在补丁文件名上。门禁数字不变（`modules under lib/` 仍 57、补丁仍 7），生成表的 `source` 列自己从 `lib/patch-*.js` 变成 `lib/patch/patch-*.js`，没有手改。
 
+### 变更
+
+- **所有「读不到文件就静默降级」的检查改成显式报错**：这一轮的形状和上一轮那四处一样，只是范围更大——扫描器把「列不出目录」答成空集或空串，而空集会让全称断言自动成立。五处支持层扫描器（`modulePaths` / `topLevelModulePaths` / `clientChunkNames` / `clientKernelBlock` / `routeSource`）现在一律抛错并**点名它读不了的那个路径**；`scripts/doc-numbers.mjs` 的 `readOrEmpty` 整个删掉（缺文档曾以 `''` 往下传，再由第二处检查报「不存在」——同一个结论，经由一个读起来像「文档是空的」的值）；`scripts/lint.mjs` 跳过缺失的根时**把跳过的根打印出来**，而存在却读不了的根直接抛错；`tests/client-shape-smoke.mjs` 对 `package.json` 点名的每个入口先断言存在、再断言能解析（原先缺一个就 `continue`，「发布出去的文件都能解析」于是变成「磁盘上碰巧有的那些能解析」）。
+- **新增 `tests/source-scanners-smoke.mjs`（20 项）**：钉住的不是「抛错更礼貌」，而是两种失败必须分开——「树是完整的，答案为空」是一个可以断言的事实；「我没能看」是检查自身的缺陷，而空答案恰好把它伪装成前一件事。所以 `every patch has a contract`、`expandPrefix 定义恰好一处` 这类断言在空集上成立时，绿灯是假的。空目录仍然回答空列表：这条区分的是「没有」与「看不了」，不是「空一律有罪」。套件同时断言三处收敛仍在（生成器不声明 `readOrEmpty`、`lint` 打印跳过项、`client-shape` 的入口存在性断言）。
+
 ### 修复
 
 - **四个检查不再把「找不到」答成 0 或答成通过**：这一轮给 `lib/` 搬家做准备时先量了量「搬完之后哪些检查会静默变松」，量出四处同形状的问题——**读不到的东西被当成 0，或空集让全称断言自动成立**，而它们的结果都会进文档。

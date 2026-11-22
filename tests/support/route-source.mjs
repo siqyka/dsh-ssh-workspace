@@ -35,11 +35,18 @@ export function routeSource (pluginRoot) {
   const directory = path.join(pluginRoot, 'lib', 'routes')
   const first = COMPOSITION_POINT
   const files = [path.join(directory, first)]
-  let entries = []
+  let entries
   try {
     entries = readdirSync(directory)
-  } catch {
-    // No route directory: the family is not where this helper expects it.
+  } catch (error) {
+    // The composition point above is read eagerly, so a MISSING directory
+    // already throws there. This catch used to hide a different case: the
+    // directory exists but cannot be listed. Answering "only the composition
+    // point" then silently drops the handlers, and every assertion about them
+    // turns into an `indexOf === -1`.
+    throw new Error(
+      `route-source: cannot list ${directory} — the family's handlers would be silently dropped from the joined source (${error.code ?? error.message})`
+    )
   }
   for (const name of entries.sort()) {
     if (name.endsWith('.js') && name !== first) files.push(path.join(directory, name))

@@ -445,11 +445,19 @@ console.log('\n[the bundles parse]')
 // `node --check` is a parse, not an execution, so it stays dependency-free.
 {
   const { spawnSync } = await import('node:child_process')
+  // Every entry `package.json` names must be checked. Skipping an absent one
+  // would make "the shipped files parse" a claim about whichever subset happens
+  // to be on disk — and the entry most likely to be missing is the one that
+  // moved, which is exactly the one whose syntax error nobody would see.
   const targets = [pkg.main, clientRel, pkg.dsh?.bundle?.patch]
     .filter(entry => typeof entry === 'string' && entry.endsWith('.js'))
+  check('package.json names at least one JavaScript entry', targets.length > 0, JSON.stringify(targets))
   for (const target of targets) {
     const file = path.join(packageRoot, target)
-    if (!existsSync(file)) continue
+    if (!existsSync(file)) {
+      check(`${target} exists`, false, `package.json names ${target} but it is not in the tree`)
+      continue
+    }
     const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
     check(`${target} parses`, result.status === 0,
       (result.stderr ?? '').split('\n').find(line => line.trim() !== '') ?? `exit ${result.status}`)

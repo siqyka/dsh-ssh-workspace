@@ -50,8 +50,12 @@ export function clientChunkNames (pluginRoot) {
   let entries
   try {
     entries = readdirSync(path.join(pluginRoot, CLIENT_DIR))
-  } catch {
-    return []
+  } catch (error) {
+    // An empty chunk list would make every "this chunk does not borrow a name
+    // from the bundle" claim vacuously true, so the absence has to be loud.
+    throw new Error(
+      `client-source: cannot list ${path.join(pluginRoot, CLIENT_DIR)} — every claim about "the chunks" would be answered "there are none" (${error.code ?? error.message})`
+    )
   }
   return entries.filter(name => CHUNK_RE.test(name)).sort()
 }
@@ -103,8 +107,13 @@ export function clientKernelBlock (pluginRoot) {
   let source
   try {
     source = clientPartSource(pluginRoot, KERNEL_CHUNK)
-  } catch {
-    return ''
+  } catch (error) {
+    // '' here means "the lifted body gets no kernel declarations", which reads
+    // downstream as `ReferenceError: toastModel is not defined` — an error that
+    // names the lifted snippet instead of the missing chunk.
+    throw new Error(
+      `client-source: cannot read the kernel chunk ${path.join(pluginRoot, CLIENT_DIR, KERNEL_CHUNK)} — a lifted body would fail with a ReferenceError that names the wrong file (${error.code ?? error.message})`
+    )
   }
   const afterRequires = source.indexOf("const { jsx, jsxs, Fragment } = require('react/jsx-runtime')")
   if (afterRequires < 0) return ''

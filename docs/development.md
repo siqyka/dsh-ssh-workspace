@@ -15,8 +15,8 @@
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 7 | `lib/patch/patch-*.js` |
 | modules under `lib/` | 57 | recursive listing |
-| test suites | 99 | `tests/run.mjs` |
-| passing assertions (sampled) | 5057 | measured 2026-11-21 |
+| test suites | 100 | `tests/run.mjs` |
+| passing assertions (sampled) | 5310 | measured 2026-11-22 |
 
 <!-- doc-numbers:end -->
 
@@ -287,6 +287,7 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `config-audit-smoke` | 无 | 38 | 无 | `~/.ssh/config` 审计（`lib/report.js` 的 `auditConfigText`）：`ignored` / `lost` / `refused` 三种判定不可合并（`LocalForward` 是 `lost`，`ProxyJump` 走 `skipped` 而不是审计）、未列出的关键字也有判定、匹配跟随 resolver（`Host *` 生效、`!name` 排除、别的块不串味）、first-wins 且重复只报一次、长值截断、`listing()` 每行带 `unsupported` |
 | `scratch-safety-smoke` | 无 | 41 | 无 | 测试自己的远端清理围栏：`DSH_WS_TEST_DIR` 为空、含空格、指向 `/etc` 三种输入都必须在任何删除发生**之前**被拒，而不是把 `rm -rf` 带着错误路径发出去 |
 | `doc-numbers-smoke` | 无 | 42 | 无 | 文档数字由源码生成而非手写：计数器确实读源码（新增路由不需要人记得改文档），且陈旧文档会被检出（`--check` 变红）。**计数器不许把「找不到」答成 0**：`moduleFiles()` 对读不了的目录抛错、`findModule()` 按 basename 定位并拒绝 0 或 2 个匹配、`readRequired()` 不把 ENOENT 降级成空串 |
+| `source-scanners-smoke` | 无 | 20 | 无 | 源码扫描器**不许把「读不到」答成「没有」**：`modulePaths` / `topLevelModulePaths` / `clientChunkNames` / `clientKernelBlock` / `routeSource` 对列不出的目录一律抛错并点名路径。这两件事必须分开——「树是完整的，答案为空」是一个可以断言的事实；「我没能看」是检查自身的缺陷，而空答案恰好把它伪装成前一件事。因此 `every patch has a contract`、`expandPrefix 定义恰好一处` 这类全称断言在空集上成立时，绿灯是假的。空目录仍然回答空列表（那条区分的是「没有」与「看不了」，不是「空一律有罪」）。另钉住三处收敛：生成器不再声明 `readOrEmpty`（缺文档曾以 `''` 传播，再由第二处检查报「不存在」）、`lint` 跳过缺失根要**说出来**且读不了的根必须抛、`client-shape` 对 `package.json` 点名的每个入口先断言存在再断言能解析（原先缺一个就 `continue`，「发布出去的文件都能解析」于是变成「磁盘上碰巧有的那些能解析」） |
 | `run-state-smoke` | 无 | 10 | 无 | 跑批判定：`pass` / `partial` / `skip` / `fail` 四态不可合并，汇总行缺失时证明不了跑过，`0 passed` 不算通过 |
 | `upstream-contract-smoke` | 无 | 49 | 无 | 每个补丁声明它碰的宿主符号，双向校验：磁盘上每个 `patch-*.js` 都有契约、契约不指向不存在的文件、安装函数确实导出、声明的符号确实出现在模块里，且安装顺序固定——上游改名一个符号而补丁照常安装，就是「命令静默地跑在本机」。清单走递归的 `modulePaths()` 并**先断言补丁模块确实被找到**，否则「每个 `patch-*.js` 都有契约」会在空集上成立 |
 | `patch-sandbox-smoke` | 无（设 `DSH_CORE_ROOT` 时多 3 项） | 51（装配树 54） | 真实 ACL 段（`DSH_CORE_ROOT` 未设时 ACL 边界检查不可导入；已跑 51 项） | 远端工作区根交给本机沙箱提供方时的改写（`lib/patch/patch-sandbox.js`）：每个命令路径都在到达本插件接管的 seam 之前先跑 `ctx.sandbox.confine`，而 `policy.workspaceRoot` 是会话的 `ssh://` 拼写——Windows ACL 提供方把它当主机路径 realpath，ENOENT 后 fail-closed，于是远端命令一条也起不来。断言：替身根**真实存在、绝对、且是 tmpdir 的子目录**（相等会被判 temp 在 workspace 内）、**稳定**（提供方按 root 缓存授权，随机根每条命令泄一个 ACE）、纯本地 policy **按引用原样返回**（不是拷贝）、远端 policy 的 `mode` / `sessionId` 原样带过、`additionalWritableRoots` 里只剔远端项、同步实现不被包成 promise、argv 与 signal 原样转发、装两次不双重包裹、卸载还原；以及模块**不碰 `sandboxPolicy`**（改它会让 `workspace-write` 的会话级收窄失效） |
