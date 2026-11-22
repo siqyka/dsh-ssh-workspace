@@ -259,6 +259,26 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('nothing in the client or the route family can bypass the check',
     !/\bforce\b\s*:/u.test(editor) && !/skipExpected/u.test(editor) && !/skipExpected/u.test(textRoutes) &&
       !/body\?\.force/u.test(textRoutes))
+  // A token that moved while the bytes did not is not a conflict. The refusal
+  // carries the digest of what is on disk now, so a save may adopt it — but only
+  // after comparing, and only once.
+  check('a refused save compares the digest before calling it a conflict',
+    editor.includes('movedTokenOnly(current, tokens.revision)'))
+  check('...and retries exactly once against the newer token',
+    editor.includes('if (reply.status !== 409 || attempt > 1) break'))
+  // Adopting the token is the whole point of the retry: comparing the digests
+  // and then saving against the STALE token would be refused again, so the user
+  // would get a conflict dialog anyway and the comparison would have bought
+  // nothing. Asserted as an assignment, not as a call — `void expectedTokens(…)`
+  // still mentions the helper.
+  const adoptAt = editor.indexOf('if (!movedTokenOnly(current, tokens.revision)) break')
+  const assignAt = editor.indexOf('tokens = expectedTokens({', adoptAt)
+  const conflictAt = editor.indexOf('if (reply.status === 409) {', adoptAt)
+  check('...and adopts the token it was just shown',
+    adoptAt >= 0 && assignAt > adoptAt && (conflictAt === -1 || assignAt < conflictAt),
+    `retry ${adoptAt}, assign ${assignAt}, conflict ${conflictAt}`)
+  check('the retry still sends the expected tokens, never a bypass',
+    /expected: tokens,/u.test(editor) && !/\bforce\b\s*:/u.test(editor))
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +365,20 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('refusalKey answers undefined for an unknown reason', loaded.refusalKey('something-new') === undefined)
   check('expectedTokens names the two fields the server requires',
     JSON.stringify(loaded.expectedTokens({ version: 'v', revision: 'r' })) === '{"version":"v","revision":"r"}')
+
+  // Driven, not pattern-matched: this decision decides whether a person sees a
+  // conflict dialog, and both directions are bad — a false positive nags on
+  // every `touch`, a false negative saves over a real edit.
+  check('movedTokenOnly is true when the digest is unchanged',
+    loaded.movedTokenOnly({ version: '2:9:900', revision: 'abc' }, 'abc') === true)
+  check('...and false when the bytes really changed',
+    loaded.movedTokenOnly({ version: '2:9:900', revision: 'def' }, 'abc') === false)
+  check('...and false when either side has no digest',
+    loaded.movedTokenOnly({ revision: 'abc' }, '') === false &&
+      loaded.movedTokenOnly({ revision: '' }, '') === false &&
+      loaded.movedTokenOnly(null, 'abc') === false)
+  check('...so an absent token can never be read as agreement',
+    loaded.movedTokenOnly({}, undefined) === false)
 }
 
 // ---------------------------------------------------------------------------

@@ -49,6 +49,7 @@
 
 - **远端预览里的「编辑」按钮点了没反应**：文档预览交给按钮的是 `ctx.fs.processPath(target)`，而它对远端目标回的是**远端 POSIX 路径**（这是对的——那个值本来就该给远端进程用），`ssh://` 拼写里的 alias 丢了。路由拿不到 alias，就把 `/home/x/a.md` 当成**本机**绝对路径，回 403「the session workspace is remote; a local path cannot belong to it」——按钮在、能点、点了什么也没发生。修法是路由侧把裸远端路径认回去：先拿会话自己的 workspace root 比（同一份 `policy.workspaceRoot` / `header.cwd`，与 `localRootOf` 同一个来源），不在其下再拿已挂载的 root 表比，**且只在答案唯一时才认**——两台主机都可能持有 `/home/x`，猜一个就是改错机器。认回之后回包也带 `ssh://` 拼写，客户端不会对同一个文件持有两个名字。本地会话完全不走这条：它的 root 不是远端路径，`remoteSpellingOf` 直接返回原值。
 - **编辑器原来是全屏对话框，改成就地覆盖预览正文**：用户反馈「点编辑就在文件区里编辑」。对话框把文件连同上下文一起遮掉，而且遮罩的每次误触在带未保存内容时都会变成「要不要丢掉」的提问。现在编辑器是 `position: fixed` 的盒子，盖住预览的 `[data-textpreview-body]`（不是整个预览——盖住头部就没有退出按钮了），用 `data-textpreview-*` 定位而不是 CSS module 的哈希类名。代价是它不再有 `useDialogA11y` 的焦点环：`Tab` 要留给缩进，`Esc` 因此绑在面板自己的 `keydown` 上而不是 `document` 的捕获阶段——就地编辑器不该截走输入框和叠层对话框的 `Esc`。遮罩随之从 5 个回到 4 个，`backdrop-dismiss-smoke` 把「编辑器 chunk 里不许出现 `sshwsp-backdrop`」也钉住。
+- **只有 mtime 动了不再算冲突**：`version` 令牌是 `ino:size:mtime`，所以 `touch`、一次把内容恢复成原样的 checkout、或者备份工具用同样的字节原地重写，都会让它变化而**内容根本没动**——以前这种情况照样弹冲突框，用户除了「覆盖」没有别的选择，而那次覆盖什么都没改。409 早就带上了磁盘上**当前**内容的 sha256（`current.revision`），而两边都是原始字节的 SHA-256，相等就是证据而不是猜测，所以不需要新字段、也不需要客户端自己算哈希。现在保存遇到 409 先比摘要：相同就把新令牌接过来、用同一份正文**立刻重发一次**，不打扰用户；不同才弹框。只重发一次——第二次还被拒说明真的动了两次，那就是真冲突。比较函数要求**两边都是真令牌**：空串表示「没有令牌」，把两个「没有」当成相等就等于替用户确认了一件没人验证的事。
 
 ### 测试
 
@@ -56,6 +57,7 @@
 - **客户端那一半钉的是「形状」，因为它没法被驱动**：`modalLayer` 包裹、head/foot `flex: 0 0 auto`、textarea 是唯一滚动容器且 `min-height: 0`、gutter 自己 `overflow: hidden` 而由 textarea 的 `scrollTop` 驱动、Tab 走 `execCommand('insertText')`（保撤销栈）、Ctrl/Cmd+S 先 `preventDefault`、**没有第二个 Escape 监听**（`useDialogA11y` 在捕获阶段管它并认 `busyRef`，两个处理器谁先跑不确定，保存中的 Esc 会随机地关掉对话框）、**重载排在覆盖之前**、覆盖要二次确认且重新 `read-text` 拿新令牌、全仓无 `force`。纯函数（`lineCount` / `gutterNumbers` / `gutterWidth` / `isDirty` / `refusalKey` / `expectedTokens`）是**真跑**的：用 `window.__ModuleLoader__.load` 捕获 factory 后带一个 `require` 调它（factory 收的是 require 函数而不是 module 对象——第一次写错，报 `require is not a function`）。
 - **三处既有套件因新代码变红，都是硬编码计数**：`lifecycle-smoke` 的 `EXPECTED_ROUTES` 33 → 36（这个数字是故意钉住的：加一条路由就该红一次，否则「路由加了但没注册」会悄悄通过）；`backdrop-dismiss-smoke` 的遮罩计数 4 → 5、`...backdropDismiss(` 调用 5 → 6、面板计数 4 → 5（同时把正则从「匹配到行尾」改成跨行 120 字符——编辑器的 backdrop 属性分了三行，按行匹配会**静默漏掉它**）；`diagnostics-smoke` 的 `KINDS` 生产者名单加 `routes/text.js`（否则新加的 `KINDS.write` 没有生产者）。
 - **`locale-register-smoke` 抓到两个未引用的键**：`edit.action`（纯多余，删掉）与 `edit.readOnly`——后者不是多余，是**真缺了接线**：只读会话本该在 `probe` 阶段就拿到 `read-only`，而 `probeRemote` / `probeLocal` 当时不看 mode。补上之后 `refusalKey` 也有了 `read-only` 分支。守卫在这里起的作用不是「防止乱加键」，而是「发现了功能缺口」。
+- **`tests/file-editor-smoke.mjs` 补上「只动令牌」这一路（4 → 8 项）**：四个用例真跑 `movedTokenOnly`——摘要相同、摘要不同、任一侧为空、整体缺失。另有三条钉形状：重试前**先比摘要**、只重试一次、重试之后**把新令牌赋给 `tokens`**。最后这条是反向验证逼出来的第四个变异点：把 `tokens = expectedTokens({` 改成 `void expectedTokens({`（比较照做、令牌不接）原本**全绿**，因为断言只查了函数被提到、没查它是被赋值。现在按「赋值发生在比较之后、弹框之前」断言位置，而不是只查字面量出现过。
 - **全量**：裸检出 **92 passed / 2 partial / 8 skipped / 0 failed（102 套件，5203 断言）**；装配树（`DSH_CORE_ROOT`）**97 passed / 2 partial / 3 skipped / 0 failed（102 套件，5517 断言）**。`npm run check` 全绿（203 模块 parse、19 个 markdown 链接、doc-numbers up to date）。
 
 ### 修复
