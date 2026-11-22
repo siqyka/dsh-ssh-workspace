@@ -99,6 +99,8 @@ const SUITES = [
   'path-preview',
   'host-card',
   'mutations',
+  'text-routes',
+  'file-editor',
   'backdrop-dismiss',
   'projection-relax',
   'projection-real',

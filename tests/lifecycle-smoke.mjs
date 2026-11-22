@@ -68,7 +68,7 @@ const EXPECTED_TOOLS = [
 // covers the other half — a path that IS in ROUTES but never reached the
 // web server — without giving up the acknowledgement this pin forces: adding a
 // route still turns the count assertion red until someone edits this number.
-const EXPECTED_ROUTES = 33
+const EXPECTED_ROUTES = 36
 
 // The one route that carries a bound on HOW MUCH of a repository it may read,
 // and the only one whose entire input is a Session id. Named here so that

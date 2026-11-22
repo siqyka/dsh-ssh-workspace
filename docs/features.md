@@ -15,10 +15,10 @@
 | 项 | 数值 |
 | --- | --- |
 | Agent 工具 | 11 个 `ssh_workspace_*` |
-| 浏览器 HTTP 路由 | 33 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
+| 浏览器 HTTP 路由 | 36 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
 | 接管的服务 seam | 7 个：`ctx.fs`、`ctx.sandbox.confine`、`ctx.shell`、`ctx.subprocess`（`spawn` 与 `spawnTerminal` 两个方法）、`ctx.ptcRuntime.resolve`、`ctx.terminalController.shells`（远端 shell 发现）、客户端 `ctx.slots`（两个 UI 槽位，含注册表 projection 放宽） |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
-| 冒烟测试套件 | 99 个（裸检出 89 个通过 / 3 个 partial / 7 个需真实主机或完整 DSH 树则 SKIP；装配树下 94 个通过 / 3 个 partial / 2 个 SKIP；合计 5057 / 5368 项断言，采样） |
+| 冒烟测试套件 | 102 个（裸检出 92 个通过 / 2 个 partial / 8 个需真实主机、完整 DSH 树或 POSIX `sh` 则 SKIP；装配树下 97 个通过 / 2 个 partial / 3 个 SKIP；合计 5226 / 5540 项断言，采样） |
 
 设计前提：**不注册第二个 fs 服务**。远端方法装在部署已挂载的那一个 `ctx.fs` 实例上，
 `ssh://` 路径走 SFTP，其余路径原样转发给原后端——因此本地工作区的一切行为不受影响。
@@ -54,6 +54,11 @@
 | 轮询自适应退避 | 基础 **2 s**；连续 **15** 轮无变更退至 **5 s**，**30** 轮退至 **10 s** 封顶；任一变更立即回到 2 s |
 | 元数据缓存 | 读路径元数据缓存 TTL **1.5 s**、上限 **1024** 条（刻意低于轮询间隔，避免把缓存快照当成新快照） |
 | 轮询的已知盲区 | SFTP 元数据无亚秒时间戳，同一秒内**等长**的连续改写可能不触发刷新；增、删、改名总能感知 |
+| 在浏览器里编辑 | 文档预览头部的铅笔按钮把编辑器**盖在预览正文那一块上**（不是弹窗），**远端 `ssh://` 与本地绝对路径走同一组路由**（`read-text` / `write-text` / `edit-text`），只有最内层的读写与围栏分两支；上限 **2 MiB**，超出不给入口 |
+| 保存的双令牌 | 回传 `version`（`ino:size:mtime`，便宜）与 `revision`（内容 sha256，贵），先比 version 再比 revision：常见改动一次元数据往返就 409，而「同一秒、同样大小」的改写只有哈希能发现。任一不符回 **409** 并带当前令牌 |
+| 冲突默认不覆盖 | 409 的默认动作是「重新加载」；「覆盖」排在后面且要二次确认，且**重新读一次拿新令牌再写**而不是跳过校验。**没有 `force` 参数** |
+| 行尾与 BOM 保真 | 读时把 `eol`（`LF`/`CRLF`）与 `bom` 与 `text` 分开报告（`text` 已归一化为 LF 且不含 BOM），写时原样装回；`eol: 'auto'` 用磁盘当前风格。编解码与 `editText` 工具共用同一份实现 |
+| 截断即不可写 | 超限读只回头部且 `revision: null`——截断内容算出的哈希是假证据，而写路由要求 revision 是字符串，所以截断的文件在协议层面无法保存 |
 
 详见 [architecture.md](./architecture.md) 的「接管 ctx.fs」。
 

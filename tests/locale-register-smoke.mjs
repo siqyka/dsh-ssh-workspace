@@ -164,6 +164,90 @@ const leaking = zhKeys.filter((k) => makeTranslate(echoBound, zh)(k) === k)
 check('no key renders raw through the fallback path', leaking.length === 0, leaking.join(', '))
 
 // ---------------------------------------------------------------------------
+console.log('\n[dynamic key families]')
+
+// A key can be real and still have no literal call site: the host card asks for
+// `t('hosts.auth.' + host.auth)` through a template literal, and the toast asks
+// for `toastLabel('toast.' + action)` the same way. A sweep that only greps for
+// `t('…')` therefore reads every member of those families as unused — which is
+// exactly how `hosts.auth.*` and `hosts.source.*` were deleted in f7e89a8
+// ("清掉死函数、只内部使用的 export 与无引用的文案键"), after which every host
+// card painted `hosts.auth.key` / `hosts.source.store` as literal text. The keys
+// were never unused; they were built by interpolation.
+//
+// The rule this section pins: a dictionary key is accounted for either by a
+// quoted occurrence OUTSIDE the two tables, or by a declared family that covers
+// it. Both halves matter — the first is what a literal-only sweep can see, and
+// the second is what that sweep got wrong.
+
+/** The half-open [start, end) span of a dictionary literal, braces included. */
+function dictionarySpan (name) {
+  const start = source.indexOf(`const ${name} = {`)
+  if (start < 0) throw new Error(`client.js does not define ${name}`)
+  const open = source.indexOf('{', start)
+  let depth = 0
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1
+    else if (source[i] === '}') {
+      depth -= 1
+      if (depth === 0) return [start, i + 1]
+    }
+  }
+  throw new Error(`unbalanced braces in ${name}`)
+}
+
+// Everything but the two tables: a key mentioned only inside them is defined,
+// never used, and that distinction is the whole subject of this section.
+const spans = [dictionarySpan('zh'), dictionarySpan('en')].sort((a, b) => a[0] - b[0])
+const outsideDictionaries =
+  source.slice(0, spans[0][0]) + source.slice(spans[0][1], spans[1][0]) + source.slice(spans[1][1])
+
+// Prefixes built by interpolation at a real call site.
+const interpolated = [...new Set(
+  [...outsideDictionaries.matchAll(/(?:\bt|translate|toastLabel)\(\s*`([^`$]*)\$\{/gu)].map((m) => m[1]),
+)].sort()
+
+// The suffixes each prefix can take, from the code that produces them:
+// `normalizeAuth` in lib/hosts/hosts.js yields key|password|agent; a host's
+// `source` is store|ssh-config and the panel spells the second `sshConfig`;
+// `conn.state` is connected|broken; a toast action is details|copy|retry.
+// A new member is a new entry in BOTH tables, not a new literal call site.
+const FAMILIES = {
+  'connections.': ['connected', 'broken'],
+  'hosts.auth.': ['key', 'password', 'agent'],
+  'hosts.source.': ['store', 'sshConfig'],
+  'toast.': ['details', 'copy', 'retry'],
+}
+const declared = Object.keys(FAMILIES).sort()
+
+check(
+  'every interpolated key family is declared here, so its members are not mistaken for dead keys',
+  declared.length === interpolated.length && declared.every((p, i) => p === interpolated[i]),
+  `interpolated=${JSON.stringify(interpolated)} declared=${JSON.stringify(declared)}`,
+)
+
+for (const [prefix, suffixes] of Object.entries(FAMILIES)) {
+  for (const suffix of suffixes) {
+    const key = prefix + suffix
+    check(
+      `${key} exists in both dictionaries with real text`,
+      Object.hasOwn(zh, key) && Object.hasOwn(en, key) && zh[key] !== key && en[key] !== key,
+      Object.hasOwn(zh, key) ? `zh=${JSON.stringify(zh[key])} en=${JSON.stringify(en[key])}` : 'absent',
+    )
+  }
+}
+
+const familyCovered = new Set(
+  Object.entries(FAMILIES).flatMap(([prefix, suffixes]) => suffixes.map((s) => prefix + s)),
+)
+const unaccounted = zhKeys.filter((k) => !outsideDictionaries.includes(`'${k}'`) && !familyCovered.has(k))
+check(
+  'no dictionary key is both unquoted and outside every declared family',
+  unaccounted.length === 0,
+  `${JSON.stringify(unaccounted)} — a key built by interpolation needs a family entry, not deletion`,
+)
+
+// ---------------------------------------------------------------------------
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   for (const f of failures) console.log(`  - ${f}`)

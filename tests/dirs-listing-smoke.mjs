@@ -43,7 +43,6 @@
 
 import { spawnSync } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
-import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -193,10 +192,22 @@ try {
   }
 
   {
+    // The empty path means "the login directory", and the command answers with
+    // whatever `pwd -P` says — which is the SHELL's spelling, not ours. On
+    // Windows with Git Bash that is not even the translated path: `/tmp` is a
+    // mount of `%LOCALAPPDATA%\Temp`, so a temp dir under it comes back as
+    // `/tmp/dsh-dirs-listing-xxxx` while `shellPath()` would have said
+    // `/c/Users/.../Temp/dsh-dirs-listing-xxxx`. Comparing against either of
+    // ours would assert the mount table, not the command.
+    //
+    // So the expectation is asked of the same shell, in a separate invocation:
+    // the command must echo the resolved directory, and that directory must be
+    // the one holding the seven folders built above.
+    const shellCwd = spawnSync('sh', ['-c', 'pwd -P'], { cwd: root, encoding: 'utf8' }).stdout?.trim()
     const { parse } = list('', 500, root)
     check('an empty path lists and resolves the login directory in one round trip',
-      parse !== null && samePath(parse.path, realpathSync(root)) && parse.names.length === 7,
-      JSON.stringify({ path: parse?.path, names: parse?.names.length }))
+      parse !== null && parse.path === shellCwd && parse.names.length === 7,
+      JSON.stringify({ path: parse?.path, shellCwd, names: parse?.names.length }))
   }
 
   {

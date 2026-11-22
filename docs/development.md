@@ -11,12 +11,12 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 33 | `lib/routes/` |
+| HTTP routes | 36 | `lib/routes/` |
 | model-facing tools | 11 | `lib/surface/tools.js` |
 | upstream patch modules | 7 | `lib/patch/patch-*.js` |
-| modules under `lib/` | 57 | recursive listing |
-| test suites | 100 | `tests/run.mjs` |
-| passing assertions (sampled) | 5310 | measured 2026-11-22 |
+| modules under `lib/` | 59 | recursive listing |
+| test suites | 102 | `tests/run.mjs` |
+| passing assertions (sampled) | 5226 | measured 2026-11-22 |
 
 <!-- doc-numbers:end -->
 
@@ -24,7 +24,7 @@
 
 纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client/client.js`）加十二个 chunk（七个启动期、五个按需），都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
 
-`lib/` 按能力域分了文件夹，**分层只有一条规则**：越靠下越不依赖别人。`core/` 里的模块不 import `lib/` 内任何东西（`protocol` / `shared` / `peers` / `diagnostics` / `mode-gate` / `tool-schema` / `upstream-contract` 七个都是零出边），所以任何层都能安全地引用它们；其余文件夹可以引用 `core/`，也可以引用自己这一层，但不能反向。这条规则由 `scripts/graph-cycles.mjs` 的环数守（现在 5 个，全部是 `lib/routes/` 内部既有的）。
+`lib/` 按能力域分了文件夹，**分层只有一条规则**：越靠下越不依赖别人。`core/` 里的模块不 import `lib/` 内任何东西（`protocol` / `shared` / `peers` / `diagnostics` / `mode-gate` / `tool-schema` / `upstream-contract` 七个都是零出边），所以任何层都能安全地引用它们；其余文件夹可以引用 `core/`，也可以引用自己这一层，但不能反向。这条规则由 `scripts/graph-cycles.mjs` 的环数守（现在 6 个，全部是 `lib/routes/` 内部既有的——每加一个 handler 模块就会多一条它到组合点的回边）。
 
 | 目录 | 放什么 |
 | --- | --- |
@@ -177,25 +177,25 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **99 个套件里 89 个通过、7 个整体 SKIP**（`projection-real` / `lifecycle` /
-`boot` / `tool-schemas` / `client-chunk` 缺真实装配树，`live` / `acceptance` 缺真实主机），另有
-3 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段、
-`dirs-listing` 在 Windows 上造不出「不可读 / 不可写」两种状态）；
-裸检出实测 **5057 项通过断言**（runner 汇总 99 条收尾行相加）。生成表那一行就是这次
-**裸检出采样值**（2026-11-21：5057 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
+于是 **102 个套件里 92 个通过、8 个整体 SKIP**（`projection-real` / `lifecycle` /
+`boot` / `tool-schemas` / `client-chunk` 缺真实装配树，`live` / `acceptance` 缺真实主机，
+`dirs-listing` 在 PATH 上找不到 POSIX `sh`），另有 2 个 `partial`（`local-changes-remote`
+的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段）；
+裸检出实测 **5226 项通过断言**（runner 汇总全部 102 条收尾行相加，其中 8 条是整体 SKIP 的 0）。生成表那一行就是这次
+**裸检出采样值**（2026-11-22：5226 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
 装配树上的数字更大，但换机器就会变，所以不写进表。
 带 `DSH_CORE_ROOT=<含 @deepseek-ai/dsh-fs 的 node_modules>` 时，`projection-real` / `lifecycle` /
 `tool-schemas` / `client-chunk` 四个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP），
-**94 个套件通过、3 个部分运行（`boot`、`local-changes-remote` 的 live 段与 `dirs-listing` 的权限段）、2 个 SKIP**
-（`live` / `acceptance`）。这一形态下实测 **5368 项通过断言**（本轮 2026-11-21 采样），但这不写进表：
-装配树因机器与宿主版本而异，表里只保留裸检出那一行采样值。
+**97 个套件通过、2 个部分运行（`boot` 与 `local-changes-remote` 的 live 段）、3 个 SKIP**
+（`dirs-listing` / `live` / `acceptance`）。这一形态下实测 **5540 项通过断言**（本轮 2026-11-22 采样），
+但这不写进表：装配树因机器与宿主版本而异，表里只保留裸检出那一行采样值。
 
 **两处需要说清的口径**（断言总数只能靠一次实测更新，不是公式算出来的）：
 
 - `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` / `client-chunk`
-  四个再跑起来，通过套件数 89 → 94；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
+  四个再跑起来，通过套件数 92 → 97；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
   断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，99 个套件全部运行、
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，102 个套件全部运行、
   零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
@@ -203,8 +203,9 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `cannot resolve the DSH peer package "@deepseek-ai/dsh-fs"` 退出——看起来像代码坏了，实际是根指错了。
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
-**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 99 条
-收尾行就是断言总数（本轮采样：裸检出 5057 项 / 99 个套件）。逐行数 `PASS` 会少算 87 项——
+**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 102 条
+收尾行就是断言总数（本轮采样：裸检出 5226 项 / 102 个套件）。
+逐行数 `PASS` 会少算几十项——
 `toast-smoke` 用的是 `ok` 而不是 `PASS`，两种记法都算通过，所以**按收尾行加总，不要按 token 数行**。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
 `client-shape` / `fake-transport` 五个套件的收尾格式各不相同或根本没有数字行，按数字行加总的
@@ -251,18 +252,20 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `download-icon-smoke` | 无 | 55 | 无 | 下载控件的图形与运行态。用 `new Function` 从**真实 bundle** 切出 icons 段（`TRAY_BASE_PATH` 到 Host card 注释）配一个极简 React stub 跑，断言不是 grep：`DownloadIcon`/`UploadIcon` 是 `0 0 16 16`、`stroke=currentColor`、三条路径（托盘一条 + 箭头两条，上传与下载共用同一个托盘）；`TransferProgressIcon` 是轨道圆 r=7.2 + `pathLength=100` 的弧 + `scale(0.675)` 居中的同一箭头，`42 → '42 100'`、`100 → '99.5 100'`（满圈封顶，圆头否则会叠出接缝）、`-3 → '0 100'`、未知总量 + 运行中 → `'30 100'`、未知总量 + 未运行 → `'0 100'`（排队中的空环）。另切出 `downloadQueueItemFor` 跑行为：空/畸形队列、只认 `direction==='download'`、异 host 同名路径不串、兄弟路径不串、done/failed/cancelled 释放、重试取**最后**一条、`queued` 也算进行中。`createMenuIcon` 配极简 `document` 跑 download/upload 的托盘路径、五个动作（addToTask / copy / newFolder / rename / delete）各自路径、七个动词互异且不等于 file 兜底；再切出 `openTaskMenu` 断言八处调用都显式给 `glyph`，没有一处按 `isDir` 套文件 / 文件夹图标。源码断言（剥掉注释后）：bundle 里不再有 `'↓'`/`'↑'` 字形（三处调用点都已接上图标）、环形类名与 `prefers-reduced-motion` 停转、行按钮 busy 时 `opacity:1` 不被 `:disabled` 淡化、中英两表都已删掉 `browser.downloading`（对话框不再有下载控件）。另切出文件面板的进度入口，断言它读**一处**队列读数（`transferQueueProgress`）而不是逐帧重算：空闲渲染裸 `DownloadIcon`、进行中渲染带方向 / 百分比 / 旋转的 `TransferProgressIcon`、`sshwsp-fileaction-queue-active` 只在有排队或运行时出现、数量走进 `queue.openCount` 无障碍名称、`queue.short` 与角标元素都已消失；CSS 侧钉住图标座（`gap: 0; padding: 0 6px`）与「active 的 hover 保持蓝色」。反向验证：dasharray 改 `${known ?? 0} 100` → live 弧红；匹配器去掉 alias → 1 红；行内图标换回 `'↓'` → 1 红 |
 | `browser-rows-smoke` | 无 | 19 | 无 | 目录对话框列表的渲染回归（只有目录行，且目录行是按钮）：**块体 `.map` 回调漏写 `return` 会把每一行映射成 `undefined`**。用配平括号从真实 bundle 切出这个回调，配桩函数渲染它：**目录行是 `button`**（带 `sshwsp-entry-dir`，**双击**把目录名交给 `handleEntry`；单击 `detail === 1` 不导航、键盘激活 `detail === 0` 仍然导航——后者是没有鼠标时唯一的路），行固定为图标 / 名称两段（`FolderIcon`，没有大小列）。`dirs=1` 下文件根本不会到达，所以回调**不再按 type 分支**：塞一个文件条目进去，渲染出来的仍是同一个目录行——另一种做法（一个带自己的字形、没有任何处理器的文件行）正是这个对话框刻意不要的半控件；bundle 里也不得再出现 `sshwsp-entry-file` 或 `FileIcon`。两个 picker 的请求都必须带 `limit=${BROWSE_LIST_LIMIT}&dirs=1` 且**不得**再带 `all=1`。对话框切片内不得出现 DownloadIcon / TransferProgressIcon / enqueueUploads / pickFileTarget / TransferQueueInline / selectReduce / aria-selected / listbox。最后一条是**负向对照**：把 `return` 去掉后同一回调必须返回 `undefined`——否则这套断言分不清「代码对了」还是「断言根本没看见」 |
 | `path-preview-smoke` | 无 | 74 | 无 | 目录列表跟随输入路径。★ 起因是两个 picker 的路径栏只有回车才生效：输入 `/home/me/pro` 时列表还停在登录目录，找目录只能盲打整条路径再按回车试。现在两个对话框共用 `usePathDraftPreview`，本套件从**真实 bundle** 切出四个纯函数与这个 hook，用极简 hooks 运行时 + 假时钟驱动，断言的是 hook 真正发出的调用：同目录内的前缀**只本地收窄**（大小写不敏感、保留主机真实拼写、零往返零定时器）；带尾斜杠的路径在输入停顿 `PATH_PREVIEW_DEBOUNCE_MS` 之后**只发一次**列目录请求（199 ms 不发、200 ms 发、目标是键入的目录）；整条拼全的真实目录名**只收窄成一行**、不自动进入（补尾斜杠才请求那一层；大小写近似匹配同样只留一行——过滤不替主机发明拼写）；**尾斜杠是「在目录里」的写法**：导航后草稿写成 `/raid/`，把斜杠删掉会重新列出父目录并按 `raid` 收窄（删一个字符就回到上级），两个状态不再共用同一个字符串；响应到达后过滤清空且**停住**（settled 状态不得再列父目录，这条把「每次渲染重列父目录」的死循环钉住）；尾斜杠回显（`path` 带 `/`）不算另一个目录；非绝对路径不收窄也不请求；列表失败只问一次、不进重试循环；卸载会 `clearTimeout` 掉尚未触发的暂停。**负向对照**：把 `draftDirectoryTarget` 的 `refresh` 恒置 false 后，同一个尾斜杠场景必须一次请求都没有——否则「没请求」可能只是断言没看见。**两个对话框真渲染**（同一套极简 hooks 运行时 + 假时钟 + 只答一棵小目录树的 `fetchJson` 桩，不重写组件体）：浏览弹窗开局落在登录目录、只列一次；输入前缀后**渲染出来的行**立刻收窄且没有新请求；补上尾斜杠后请求那一层并渲染其内容、删掉斜杠后回到父目录并收窄、输入框保留用户文字、挂载按钮 `title` 指向该目录；回车一个不存在的路径进入错误态（错误键出现）；新建远程工作区同样跟随输入，**换主机时立刻丢掉上一台主机的路径**，随后落回新主机的登录目录。接线部分钉住两个 picker 都调用这个 hook、都渲染 `narrowDirectoryEntries(listing, fragment)`、输入框不再有 `onBlur` 复位（双击的第一下会先 blur，复位会让行在两次点击之间移位） |
-| `host-card-smoke` | 无 | 25 | 无 | 「断开」只属于真实存在的连接。从真实 bundle 切出 `HostCard`，`React.useState` 绑无副作用桩后渲染，按 `key` 收按钮：connected 有「断开」且空闲可用、有在途操作时禁用并给 `hosts.disconnectBusy`；`broken` 与后台重连中（等待 / 连接中 / 已停止）**都不出现「断开」**（把旧守卫 `conn &&` 放回去时三条断言转红），改给「立即重连」；无记录时两者都没有、也不渲染连接徽标；ssh-config 主机仍无编辑 / 删除。同时钉住状态文案与圆点：connected / 已断开 / 重连中分别对应 ok / err / warn，`lastError` 非空才打印 |
+| `host-card-smoke` | 无 | 30 | 无 | 「断开」只属于真实存在的连接。从真实 bundle 切出 `HostCard`，`React.useState` 绑无副作用桩后渲染，按 `key` 收按钮：connected 有「断开」且空闲可用、有在途操作时禁用并给 `hosts.disconnectBusy`；`broken` 与后台重连中（等待 / 连接中 / 已停止）**都不出现「断开」**（把旧守卫 `conn &&` 放回去时三条断言转红），改给「立即重连」；无记录时两者都没有、也不渲染连接徽标；ssh-config 主机仍无编辑 / 删除。同时钉住状态文案与圆点：connected / 已断开 / 重连中分别对应 ok / err / warn，`lastError` 非空才打印。另有 5 项钉住元信息行**索取的是哪个键**：`hosts.auth.*` 与 `hosts.source.*` 都是插值取的，源码里没有字面调用点，所以按 `key` / `password` / `agent` 与 `store` / `ssh-config` 逐个渲染断言（`ssh-config` 必须被拼成 `sshConfig`，不是原值）——`f7e89a8` 正是把这些键当死键删掉，卡片才显示原文 |
 | `panel-ctx-smoke` | 无 | 14 | 无 | 面板上下文注入的回归：**缺一个绑定是 ReferenceError，不是 undefined**。从真实 bundle 切出 `main` slot 注册块，用假 slots 调用 `inject()`，断言它交出的 `ctx` 与 `translate` 是同一对象；切出 `RemoteWorkspacePage` 用 jsx stub 执行，断言面板元素收到同一 `ctx`/`t`；再按面板**真实签名**做 destructuring（`ctx` 与 `t` 各自独立 try/catch，一个缺失不连带误报另一个）；再切出 `browserAlias !== null && jsx(DirectoryBrowser, {…})` 这个调用，断言 props.ctx 同一、alias 透传；最后钉住面板体内 `ctx` 恰好出现两处（签名 + 对话框调用），多一处就意味着有人又在渲染期摸隐式全局。反向验证：删签名 / 删 inject / 删对话框 prop / 页面渲染丢 ctx 各变红一次。这个套件存在的理由是失败**不可见**——渲染期 ReferenceError 让宿主卸载整个 slot，页面只剩空白，不会弹错误框 |
 | `mutations-smoke` | 无（纯规则）；`DSH_CORE_ROOT`（路由行为） | 80 | 无 | 新建文件夹、重命名/删除的纯规则与三条路由。纯规则：空名/空白/`.`/`..`/斜杠/反斜杠/NUL/超长被拒，根目录本身不可动，正在目录的删除文案说明含子目录，兄弟路径的共享前缀不误判。路由：远端围栏（挂载根外、根自身、只读会话、会话无法识别、名字非法、目标已存在 409）、mkdir 另验正常创建 / 已存在 409 / 根外 403 / 非法名 400 / 只读 403 / 父目录缺失 404，以及**本地分支**：工作区内创建 / 嵌套创建 / 重名 409 / 非法名 400 / 根外 403 / 有会话的请求换个 `root` 也改不动边界 / 目标不是目录 400 / 父目录缺失 404 / 只读 403，并用 junction（POSIX 用 symlink）验证 `realpath` 父目录逃逸按越界拒绝、软链只删链接本体、目录递归删除不跟随软链；本地边界**只取自会话/策略**——客户端送来的 `root` 仅是选取会话的选择器，没有会话拥有它就必须拒绝，发明根目录不得改变边界。反向变异见本轮报告 |
-| `backdrop-dismiss-smoke` | 无 | 30 | 无 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁（目录浏览器的门禁现在只拦挂载，因为传输归队列所有、关掉对话框不中断它）、**传输进度弹层是第五个遮罩使用者**且同一判据、源码接线不得退回 `onClick` |
+| `backdrop-dismiss-smoke` | 无 | 31 | 无 | 对话框遮罩的关闭判据：按下与松开都必须落在遮罩（拖选文字松开在遮罩不得关闭）、主键-only（副键 / 中键只弹菜单）、触屏 `pointerup` 报 `button: -1` 仍可关闭、按下出窗松手不留残留标志、四个对话框各自的忙碌门禁（目录浏览器的门禁现在只拦挂载，因为传输归队列所有、关掉对话框不中断它）、源码接线不得退回 `onClick`、**文件编辑器不在名单里**（它已不是对话框：没有 `sshwsp-backdrop`，`Esc` 绑在面板自己的 `keydown` 上），遮罩计数因此是 4 而不是 5 |
 | `projection-relax-smoke` | 无 | 73 | 无 | `UPSTREAM-1` 上游补丁的逻辑层：放宽后 `ssh://` 通过而空串 / 相对路径仍被拒、`null` 照旧、其它投影单元不动、`register` 包装覆盖两种加载顺序、幂等、卸载只摘包装不动 schema、**退役探测三种结局**（`upstreamFixed` 不打补丁 / 生产顺序就地放宽 / 未注册时挂包装）与 `DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS` 的跳过语义 |
 | `tree-transfer-smoke` | 无 | 56 | 无 | 目录树上传、原子发布、递归与失败路径；浏览器两半都改为经队列：下载复用流式路由、目录走归档路由、上传只走分块 JSON 传输（原始字节路由仍在服务端，只是浏览器不再使用） |
 | `archive-smoke` | 无（tar 与规则部分）；`DSH_CORE_ROOT`（远端树部分） | 103 | 无 | tar 头的八进制字段（用真实读者校验）、排除规则、目录打包下载、完成提醒的单一节点行为（成功与失败都在同一个 7 秒窗口内到期，不再是"失败永久保留"）、**批量结果合并成一条就地改写**（一次 `transferNotice` 调用，上传与队列共用）、**下载只在看得见保存时才声称已保存**（目标先于请求被选、取消不耗字节、权限拒绝不得被报成取消、写失败必须 abort 而非 close） |
 | `zip-smoke` | 无（纯模块）；`python` 有 `zipfile` 时可做真实读者校验 | 25 | 无 | zip 中央目录签名与字段偏移、CRC-32（含跨块折叠与文献校验值 `0xCBF43926`）、数据描述符流式写法、DOS 时间不进位、**用 Python `zipfile` 真实打开并逐个校验 CRC**、压缩率与截断、声明尺寸不符必须抛错 |
 | `insert-once-smoke` | 无 | 18 | 无 | 拖入文件的 chip 只插入一次（HMR 重复插入的回归） |
 | `caret-after-insert-smoke` | 无 | 19 | 无 | 插入后光标必须落在 chip **之后**：用假 DOM + 假 Lexical 复现「裸 `input.focus()` 把 DOM 光标写到文档开头 → `selectionchange` 覆盖模型选区 → `editor.focus()` 忠实地恢复这个已被移到开头的光标」，并断言修复后 DOM 焦点从不发生在 Lexical 写选区之前；无 Lexical 句柄时仍聚焦输入框、零可见输入卡或两张卡时都不抢焦点 |
-| `locale-register-smoke` | 无 | 21 | 无 | 中英词典注册、重复注册不污染、`translate` 回落 |
+| `locale-register-smoke` | 无 | 33 | 无 | 中英词典注册、重复注册不污染、`translate` 回落，以及**插值键族**：`HostCard` 的 `hosts.auth.*` / `hosts.source.*`、toast 的 `toast.*` 与连接的 `connections.*` 都没有字面调用点，只靠拼前缀取用——`f7e89a8` 按字面量扫「无引用键」时把前两族整族删掉，于是每张主机卡片都显示 `hosts.auth.key` 这样的原文。套件把两个词典字面量的区间切出去，要求每个键**要么在词典之外被引号提到、要么属于一个显式声明的插值族**，并断言「源码里出现的每个插值前缀都在声明表里」（新加一个拼前缀的调用而不登记会红）。反向验证：删一行键 → 2 红；去掉一个族声明 → 2 红；加一个没人用的键 → 1 红 |
 | `detach-smoke` | 无 | 83 | 无 | 停用清单读写与脏数据退化、路径包含判定、`ctx.fs` 十个方法逐个断言被拒、重新启用两条路径、shell / terminal 拒绝且不拨号、工作区外照常可用、跨分区写入隔离、启用不得经过围栏探测、**沙箱模式围栏（`read-only` 拒写且不拨号）、三个围栏错误码的可分性、`/tmp` 对写围栏可达而对停用 / 探针仍按原始挂载根** |
+| `text-routes-smoke` | `DSH_CORE_ROOT`（真 `RemoteFileSystem` 要宿主模块；不设则只跑源码断言 7 项 + SKIP） | 78 | 无 | 远端 / 本地文件编辑的三条 HTTP 路由。**校验顺序**是这组用例的主线：快检 `version` 与慢检 `revision` 都在读盘之后、写盘之前，二者任一不符即 409 且**文件未被覆盖**（用 `tree.freezeMtime(true)` 复现「同一秒、同一大小」的外部改动——`ino:size:mtime` 版本号在这种改动下完全不变，只有内容哈希能发现）。另覆盖：CRLF 读成 LF 但 `eol: "CRLF"`、保存后仍是 CRLF；BOM 被报告且 `text` 不含它、保存后仍在且不翻倍；二进制与 latin-1 都 `FS_NOT_TEXT`；超限读只回头部且 `revision: null`（于是截断的文件根本无法保存）；`probe=1` 的四种答案（含只读会话的 `read-only`，且它**先于**大小与二进制判定）；根外 / `../` 逃逸 / 只读会话三种拒绝；审计留痕且**不含任何正文** |
+| `file-editor-smoke` | 无 | 74 | 无 | 编辑器 chunk 的源码形状 + 纯函数真跑。形状：懒加载（失败只掉按钮不掉面板）、注册在 `sidebar.right.tab.document.actions`（与 `files.actions` 是两个槽）、**不再是对话框**（没有 `modalLayer` / `backdropDismiss` / `useDialogA11y`，也没有 `sshwsp-dialog-fill`，否则会继承模态的 `height: min(88vh, 760px)` 而涨出给定的盒子）、`position: fixed` + 量出的 `left/top/width/height`、盖的是 `[data-textpreview-body]` 而不是整个预览（盖住头部就没有退出按钮了）、按 `data-textpreview-*` 找而不是 CSS module 的哈希类名、resize 与捕获阶段 scroll 都重量且用 `requestAnimationFrame` 合并到每帧一次、面板自己 `overflow: hidden` + `box-sizing: border-box`、head/foot `flex: 0 0 auto`、textarea 是唯一滚动容器且 `min-height: 0`、gutter 自己 `overflow: hidden` 而由 textarea 的 `scrollTop` 驱动、Tab 走 `execCommand('insertText')`（保撤销栈）、Shift+Tab 反缩进、Ctrl/Cmd+S 先 `preventDefault`、**`Esc` 挂在面板自己的 `keydown` 上而非 `document`**（就地编辑器不该截走输入框与叠层对话框的 `Esc`）、保存中不可关闭、脏了才问。行为：`lineCount` / `gutterNumbers` / `gutterWidth` / `isDirty`（尾随换行的增删算改动）/ `refusalKey` 五种原因 / `expectedTokens` 两个字段名。冲突：409 当状态处理、**重载排在覆盖之前**、覆盖要二次确认且**重新 `read-text` 拿新令牌**而不是跳过校验、全仓无 `force` 参数。保存成功只推进 baseline，不覆盖正文（保存期间敲的字不会被吞）。**两处「按钮根本不存在」的回归**：宿主的槽渲染器只给占位组件包**错误边界**，没有任何 `Suspense`（在 asar 里以 `renderOutletContent` 为锚点前后各 20k 内 `Suspense` 出现 0 次），所以把 `React.lazy` 直接注册进槽位会**永远渲染空白**——没有报错、没有控制台警告、没有断言变红，只有一枚不存在的图标。现在注册的是 `FileEditActionSlot`（自带 `Suspense`），并额外断言「任何 `React.lazy` 都不得被直接注册进槽位」。另一处：会话取自**槽位**的 `sessionId`（`scope: 'session'` 时宿主必然给，ui-session 的 `BUILTIN_SOURCE` 声明了它）而不是 `ctx.get('uiSession').adapter.current`（那是**编辑器当前会话**，预览来自别的工作区时会问错会话，服务端回「could not identify the session that owns this workspace」）。反向验证：直接注册 lazy → 2 红；去掉 `Suspense` → 1 红；只读 composer 会话 → 1 红；读了但不优先 → 1 红 |
 | `probe-smoke` | 无 | 20 | 无 | 内建桥三条身份探针无活连接时不拨号、挂载根外必须 `ENOENT`、有连接时取真实属性、broken 记录不算连接（直接数 `withSftp` / `acquire` 次数） |
 | `local-passthrough-smoke` | 无 | 231 | 无 | 本机路径直通：默认/展开/关闭、边界与 `..` 归一化、大小写按平台（win32 折叠与 darwin 不折叠**成对** pin 进 matcher，不再有恒真的「本平台不适用」断言）、`path.resolve` 在远端 cwd 前直通且 `relative` 返回原路径、热重载换 matcher、`RemoteFileSystem.resolve` / `lstat` 剥离 cwd 防递归、未命中与已存在但未配置的本机文件仍远端、无本机后端报 `FS_IO_ERROR`；`@` 引用：引号/裸拼写提取（含全角标点截断、尾随分隔符、重复去重）、`addHostReference` 的 win32 门禁与整 `$DSH_HOME` 拒绝、目录点名覆盖子项、256 条先进先出淘汰；显式 scheme 与其规则：`parseLocalScheme` 的斜杠数/大小写/盘符与 UNC 形态、`normalizeScheme` 拒保留名与非法名、**≥3 字符**（`c`/`ab` 拒、`abc` 收，且 `c:/x` 仍按 Windows 盘符解释）、`SCHEMES_IN_USE` 表驱动（每条拒绝且理由入文案、全大写与前后空白命中同一行）、`file` 专项、`schemeRules` 发布的长度/语法/两个大小写字段与整表、controller 拒绝文案含名字与理由、**存量不可用值降级可读但不回写**且 `warning()` 给出 stored/effective/code、配置默认值同样受限并 `warn` 一次；未授权前缀抛 `FS_PERMISSION_DENIED` 且两侧后端都没被碰过、scheme 点名不拓宽裸拼写；远端 miss 回退：三道闸门（后端/开关/点名）缺一不回退、只挂在读动词且写与 `listDir` 永不回退、回退文本附来源说明而 `readBytes` 不附、两种未命中错误面（两侧都无 → 说明本机副本也试过；首闸门未开 → 说明该拼写按远端解释并给出 scheme 与 `@` 两条出路，Windows 主机不推荐那条走不通的 `@`）；设置层：`passthroughOf` 的类型过滤与降级、store 往返与「同值不重写」、`PassthroughSettings.activate` / `apply` 的先校验后落盘再生效；并静态校验接线与唯一实现 |
 | `phase6-smoke` | 无（有真框架时更全） | 36 | 无 | 失败与规模路径的回归：断连 close 不误判完成、rename 回退不误删目标、`listDir` 无 N+1 stat、`StreamTail` join 缓存 |

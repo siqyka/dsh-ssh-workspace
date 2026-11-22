@@ -222,6 +222,39 @@ check('an ssh-config host hides edit and delete, but keeps disconnect',
   actionKeyed(sshConfigCard, 'delete') === undefined &&
   actionKeyed(sshConfigCard, 'disconnect') !== undefined)
 
+// ---- the meta row asks for interpolated keys --------------------------------
+//
+// The card builds both of these by interpolation — `t(`hosts.auth.${host.auth}`)`
+// and `t(`hosts.source.${…}`)` — so the source contains no `t('hosts.auth.key')`
+// anywhere. That is exactly why a sweep that only greps for literal keys read the
+// whole family as unused and deleted it (f7e89a8), after which every card painted
+// `hosts.auth.key` / `hosts.source.store` as literal text on screen.
+//
+// This suite can prove the half it owns: which key the card ASKS for, for every
+// value the host record can carry. `locale-register-smoke` proves the other half —
+// that both dictionaries answer each of them with real text.
+const metaOf = (tree) => [...elementsOf(tree)].find(node => node.props?.className === 'sshwsp-host-meta')
+function metaTexts (conn, overrides) {
+  const meta = metaOf(renderCard(conn, overrides))
+  if (meta === undefined) throw new Error('the card no longer renders a meta row')
+  return [...elementsOf(meta)].filter(node => node.type === 'span').map(node => node.props?.children)
+}
+
+for (const kind of ['key', 'password', 'agent']) {
+  check(`the meta row asks for hosts.auth.${kind} by interpolation`,
+    metaTexts(undefined, { host: { auth: kind } }).includes(`hosts.auth.${kind}`),
+    JSON.stringify(metaTexts(undefined, { host: { auth: kind } })))
+}
+// `source` arrives as `store` or `ssh-config`; the panel spells the second one
+// `sshConfig`, and that spelling is the dictionary key — not the record's value.
+check('a store host asks for hosts.source.store',
+  metaTexts(undefined, { host: { source: 'store' } }).includes('hosts.source.store'),
+  JSON.stringify(metaTexts(undefined, { host: { source: 'store' } })))
+check('...and an ssh-config host asks for hosts.source.sshConfig, not the raw value',
+  metaTexts(undefined, { host: { source: 'ssh-config' } }).includes('hosts.source.sshConfig') &&
+  !metaTexts(undefined, { host: { source: 'ssh-config' } }).includes('hosts.source.ssh-config'),
+  JSON.stringify(metaTexts(undefined, { host: { source: 'ssh-config' } })))
+
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {
   console.log('failures:')

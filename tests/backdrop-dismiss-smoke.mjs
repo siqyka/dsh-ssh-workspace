@@ -185,7 +185,18 @@ check('the helper is declared in the factory scope beside the components, not at
 
 console.log('\n[wiring]')
 
-const backdrops = [...source.matchAll(/className: 'sshwsp-backdrop'[^\n]*/g)].map(match => match[0])
+// The window reaches past the end of the line on purpose: a backdrop whose
+// props are spread over several lines is still one backdrop, and matching only
+// to the newline would quietly stop checking it.
+const backdrops = [...source.matchAll(/className: 'sshwsp-backdrop'[\s\S]{0,120}?children:/gu)].map(match => match[0])
+// Four: the host editor, the directory browser, the report, and the
+// add-workspace flow. The count is asserted so a new dialog cannot be added
+// without wiring the helper — the number is the assertion, not a detail.
+//
+// It used to be five. The file editor stopped being a modal: it is an inline
+// overlay on the preview body now, so it portals nowhere and has no backdrop
+// to dismiss. That change is pinned by the assertion right below, so a later
+// "just make the editor a dialog again" cannot land silently.
 check('all four dialog backdrops were found', backdrops.length === 4, `${backdrops.length} found`)
 check('no backdrop still dismisses on a raw onClick',
   backdrops.every(line => !/onClick/.test(line)),
@@ -196,6 +207,11 @@ check('every backdrop spreads backdropDismiss',
 check('the helper is wired at every floating surface',
   (source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length === 5,
   `${(source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length} call(s)`)
+// The editor chunk registers in the document-preview action slot. If it ever
+// grows a backdrop again, it belongs in the count above; until then it must
+// not have one, or the two lists disagree and one of them is wrong.
+check('the file editor is not a backdrop surface',
+  !/sshwsp-backdrop/u.test(readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.editor.js'), 'utf8')))
 
 console.log('\n[wiring: each dialog keeps its own busy guard]')
 
