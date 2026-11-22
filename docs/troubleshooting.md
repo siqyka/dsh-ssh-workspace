@@ -16,6 +16,7 @@
 | `FS_AMBIGUOUS_EDIT` / `FS_EDIT_NOT_FOUND` | `edit` 的 `old_string` 匹配不唯一 / 未命中 | 提供更精确的 `old_string` 或 `replace_all: true`；未命中时先重新 read 确认内容 |
 | `FS_NOT_TEXT` | 二进制或非法 UTF-8 | 读 / 编辑二进制文件被拒；改用 `ssh_workspace_exec` 配合远端命令处理 |
 | `FS_TOO_LARGE` | 超过读取上限 | 文件过大，用远端命令查看而非整读 |
+| `FS_TOO_MANY` | 同时监视的远端目标已达上限（64） | 每一棵同时展开的目录树都占一条轮询 / 一个 `inotifywait` 通道并保持连接。关掉不再看的工作区或目录即可腾出槽位——这是并发上限，不是额度，关一个就能再开一个 |
 | `FS_NOT_REGULAR_FILE` / `FS_NOT_DIRECTORY` | 目标类型不符 | 对目录 read、对文件 listDir 等 |
 | `FS_ABORTED` | 操作被中止 | 调用方 signal 被 abort（用户取消、超时、会话关闭）；不是故障，重试即可 |
 | `FS_IO_ERROR` | 其它 SFTP 失败 | SFTP 服务端报错、连接中断等 |

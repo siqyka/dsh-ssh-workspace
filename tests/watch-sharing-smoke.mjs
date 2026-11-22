@@ -348,6 +348,67 @@ console.log('\n[3] a real socket drop does not grow or double the watcher')
   }
 }
 
+// ======================================================= [4] the entry cap
+console.log('\n[4] the registry has a concurrency cap and it is a refusal, not a drop')
+{
+  const { fs, state } = makePushHarness()
+  const target = (index) => ({ displayPath: `ssh://h/d${index}`, targetKey: `ssh://h/d${index}` })
+
+  // Fill to the cap. The number is read from the module rather than retyped
+  // here: a suite that hard-codes 64 would keep passing after the bound moved,
+  // and the point of this section is the BOUND, not the number.
+  const source = await import('node:fs').then(({ readFileSync }) =>
+    readFileSync(path.join(pluginRoot, 'lib', 'fs', 'remote-watch.js'), 'utf8'))
+  const limit = Number(/const WATCH_MAX_ENTRIES = (\d+)/u.exec(source)?.[1])
+  check('the cap is declared as a constant', Number.isInteger(limit) && limit > 0, String(limit))
+
+  const closes = []
+  for (let index = 0; index < limit; index += 1) {
+    closes.push(await fs.watch(target(index), () => {}, undefined))
+  }
+  check('every target up to the cap is watched', fs.watchTargets().length === limit,
+    `watched=${fs.watchTargets().length}, cap=${limit}`)
+
+  // The refusal has to be an ERROR the caller can see. A silent no-op here would
+  // leave a tree showing stale entries with nothing anywhere saying why.
+  let refusal
+  try {
+    await fs.watch(target(limit), () => {}, undefined)
+  } catch (error) {
+    refusal = error
+  }
+  check('one past the cap is refused', refusal !== undefined, String(refusal))
+  check('...with a code that names the cause', refusal?.code === 'FS_TOO_MANY', String(refusal?.code))
+  check('...and a message that says how to free a slot',
+    /close/i.test(refusal?.message ?? '') && String(refusal?.message).includes(String(limit)),
+    String(refusal?.message))
+  check('the refusal did not grow the registry', fs.watchTargets().length === limit,
+    `watched=${fs.watchTargets().length}`)
+  check('the refusal opened no extra channel', state.openChannels === limit, `channels=${state.openChannels}`)
+
+  // Sharing cannot be refused: joining a watcher already open costs nothing the
+  // cap is trying to bound.
+  const shared = await fs.watch(target(0), () => {}, undefined)
+  check('an ALREADY watched target still accepts a second consumer',
+    fs.watchTargets().find(row => row.remotePath === '/d0')?.consumers === 2,
+    JSON.stringify(fs.watchTargets().find(row => row.remotePath === '/d0')))
+  await shared()
+
+  // The bound is on concurrency, not a budget: one close frees exactly one slot.
+  await closes[0]()
+  check('closing one watch frees a slot', fs.watchTargets().length === limit - 1,
+    `watched=${fs.watchTargets().length}`)
+  const readmitted = await fs.watch(target(limit), () => {}, undefined)
+  check('...so the refused target is accepted afterwards', typeof readmitted === 'function')
+  check('...and the registry is back at the cap', fs.watchTargets().length === limit,
+    `watched=${fs.watchTargets().length}`)
+
+  await readmitted()
+  await Promise.all(closes.slice(1).map(close => close()))
+  check('everything closes back to empty', fs.watchTargets().length === 0,
+    `watched=${fs.watchTargets().length}`)
+}
+
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)
 if (failures > 0) {
   console.log('\nfailures:')
