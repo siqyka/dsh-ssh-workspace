@@ -72,6 +72,21 @@ const MUTATIONS = [
     to: '.sshwsp-status { font-size: 11px;',
   },
   {
+    what: 'the queue panel drops out of the reduced-motion block',
+    from: '  .sshwsp-toast, .sshwsp-flowmenu, .sshwsp-queuepanel, .sshwsp-dialog, .sshwsp-backdrop { animation: none; }',
+    to: '  .sshwsp-toast, .sshwsp-flowmenu, .sshwsp-dialog, .sshwsp-backdrop { animation: none; }',
+  },
+  {
+    what: 'a scrollport loses its scrollbar colours',
+    from: 'overflow-y: auto; list-style: none; display: flex; flex-direction: column; gap: 2px; font-family: var(--sshwsp-mono); font-size: var(--sshwsp-font-xs); line-height: 18px; scrollbar-width: thin; scrollbar-color: var(--sshwsp-track) transparent;',
+    to: 'overflow-y: auto; list-style: none; display: flex; flex-direction: column; gap: 2px; font-family: var(--sshwsp-mono); font-size: var(--sshwsp-font-xs); line-height: 18px; scrollbar-width: thin;',
+  },
+  {
+    what: 'a numeric rule loses its tabular digits',
+    from: 'font-family: var(--sshwsp-mono); font-variant-numeric: tabular-nums; }',
+    to: 'font-family: var(--sshwsp-mono); }',
+  },
+  {
     what: 'a portal root is dropped from the token block',
     // The queue panel is the last root before the one that closes the list, so
     // removing its line leaves the selector list syntactically valid — which is

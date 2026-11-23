@@ -360,6 +360,96 @@ check('...and every clickable element answers the keyboard',
 check('the select does not pin its own color-scheme',
   !/color-scheme:\s*(?:dark|light)\s*;/u.test(rules))
 
+// ---- 5d. every animation can be turned off -------------------------------
+//
+// `prefers-reduced-motion` is a request, not a hint: a user who sets it gets
+// motion sickness from a sliding panel. The failure mode is an omission, not a
+// mistake — the queue panel shared `sshwsp-menu-in` with the flow menu and was
+// simply left out of the block — so the check is derived: every selector that
+// declares an animation must also appear in a reduced-motion block, and every
+// @keyframes must be reachable from one of those selectors.
+
+/**
+ * Split a captured selector group into its real selectors.
+ *
+ * The capture starts at the newline after the previous rule, so it can contain
+ * a `/* … *​/` comment whose text includes commas, parentheses and even the word
+ * "animation". Stripping comments first and THEN splitting is the only order
+ * that works; splitting first produced fragments like "the overwrite policy)".
+ */
+const splitSelectors = (group) => group
+  .replace(/\/\*[\s\S]*?\*\//gu, ' ')
+  .split(',')
+  .map(part => part.trim())
+  .filter(part => part !== '' && !part.startsWith('@'))
+
+const animatedSelectors = new Set()
+for (const rule of rules.matchAll(/(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/gu)) {
+  if (!/animation:\s*(?!none)/u.test(rule[3])) continue
+  for (const selector of splitSelectors(rule[2])) animatedSelectors.add(selector)
+}
+const reducedBlocks = [...rules.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/gu)]
+  .map(match => match[1])
+  .join('\n')
+const uncoveredAnimations = [...animatedSelectors].filter(selector => !reducedBlocks.includes(selector))
+check('the sheet still animates something, so this check has a subject',
+  animatedSelectors.size > 0, `${animatedSelectors.size} animated selectors`)
+check('every animated selector is turned off under reduced motion',
+  uncoveredAnimations.length === 0, uncoveredAnimations.join(' | '))
+
+const keyframeNames = [...rules.matchAll(/@keyframes ([a-z-]+)/gu)].map(match => match[1])
+const orphanedKeyframes = keyframeNames.filter(name => !new RegExp(`animation:[^;]*${name}`, 'u').test(rules))
+check('every @keyframes is used by an animation',
+  orphanedKeyframes.length === 0, orphanedKeyframes.join(' '))
+
+// ---- 5e. the scrollbars are ours, not the platform's ---------------------
+//
+// The panel paints its own scrollbars because the platform default is a light
+// trough, which in a dark panel is the most visible place it stops looking
+// like part of the app. The standard pair is the real mechanism; the webkit
+// block is the fallback and must stay confined to it.
+
+const scrollports = [...rules.matchAll(/(^|\n)([^{}\n][^{}]*)\{([^}]*overflow(?:-[xy])?:\s*auto[^}]*)\}/gu)]
+  .map(rule => splitSelectors(rule[2]))
+  .flat()
+  .filter(selector => selector.startsWith('.'))
+const unpaintedScrollports = scrollports.filter(selector => {
+  const body = new RegExp(`${escapeClass(selector)} \\{([^}]*)\\}`, 'u').exec(rules)?.[1] ?? ''
+  return !/scrollbar-color:/u.test(body)
+})
+check('the panel still has scrollports to paint',
+  scrollports.length >= 4, `${scrollports.length} scrollports`)
+check('every scrollport names its own scrollbar colours',
+  unpaintedScrollports.length === 0, unpaintedScrollports.join(' | '))
+check('the scrollbar colour comes from the track token',
+  /scrollbar-color: var\(--sshwsp-track\) transparent/u.test(rules))
+check('the webkit fallback stays a fallback',
+  // A ::-webkit-scrollbar selector outside the panel roots would style the
+  // Host's own scrollbars too, which is not ours to paint.
+  [...rules.matchAll(/[^{}\n]*::-webkit-scrollbar[^{]*\{/gu)]
+    .every(match => /^\.sshwsp(?:-editor-panel)? /u.test(match[0].trim()) || /^\.sshwsp-editor-panel /u.test(match[0].trim())))
+
+// ---- 5f. numbers that are compared down a column do not shift -------------
+//
+// Proportional digits change width between "8" and "10", so a column of file
+// sizes or ports jitters as it updates. `tabular-nums` is what makes them line
+// up. The set is derived from the rules that name a size/meta class, so a new
+// one has to opt in rather than be remembered.
+
+// `status` is deliberately absent: those chips hold words ("connected",
+// "failed"), and tabular digits on prose just make it look mechanical.
+const numericRule = /^\.sshwsp-(?:[a-z-]*-)?(?:meta|size|speed|count|gutter|sha|port|note|progress)$/u
+const numericRules = [...rules.matchAll(/(^|\n)(\.[a-z0-9-]+)[^{}\n]*\{([^}]*)\}/gu)]
+  .filter(rule => numericRule.test(rule[2]))
+  .filter(rule => /font-size|font-family/u.test(rule[3]))
+const withoutTabular = numericRules
+  .filter(rule => !/font-variant-numeric:\s*tabular-nums/u.test(rule[3]))
+  .map(rule => rule[2])
+check('the numeric rules exist, so this check has a subject',
+  numericRules.length >= 5, `${numericRules.length} rules`)
+check('every numeric text rule uses tabular digits',
+  withoutTabular.length === 0, [...new Set(withoutTabular)].join(' '))
+
 // ---- 6. the dead rules stayed dead ----------------------------------------
 
 check('the passthrough hint rule is gone',
