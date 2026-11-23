@@ -16,7 +16,7 @@
 | upstream patch modules | 7 | `lib/patch/patch-*.js` |
 | modules under `lib/` | 62 | recursive listing |
 | test suites | 83 | `tests/run.mjs` |
-| passing assertions (sampled) | 5642 | measured 2026-11-23 |
+| passing assertions (sampled) | 5725 | measured 2026-11-23 |
 
 <!-- doc-numbers:end -->
 
@@ -189,11 +189,11 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 却忘了同步文档会让 `npm run check:docs` 变红。
 
 断言数按实测：**完全不设环境变量**时，`tests/run.mjs` 会先生成 peer 替身（`tests/.peer-stubs`），
-于是 **82 个套件里 72 个通过、8 个整体 SKIP**（`projection-real` / `lifecycle` /
-`boot` / `tool-schemas` / `client-chunk` 缺真实装配树，`live` / `acceptance` 缺真实主机，
-`dirs-listing` 在 PATH 上找不到 POSIX `sh`），另有 2 个 `partial`（`local-changes-remote`
-的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段）；
-裸检出实测 **5642 项通过断言**（runner 汇总全部 82 条收尾行相加，其中 8 条是整体 SKIP 的 0）。生成表那一行就是这次
+于是 **83 个套件里 73 个通过、7 个整体 SKIP**（`projection-real` / `lifecycle` /
+`boot` / `tool-schemas` / `client-chunk` 缺真实装配树，`live` / `acceptance` 缺真实主机），
+另有 3 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段、
+`dirs-listing` 在 Windows 上没有能制造拒绝态的权限模型）；
+裸检出实测 **5725 项通过断言**（runner 汇总全部 83 条收尾行相加，其中 7 条是整体 SKIP 的 0）。生成表那一行就是这次
 **裸检出采样值**（2026-11-23：5642 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
 装配树上的数字更大，但换机器就会变，所以不写进表。
 带 `DSH_CORE_ROOT=<含 @deepseek-ai/dsh-fs 的 node_modules>` 时，`projection-real` / `lifecycle` /
@@ -353,6 +353,22 @@ chunk 真能按名字取回）、需要真实主机的两个（`live` / `accepta
 （`{ requires: [...] }`），所以一棵缺了无关 peer 的树不会连带跳过本可运行的套件。
 检测器自身由 `tests/peer-mode-smoke.mjs` 用四态合成树覆盖——它是所有 peer 套件的信任根，
 答错时没有别的套件会发现。
+
+### 反向验证（`scripts/reverse-verify-*.mjs`）
+
+守卫测试只对着正确的代码跑过，等于什么都没证明。`presentation-tokens-smoke` 里那组交互态断言
+就是会静默失效的一类：问「样式表里有没有焦点环」时，只要有一条环存在，**每个元素**都算通过。
+这不是假设——第一版断言就是这么写的，是反向验证把它找出来的：删掉一条环，套件仍然全绿。
+
+所以每个 `reverse-verify-*.mjs` 会逐个施加「把这次做的事删掉」的变异，并要求对应套件**变红**。
+
+留在绿上的变异就是漏洞，脚本以非零退出。它们**不进 CI**：脚本会改写源文件再还原，
+并行跑或中途被杀会留下半改的文件。它们是评审动作，手动跑：
+
+```
+node scripts/reverse-verify-presentation.mjs
+```
+
 ### 共享替身（`tests/support/`）
 
 替身只能有一份。历史上同一个 `ctx` 字面量被抄了 19 遍、同一个引擎替身被抄了 8 遍，

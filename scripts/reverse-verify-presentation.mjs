@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+/**
+ * Reverse verification for the presentation guards.
+ *
+ * A guard that only ever runs against correct code proves nothing. The
+ * interaction checks in `presentation-tokens-smoke.mjs` are the kind that fail
+ * silently: an assertion asking "is there any focus ring in the sheet" is
+ * satisfied by every element the moment ONE ring exists. That is not a
+ * hypothetical — it is exactly what the first version of those checks did, and
+ * this script is what found it. Deleting one ring left the suite green.
+ *
+ * So every mutation here removes one thing the presentation work added, and the
+ * suite must go red for each. A mutation that stays green is a hole, and the
+ * script exits non-zero.
+ *
+ *   node scripts/reverse-verify-presentation.mjs
+ */
+import { readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const SHEET = path.join(root, 'lib', 'client', 'client.styles.js')
+const SUITE = path.join(root, 'tests', 'presentation-tokens-smoke.mjs')
+
+/** Each mutation names one edit and the failure it should cause. */
+const MUTATIONS = [
+  {
+    what: 'a filled button loses its focus ring',
+    from: '.sshwsp-toast:focus-visible { outline: var(--sshwsp-focus-width) solid var(--sshwsp-accent); outline-offset: var(--sshwsp-focus-offset); }\n',
+    to: '',
+  },
+  {
+    what: 'the file action loses its focus ring',
+    from: '.sshwsp-fileaction:focus-visible { outline: var(--sshwsp-focus-width) solid var(--sshwsp-accent); outline-offset: var(--sshwsp-focus-offset); }\n',
+    to: '',
+  },
+  {
+    what: 'the tab label loses its hover',
+    from: '.sshwsp-editor-tab-name:hover { color: var(--sshwsp-text); }\n',
+    to: '',
+  },
+  {
+    what: 'the history refresh loses its focus ring',
+    from: '.sshwsp-cr-history-refresh:focus-visible { outline: var(--sshwsp-focus-width) solid var(--sshwsp-accent); outline-offset: var(--sshwsp-focus-offset); }\n',
+    to: '',
+  },
+  {
+    what: 'the disclosure head loses its hover',
+    from: '.sshwsp-check-head:hover:not(:disabled) { color: var(--sshwsp-text); }\n',
+    to: '',
+  },
+  {
+    what: 'a native select pins its own dark chrome again',
+    from: '.sshwsp-select { cursor: pointer; }',
+    to: '.sshwsp-select { cursor: pointer; color-scheme: dark; }',
+  },
+  {
+    what: 'a rule carries a raw colour again',
+    from: '.sshwsp-status { font-size: var(--sshwsp-font-2xs); padding: 2px 6px;',
+    to: '.sshwsp-status { color: #4a9eff; font-size: var(--sshwsp-font-2xs); padding: 2px 6px;',
+  },
+  {
+    what: 'a rule reads a Host token directly again',
+    from: '.sshwsp-status { font-size: var(--sshwsp-font-2xs); padding: 2px 6px;',
+    to: '.sshwsp-status { color: var(--dsw-alias-label-primary); font-size: var(--sshwsp-font-2xs); padding: 2px 6px;',
+  },
+  {
+    what: 'a font size escapes the scale',
+    from: '.sshwsp-status { font-size: var(--sshwsp-font-2xs);',
+    to: '.sshwsp-status { font-size: 11px;',
+  },
+  {
+    what: 'a portal root is dropped from the token block',
+    // The queue panel is the last root before the one that closes the list, so
+    // removing its line leaves the selector list syntactically valid — which is
+    // the whole point: a forgotten root is not a syntax error, it is a panel
+    // that silently loses every token.
+    from: '.sshwsp-queuepanel,\n',
+    to: '',
+  },
+]
+
+const original = readFileSync(SHEET, 'utf8')
+let caught = 0
+let holes = 0
+
+console.log('\npresentation guards — reverse verification\n')
+for (const mutation of MUTATIONS) {
+  if (!original.includes(mutation.from)) {
+    console.log(`  SETUP   ${mutation.what} — anchor not found, cannot test`)
+    holes++
+    continue
+  }
+  writeFileSync(SHEET, original.split(mutation.from).join(mutation.to))
+  let red = false
+  try {
+    execFileSync(process.execPath, [SUITE], { stdio: 'pipe' })
+  } catch {
+    red = true
+  }
+  console.log(`  ${red ? 'RED  ' : 'GREEN'}  ${mutation.what}`)
+  if (red) caught++
+  else holes++
+}
+
+writeFileSync(SHEET, original)
+console.log(`\n=== ${caught}/${MUTATIONS.length} mutations caught, ${holes} hole(s) ===\n`)
+if (holes > 0) process.exitCode = 1

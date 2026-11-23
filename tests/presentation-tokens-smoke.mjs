@@ -249,12 +249,119 @@ check("...and it keys off the Host's own dark signal rather than a media query",
   /body:not\(\[data-ds-dark-theme\]\)/u.test(lightLayer) &&
     !/@media\s*\(prefers-color-scheme/u.test(lightLayer))
 
-// ---- 6. the dead rules stayed dead ----------------------------------------
-
+// The client source is read once, here, because the interaction check below
+// needs to know which classes are rendered on the same element.
 const source = clientChunkNames(pluginRoot)
   .concat('client.js')
   .map(chunk => clientPartSource(pluginRoot, chunk))
   .join('\n')
+
+// ---- 5b. every clickable class answers the pointer and the keyboard -------
+//
+// The sheet itself says which classes are clickable: `cursor: pointer` is the
+// declaration the user actually sees. So the list is derived, not hand-written,
+// and a new interactive class cannot be added without its two states. Both are
+// required because they fail differently: a missing hover makes the control
+// look inert, a missing ring makes it invisible to a keyboard user, and the
+// second one is the one nobody notices while clicking.
+//
+// The states are checked per ELEMENT, not per class, because an element carries
+// several classes and any of them may supply the rule: `sshwsp-entry
+// sshwsp-entry-dir` gets its hover from the second class and its ring from the
+// first, and asking either class on its own would report a gap that the user
+// never sees.
+
+const escapeClass = (name) => name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+// The pseudo may be qualified (`:hover:not(:disabled)`) or followed by an
+// attribute selector, so it is not required to be followed by a separator.
+const answers = (cls, pseudo) => new RegExp(`${escapeClass(cls)}${pseudo}(?![-a-z])`, 'u').test(rules)
+
+/**
+ * Classes that legitimately have no hover or ring of their own, with the reason.
+ * Kept short on purpose: the assertion below fails if it grows, so an exemption
+ * has to be argued for rather than appended.
+ */
+const stateExempt = new Map([
+  // A <label> wrapping a native checkbox. The ring belongs to the checkbox,
+  // which the browser draws; a ring on the label would draw a second one.
+  ['.sshwsp-check', 'label around a native checkbox'],
+  // A native <select>. The browser owns its states AND its dropdown, which is
+  // why it cannot take a themed ring without also losing the native list.
+  ['.sshwsp-select', 'native select'],
+])
+
+const clickable = new Set()
+for (const rule of rules.matchAll(/(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/gu)) {
+  if (!/cursor:\s*pointer/u.test(rule[3])) continue
+  for (const part of rule[2].split(',')) {
+    const selector = part.trim()
+    // Only a bare class is the element that receives the click. A descendant
+    // selector's pointer belongs to its last compound, which is not this name.
+    if (/^\.[a-z0-9-]+$/u.test(selector)) clickable.add(selector)
+  }
+}
+
+/**
+ * Every class set the source actually renders, so the states can be checked per
+ * element. Both spellings are read: JSX passes `className:` a value, and the
+ * DOM controller assigns `.className =` directly. Reading only the first one
+ * reported the toast as unrendered — it is built by hand, not by JSX.
+ */
+const renderedGroups = [
+  ...source.matchAll(/className:\s*'([^']*sshwsp[^']*)'/gu),
+  ...source.matchAll(/\.className = '([^']*sshwsp[^']*)'/gu),
+].map(match => match[1].split(/\s+/u).filter(name => name.startsWith('sshwsp')))
+// `clickable` holds selectors, so it carries the leading dot; the rendered
+// groups hold bare class names. Compare them in the same shape.
+const coveredByAGroup = (selector) => {
+  const name = selector.slice(1)
+  return renderedGroups.some(group => group.includes(name))
+}
+
+const interactive = [...clickable].filter(cls => !stateExempt.has(cls))
+const uncovered = interactive.filter(cls => !coveredByAGroup(cls))
+check('every clickable class is rendered by the source',
+  uncovered.length === 0, uncovered.join(' '))
+
+/**
+ * Does any element that carries `cls` get `pseudo` from one of its classes?
+ *
+ * The `cls` has to be part of the question. An earlier version asked "is there
+ * any rendered class with a ring anywhere", which passed for every element as
+ * soon as ONE ring existed in the sheet — a reverse-verification mutation that
+ * deleted a single ring stayed green, which is how the hole was found.
+ */
+const elementAnswers = (cls, pseudo) => {
+  const name = cls.slice(1)
+  return renderedGroups
+    .filter(group => group.includes(name))
+    .some(group => group.some(member => answers(`.${member}`, pseudo)))
+}
+
+const noHover = interactive.filter(cls => !elementAnswers(cls, ':hover')).sort()
+const noRing = interactive.filter(cls => !elementAnswers(cls, ':focus-visible')).sort()
+
+check('the sheet still declares which classes are clickable',
+  clickable.size >= 10, `${clickable.size} classes`)
+check('the interactive-state exemptions stay few and argued',
+  stateExempt.size <= 4, `${stateExempt.size} exemptions`)
+check('every clickable element answers the pointer',
+  noHover.length === 0, noHover.join(' '))
+check('...and every clickable element answers the keyboard',
+  noRing.length === 0, noRing.join(' '))
+
+// ---- 5c. a native control does not repaint itself in the wrong theme ------
+//
+// `color-scheme: dark` on a <select> paints the browser's own dropdown chrome
+// dark. In the light layer that produced a black list inside a white dialog,
+// which no token can fix because the browser owns that surface. The document
+// root already carries the resolved scheme, so the control inherits it.
+
+check('the select does not pin its own color-scheme',
+  !/color-scheme:\s*(?:dark|light)\s*;/u.test(rules))
+
+// ---- 6. the dead rules stayed dead ----------------------------------------
+
 check('the passthrough hint rule is gone',
   !rules.includes('.sshwsp-passthrough-hint'))
 check('...and nothing in the client half still names it',
