@@ -7,8 +7,9 @@
 
 | # | 工作流 | 方案 | 任务书 | 状态 |
 | --- | --- | --- | --- | --- |
+| 09 | 剩余工作（2026-11-23 全仓审查：R-01/R-02/R-04/R-05/R-06 已修，剩 R-03、R-07、R-08 时间窗与新审出的 R-09…R-11；加上游接缝评估与不再做判定） | [09-remaining-work.md](./09-remaining-work.md) | [09-remaining-work-prompt.md](./09-remaining-work-prompt.md) | 待评审 |
 
-**本目录现已为空**：01–08 全部实施完成，方案与任务书已按上面的约定删除。
+01–08 已全部实施完成，方案与任务书已按上面的约定删除；09 是当前唯一待实施的工作流。
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
 
@@ -17,9 +18,9 @@
 | # | 工作流 | 落点 |
 | --- | --- | --- |
 | 03 | 右侧文件树的文件编辑（读/写/改三条路由、`version` + `revision` 双校验、远端与本地同一条路由、复用 mode 门禁与写围栏） | `docs/ui.md` 的「文件编辑」一节（为什么是按钮 + 对话框、为什么两个令牌、行尾与 BOM 的往返、截断即不可写）；`docs/features.md` 二之「在浏览器里编辑」 |
-| 04 | 代码拆分（去重、`statusTool` 三段分离、`routes` 按资源域拆模块、watch 集群独立、`client.js` 按懒渲染边界拆 chunk） | `CHANGELOG.md` 的 0.3.6「变更」一节；client chunk 的宿主能力实测与七条拆分边界在 `docs/optimization-and-future03.md` §1.1 |
+| 04 | 代码拆分（去重、`statusTool` 三段分离、`routes` 按资源域拆模块、watch 集群独立、`client.js` 按懒渲染边界拆 chunk） | `CHANGELOG.md` 的 0.3.6「变更」一节；client chunk 的宿主能力实测与七条拆分边界在 `docs/FF/09-remaining-work.md` §6.1 |
 | 05 | 同功能模块合并（16 组，`lib/` 83 → 57 个模块） | `CHANGELOG.md` 的 0.3.6「变更」一节（含合并带出的两处真缺陷）；「搬家会让检查静默变松」的四处修正见未发布段的「修复」 |
-| 06 | 文件系统与编辑器的参照取舍（对照第三方 side-bar 实现：4 条必做缺陷、4 条纯优化、5 条明确不做） | `CHANGELOG.md` 的 `## [未发布]` 各条（冲突基线、watcher 上限、`beforeunload`、编码读写、文件内查找、确定性排序、单例折叠、只读分页）；`docs/ui.md` 的「文件编辑」一节；「不照抄无围栏写路由」的判定进了 `docs/optimization-and-future03.md` §2 |
+| 06 | 文件系统与编辑器的参照取舍（对照第三方 side-bar 实现：4 条必做缺陷、4 条纯优化、5 条明确不做） | `CHANGELOG.md` 的 `## [未发布]` 各条（冲突基线、watcher 上限、`beforeunload`、编码读写、文件内查找、确定性排序、单例折叠、只读分页）；`docs/ui.md` 的「文件编辑」一节；「不照抄无围栏写路由」的判定进了 `docs/FF/09-remaining-work.md` §4 |
 | 07 | 右侧文件树的「新建文件」（远端目录行 + 远端空白处 + 本地空白处；`POST /create-file` 独占创建，0 字节，不自动打开） | `docs/features.md` 的「新建文件」一行、`docs/ui.md` 的行菜单与空白处菜单两节；`CHANGELOG.md` 的 `## [未发布]` 新增条；`tests/mutations-smoke.mjs` 与 `tests/tree-gestures-smoke.mjs` |
 | 08 | 文件树菜单改成「数据模型 + 宿主渲染」（有 `ctx.contextMenus` 时由宿主画，老宿主保留自绘） | `docs/ui.md` 的「行菜单、重命名与删除」一节（两个渲染器、禁用理由写进 label）；`docs/architecture.md` 的客户端半边；`tests/tree-menu-model-smoke.mjs`；`CHANGELOG.md` 的 `## [未发布]` 变更条 |
 

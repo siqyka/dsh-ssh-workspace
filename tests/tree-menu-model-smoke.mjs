@@ -424,6 +424,18 @@ check('the cache keeps a bounded number of answers, oldest first out',
 check('...and a miss is still a miss, not a stale yes',
   bounded.api.cachedPolicyOf({ sessionId: 'nobody', root: '/nowhere' }) === null)
 
+// A hit has to move the entry to the warm end. Without the re-insert, the map
+// is FIFO and the eviction below drops the answer that was JUST used.
+const lru = build()
+lru.state.policyAnswer = { readOnly: true }
+for (let i = 0; i < 32; i += 1) await lru.api.policyOf({ sessionId: 's' + i, root: '/r' + i })
+lru.api.cachedPolicyOf({ sessionId: 's0', root: '/r0' })
+await lru.api.policyOf({ sessionId: 's32', root: '/r32' })
+check('a cache hit makes an entry recent, so eviction spares it',
+  lru.api.cachedPolicyOf({ sessionId: 's0', root: '/r0' }) !== null)
+check('...and the genuinely coldest entry is the one that goes',
+  lru.api.cachedPolicyOf({ sessionId: 's1', root: '/r1' }) === null)
+
 // ---- a host that publishes the service but refuses the provider -------------
 
 console.log('\n[a host that refuses the provider]')

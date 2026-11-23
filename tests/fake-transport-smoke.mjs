@@ -24,7 +24,7 @@
  * Run: node tests/fake-transport-smoke.mjs
  */
 
-import { EventEmitter } from 'node:events'
+import { EventEmitter, getEventListeners } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -347,6 +347,46 @@ console.log('\n[5] every command channel opens with a real options bag')
   check('the retry drops the flag', calls[1]?.agentForward === undefined, JSON.stringify(calls[1]))
   check('the command still runs', retried.success === true && retried.stdout.includes('retried'), JSON.stringify(retried))
   check('the refusal is reported, not hidden', retried.forwardingRefused === true, JSON.stringify(retried))
+
+  // A signal that is ALREADY aborted must not open a channel: the abort
+  // listener only fires on a future edge, so without the entry check a caller
+  // that had given up would still run the command on the remote host.
+  const abortedEngine = new SshWorkspaceEngine({ reconnect: false, sweepIntervalMs: 3_600_000 })
+  track(() => abortedEngine.dispose())
+  let abortedCalls = 0
+  const hangingClient = {
+    exec (_command, _options, callback) {
+      abortedCalls += 1
+      const stream = new EventEmitter()
+      stream.stderr = new EventEmitter()
+      stream.signal = () => {}
+      stream.close = () => {}
+      callback(undefined, stream)
+    },
+  }
+  abortedEngine.acquire = async () => ({
+    alias: 'fake', client: hangingClient, idleAt: Date.now(), inFlight: 0, holds: 0, broken: false, agentForward: false,
+  })
+  abortedEngine.closeRecord = () => {}
+  const preAborted = new AbortController()
+  preAborted.abort()
+  const refusedBeforeDial = await abortedEngine.exec('fake', 'echo nope', { signal: preAborted.signal, audit: false })
+  check('an already aborted signal runs nothing', abortedCalls === 0, String(abortedCalls))
+  check('...and says the command was aborted', refusedBeforeDial.success === false && /aborted/u.test(refusedBeforeDial.error ?? ''),
+    JSON.stringify(refusedBeforeDial))
+
+  // The listener must be released on EVERY settle path, not just `close`.
+  // A timeout used to leave the abort closure (and its stream) attached to the
+  // caller's signal for as long as that signal lived.
+  const listenerController = new AbortController()
+  const timedOut = await abortedEngine.exec('fake', 'echo hangs', {
+    signal: listenerController.signal,
+    timeoutMs: 20,
+    audit: false,
+  })
+  check('a channel that never closes still times out', timedOut.success === false && timedOut.timedOut === true, JSON.stringify(timedOut))
+  check('...and the abort listener is removed', getEventListeners(listenerController.signal, 'abort').length === 0,
+    String(getEventListeners(listenerController.signal, 'abort').length))
 }
 
 // ======================================================= [6] config edit invalidates

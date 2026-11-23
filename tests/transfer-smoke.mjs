@@ -18,6 +18,7 @@ import path from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { Writable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 // transfer.js reaches the shared SFTP primitives, which resolve the DSH peer
@@ -32,7 +33,7 @@ if (!coreRoot) {
 process.env.DSH_PEER_ROOT = [coreRoot, process.env.DSH_PEER_ROOT].filter(Boolean).join(path.delimiter)
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { transferFile, uploadTree, downloadTree } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer/transfer.js')).href)
+const { transferFile, uploadTree, downloadTree, trackWriteFailure, endWriteStream } = await import(pathToFileURL(path.join(pluginRoot, 'lib/transfer/transfer.js')).href)
 
 import { createFakeSftp, fakeSftpEngine } from './support/fake-sftp.mjs'
 import { createHost } from './support/plugin-host.mjs'
@@ -177,6 +178,49 @@ try {
     check('a missing remote source fails loudly', typeof message === 'string' && message.includes('does not exist'), message)
   }
 
+  // --- a write failure is the error reported, not the stream teardown ------
+  //
+  // A write stream emits `error` at most once. If the download path only
+  // listened just before `end()`, an ENOSPC/EACCES from a write in between was
+  // emitted into a throwaway listener; `end()` then reported only
+  // ERR_STREAM_DESTROYED and the truncated staging file was renamed into place
+  // as a success. These pin the two helpers that closing that hole relies on.
+  {
+    const sink = new Writable({
+      write (chunk, encoding, done) { done(new Error('disk full')) },
+    })
+    const state = trackWriteFailure(sink)
+    sink.write(Buffer.from('payload'))
+    // Let the write callback turn into an `error` event before anyone awaits.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    let message
+    try {
+      await endWriteStream(sink, state)
+    } catch (error) { message = error.message }
+    check('a write error recorded before end() is the one thrown', message === 'disk full', message)
+    check('...and it is remembered rather than read off the end callback',
+      state.error !== null && state.error.message === 'disk full')
+
+    const clean = new Writable({ write (chunk, encoding, done) { done() } })
+    const cleanState = trackWriteFailure(clean)
+    clean.write(Buffer.from('ok'))
+    let cleanError
+    try {
+      await endWriteStream(clean, cleanState)
+    } catch (error) { cleanError = error }
+    check('a clean stream ends without an error', cleanError === undefined, cleanError?.message)
+
+    // Shape: the download must attach the tracker at creation, otherwise an
+    // error arriving between two reads is still swallowed.
+    const source = readFileSync(path.join(pluginRoot, 'lib/transfer/transfer.js'), 'utf8')
+    check('download tracks the write failure from the moment the stream exists',
+      /const writeFailure = trackWriteFailure\(out\)[\s\S]{0,400}handle = await sftpOpenHandle/.test(source))
+    check('...and no longer installs a listener that drops the error',
+      !/out\.on\('error', \(\) => \{ \/\* surfaced/.test(source))
+    check('...and ends through endWriteStream instead of a bare callback',
+      /await endWriteStream\(out, writeFailure\)/.test(source))
+  }
+
   // --- a tree upload recreates the shape ----------------------------------
   {
     const tree = path.join(scratch, 'tree')
@@ -284,6 +328,82 @@ try {
       )
       check('danger-full-access uploads outside the session workspace', full.ok === true, JSON.stringify(full))
     }
+
+  // --- the download tool answers to the same mode, and to the local roots ----
+  //
+  // A download writes THIS machine through `node:fs`, outside `ctx.fs` and
+  // therefore outside both the host sandbox and the router's fences. It used to
+  // be ungated: a read-only session could pull a remote file onto any local
+  // path (`~/.ssh/authorized_keys` included). These pin mode, temp and the
+  // session's local workspace as the three answers.
+  {
+    const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib', 'surface', 'tools.js')).href)
+    const makeDownload = () => {
+      const { sftp, files } = fakeSftp({ dirs: ['/srv', '/srv/app'] })
+      files.set('/srv/app/log.txt', new Uint8Array(Buffer.from('remote-log')))
+      return { ...fakeSftpEngine(sftp), assertNotDisabled () {} }
+    }
+    const toolFor = (mode, workspaceRoot) => {
+      const ctx = createHost({
+        services: { sandboxPolicy: { resolve: () => ({ mode, workspaceRoot }) } },
+      }).ctx
+      return workspaceTools(ctx, makeDownload(), undefined, undefined, undefined)
+        .find(tool => tool.name === 'ssh_workspace_transfer')
+    }
+    const downloadTo = (tool, localPath) => tool.execute(
+      { alias: 'test', direction: 'download', localPath, remotePath: '/srv/app/log.txt' },
+      { agent: { session: { id: 's1' } } },
+    )
+
+    // A path inside the workspace but outside the machine temp area: nothing
+    // short of danger-full-access may write it.
+    const outsideTemp = path.join(pluginRoot, 'tests', 'support', '.download-must-not-land.txt')
+    {
+      const result = await downloadTo(toolFor('read-only', scratch), outsideTemp)
+      check('a read-only session cannot download', result.ok === false, JSON.stringify(result))
+      check('the download refusal names the mode', /read-only/u.test(result.error ?? ''), String(result.error))
+      check('...and no file landed', existsSync(outsideTemp) === false)
+    }
+    {
+      const result = await downloadTo(toolFor('workspace-write', path.join(scratch, 'workspace')), outsideTemp)
+      check('workspace-write refuses a download outside temp and the local workspace',
+        result.ok === false, JSON.stringify(result))
+      check('...with an actionable refusal', /temp area|local workspace/u.test(result.error ?? ''), String(result.error))
+      check('...and still wrote nothing', existsSync(outsideTemp) === false)
+    }
+    {
+      // A remote session has no local workspace: temp is the one allowed place.
+      const inTemp = path.join(scratch, 'downloaded-to-temp.txt')
+      const result = await downloadTo(toolFor('workspace-write', 'ssh://test/srv/app'), inTemp)
+      check('workspace-write allows a download into this machine\'s temp area',
+        result.ok === true, JSON.stringify(result))
+      check('...and the bytes arrived', existsSync(inTemp) && readFileSync(inTemp, 'utf8') === 'remote-log')
+    }
+    {
+      const insideRoot = path.join(scratch, 'workspace', 'inside.txt')
+      const result = await downloadTo(toolFor('workspace-write', path.join(scratch, 'workspace')), insideRoot)
+      check('workspace-write allows a download inside the local workspace', result.ok === true, JSON.stringify(result))
+      check('...and the bytes arrived there too', existsSync(insideRoot) && readFileSync(insideRoot, 'utf8') === 'remote-log')
+    }
+    {
+      // The documented way out. This destination is inside the workspace (so
+      // the test process may write it) but outside the temp area, which is what
+      // makes it prove the mode branch rather than the temp allowance.
+      const dangerPath = path.join(pluginRoot, `.download-danger-${process.pid}.txt`)
+      const result = await downloadTo(toolFor('danger-full-access', 'ssh://test/srv/app'), dangerPath)
+      check('danger-full-access downloads outside temp', result.ok === true, JSON.stringify(result))
+      check('...and the bytes arrived', existsSync(dangerPath) && readFileSync(dangerPath, 'utf8') === 'remote-log')
+      if (existsSync(dangerPath)) await rm(dangerPath, { force: true })
+    }
+    {
+      const brokenCtx = createHost({ services: { sandboxPolicy: { resolve: () => { throw new Error('boom') } } } }).ctx
+      const tool = workspaceTools(brokenCtx, makeDownload(), undefined, undefined, undefined)
+        .find(candidate => candidate.name === 'ssh_workspace_transfer')
+      const result = await downloadTo(tool, path.join(scratch, 'broken-policy.txt'))
+      check('an unresolvable policy refuses the download', result.ok === false, JSON.stringify(result))
+      check('...and says the mode is not the problem', /wiring problem/u.test(result.error ?? ''), String(result.error))
+    }
+  }
 
   // --- the upload answers to the mounted-root fence ------------------------
   //
@@ -409,19 +529,25 @@ try {
     check('the unknown-mode refusal did not reach the host', served.state.writes === 0, JSON.stringify(served.state))
   }
 
-  // --- a DOWNLOAD is not gated: it reads the remote side and writes locally, so
-
-    // "view only" is exactly the mode where it should keep working.
+  // --- a DOWNLOAD is gated too: it writes this machine ----------------------
+  //
+  // This block used to assert the opposite ("read-only still allows a
+  // download"), which was the hole itself: a read-only agent could pull a
+  // remote file onto any local path.
+  {
     const downloadSftp = fakeSftp({ dirs: ['/srv', '/srv/app'], files: [['/srv/app/down.txt', new Uint8Array(Buffer.from('x'))]] })
     const downloadTool = workspaceTools(policyCtx, { ...fakeSftpEngine(downloadSftp.sftp), assertNotDisabled () {} }, undefined, undefined, undefined)
       .find(tool => tool.name === 'ssh_workspace_transfer')
     modeOf.current = 'read-only'
+    const downloadTarget = path.join(scratch, 'down.txt')
     const downloadResult = await downloadTool.execute(
-      { alias: 'test', direction: 'download', localPath: path.join(scratch, 'down.txt'), remotePath: '/srv/app/down.txt' },
+      { alias: 'test', direction: 'download', localPath: downloadTarget, remotePath: '/srv/app/down.txt' },
       { agent: { session: { id: 's1' } } },
     )
-    check('read-only still allows a download', downloadResult.ok === true, JSON.stringify(downloadResult))
+    check('read-only refuses a download', downloadResult.ok === false, JSON.stringify(downloadResult))
+    check('...and no local file was created', existsSync(downloadTarget) === false)
   }
+}
   // --- a directory tree comes down, shape preserved -------------------------
   {
     // The remote side is a directory listing the fake SFTP answers from a map.

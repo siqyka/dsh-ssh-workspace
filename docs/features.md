@@ -62,7 +62,7 @@
 | 语法高亮回退 | 引擎不可用时退回 `textarea` + **窗口化**颜色覆盖层：只画视口附近的行并按 `scrollTop` translate，缓存每行进入时的扫描状态；**换行模式、输入法组合期间、超过 512 KiB** 时不染色。颜色全走 CSS 变量，浅色主题有独立调色板 |
 | 保存的双令牌 | 回传 `version`（`ino:size:mtime`，便宜）与 `revision`（内容 sha256，贵），先比 version 再比 revision：常见改动一次元数据往返就 409，而「同一秒、同样大小」的改写只有哈希能发现。任一不符回 **409** 并带当前令牌 |
 | 冲突默认不覆盖 | 409 的默认动作是「重新加载」；「覆盖」排在后面且要二次确认，且**重新读一次拿新令牌再写**而不是跳过校验。**没有 `force` 参数** |
-| 行尾与 BOM 保真 | 读时把 `eol`（`LF`/`CRLF`）与 `bom` 与 `text` 分开报告（`text` 已归一化为 LF 且不含 BOM），写时原样装回；`eol: 'auto'` 用磁盘当前风格。编解码与 `editText` 工具共用同一份实现 |
+| 行尾与 BOM 保真 | 读时把 `eol`（`LF`/`CRLF`）与 `bom` 与 `text` 分开报告（`text` 已归一化为 LF 且不含 BOM），写时原样装回；`eol: 'auto'` 用磁盘当前风格。底部行尾徽章就是保存策略选择器：`自动（LF/CRLF）` / `LF` / `CRLF`，选中的一种在下一次保存时生效，服务端回传实际写入的行尾；只改行尾也算未保存改动。编解码与 `editText` 工具共用同一份实现 |
 | 截断即不可写 | 超限读只回头部且 `revision: null`——截断内容算出的哈希是假证据，而写路由要求 revision 是字符串，所以截断的文件在协议层面无法保存 |
 | 分页读（只读） | 超过 **2 MiB** 的文件不是死路：probe 回 `paged: true`，读路由接受 `offset`，每次一页 **128 KiB**，`nextOffset` 说明下一页从哪开始（页按固定字节数切开，最后一个字符可能被切断，切下的字节留在下一页，不丢也不补）。编码与行尾**只在第一页决定**，之后由客户端回传——中间页按自己的字节重新嗅探会把同一个文件解成两种文字（GB18030 的一页很可能恰好也是合法 UTF-8）。分页一律只读：`revision: null`，没有保存路径，预览里那一个「太大不能编辑」的拒绝会变成可点的「只读分页查看（大小）」，点开是**只读面板**（`FilePagerPanel`）：按 `offset` 取页、`nextOffset` 前进，没有任何保存入口 |
 
@@ -226,9 +226,11 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 `ctx.fs` 沙箱约束。而且它只看得到部署默认模式、看不到会话级覆盖，按它判定会得出错误结论。
 模型面向的写路径走 `ctx.fs` 与插件自己的工具，那条路上模式是生效的。插件自己的工具不经 `ctx.fs`，
 所以它们**各自解析** `ctx.sandboxPolicy.resolve({ session })`：`ssh_workspace_transfer` 的上传
-（写入远端）在 `read-only` 下被拒，下载（只读远端）照常可用。上传现在**四条围栏全部与 `write` / `edit`
-一致**——模式（`writeModeRefusal`）、工作区范围（`workspaceWriteScopeRefusal`）、挂载根
-（`assertWithinRemoteRoots`）、符号链接真实落点（`assertFencedRealpath`），所以两条写路径不会分叉：
+（写入远端）与下载（**写入本机**，走 `node:fs`，宿主 sandbox 看不到）都在 `read-only` 下被拒。下载
+在 `workspace-write` 下只允许本机临时目录或会话自己的本地工作区根（远端会话没有本地根，因此只允许临时
+目录），`danger-full-access` 才放开到任意路径；策略解析失败同样 fail closed。上传现在**四条围栏全部与
+`write` / `edit` 一致**——模式（`writeModeRefusal`）、工作区范围（`workspaceWriteScopeRefusal`）、
+挂载根（`assertWithinRemoteRoots`）、符号链接真实落点（`assertFencedRealpath`），所以两条写路径不会分叉：
 一个 `write` 会拒绝的落点，上传同样拒绝，且**在写入任何字节之前**拒绝。此前上传缺后两条围栏，实测能
 把字节落到未挂载的 `/etc/cron.d/…`（而 `write` 到同一拼写报 `FS_OUTSIDE_WORKSPACE`）——那正是
 「两条写路径不会分叉」这句话当时的反例，现已由 `transfer-smoke` 的失败反证钉死。策略服务

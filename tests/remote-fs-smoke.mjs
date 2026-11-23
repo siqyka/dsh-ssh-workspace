@@ -65,7 +65,7 @@ function routerOver (options = {}) {
   const engine = fakeSftpEngine(double.sftp)
   const router = new RemoteFileSystem({ engine })
   router.addRoot(ALIAS, '/srv/app')
-  return { router, ...double }
+  return { router, engine, ...double }
 }
 
 /** Run `operation`, returning the FsError code it threw (or undefined). */
@@ -181,7 +181,7 @@ const inside = (relative) => `ssh://${ALIAS}/srv/app/${relative}`
 // Writing: the staged publish, the mode, and the version check
 // ---------------------------------------------------------------------------
 {
-  const { router, tree, snapshot } = routerOver({ files: { '/srv/app/a.txt': 'old\n' } })
+  const { router, tree, engine, snapshot } = routerOver({ files: { '/srv/app/a.txt': 'old\n' } })
   const before = snapshot()
 
   const result = await router.writeText({ targetKey: inside('a.txt'), displayPath: inside('a.txt') }, 'new\n', undefined, undefined, WRITE_POLICY)
@@ -201,12 +201,14 @@ const inside = (relative) => `ssh://${ALIAS}/srv/app/${relative}`
     [...tree.dirs].every(dir => !dir.includes('.dsh-tmp-')), JSON.stringify([...tree.dirs]))
   check('the destination is not left holding a staging name', tree.has('/srv/app/a.txt'))
 
-  // The staging file is created 0600 and then given the destination's mode, so a
-  // 0644 file does not come back as a private one (or vice versa).
+  // The staging file is created 0644 and then given the destination's mode, so a
+  // 0644 file does not come back as a private one (or vice versa). 0600 was the
+  // old staging mode and leaked onto every NEW file, which is the inconsistency
+  // this pins.
   check('the staging file was opened exclusively',
     tree.opens.some(open => open.flags === 'wx'), JSON.stringify(tree.opens))
-  check('the staging file started private',
-    tree.opens.some(open => open.flags === 'wx' && open.mode === 0o600), JSON.stringify(tree.opens))
+  check('the staging file started at the shared default',
+    tree.opens.some(open => open.flags === 'wx' && open.mode === 0o644), JSON.stringify(tree.opens))
   check('the published file kept the destination mode',
     tree.modes.get('/srv/app/a.txt') === 0o644, String(tree.modes.get('/srv/app/a.txt')))
 
@@ -214,6 +216,17 @@ const inside = (relative) => `ssh://${ALIAS}/srv/app/${relative}`
   const created = await router.writeText({ targetKey: inside('fresh.txt'), displayPath: inside('fresh.txt') }, 'hello', undefined, undefined, WRITE_POLICY)
   check('writeText reports a create', created.operation === 'create', JSON.stringify(created.operation))
   check('the created file holds the content', tree.read('/srv/app/fresh.txt') === 'hello')
+  check('...and a new file gets the same 0644 every write path uses',
+    tree.modes.get('/srv/app/fresh.txt') === 0o644, String(tree.modes.get('/srv/app/fresh.txt')))
+
+  // A server without chmod (or one that refuses it) must not lose the write —
+  // but it must not look like the mode request succeeded either. One degraded
+  // note is the whole visibility budget; the write stays successful.
+  tree.fail({ method: 'chmod', times: 20, message: 'chmod refused' })
+  const noChmod = await router.writeText({ targetKey: inside('nochmod.txt'), displayPath: inside('nochmod.txt') }, 'kept', undefined, undefined, WRITE_POLICY)
+  check('a refused chmod does not fail the write', noChmod.operation === 'create' && tree.read('/srv/app/nochmod.txt') === 'kept')
+  check('...and is recorded as a degradation instead of vanishing',
+    engine.notes.some(note => note.kind === 'degraded' && /refused chmod/u.test(note.detail)), JSON.stringify(engine.notes))
 }
 
 // ---------------------------------------------------------------------------

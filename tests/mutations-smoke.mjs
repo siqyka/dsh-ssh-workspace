@@ -305,6 +305,7 @@ if (!coreRoot) {
     const sessions = [
       { id: 's-remote', header: { cwd: 'ssh://qy/srv/proj' }, mode: 'workspace-write' },
       { id: 's-remote-ro', header: { cwd: 'ssh://qy/srv/proj' }, mode: 'read-only' },
+      { id: 's-remote-weird', header: { cwd: 'ssh://qy/srv/proj' }, mode: 'yolo-mode' },
     ]
     const ctx = createHost({
       services: {
@@ -313,6 +314,15 @@ if (!coreRoot) {
       },
     }).ctx
     const routes = makeRoutes({ engine, router, ctx, allowLan: false, allowedHosts: [] })
+
+    // The body cap used to destroy the socket, so every caller could only say
+    // "invalid JSON" (or nothing, in the browser). 413 is the status that tells
+    // the panel to shrink the request instead of retrying it verbatim.
+    const oversized = await post(routes, ROUTES.rename, {
+      path: 'ssh://qy/srv/proj/a.txt', newName: 'b.txt', pad: 'x'.repeat(4 * 1024 * 1024 + 16),
+    })
+    check('an oversized JSON body is a 413, not a dead connection',
+      oversized.status === 413 && /PAYLOAD_TOO_LARGE/u.test(oversized.body), JSON.stringify(oversized).slice(0, 200))
 
     const rename = await post(routes, ROUTES.rename, { path: 'ssh://qy/srv/proj/a.txt', newName: 'b.txt', sessionId: 's-remote' })
     check('renaming a remote file moves it inside the root', rename.status === 200 && calls.renames.length === 1, JSON.stringify(rename))
@@ -423,10 +433,24 @@ if (!coreRoot) {
 
     const readOnly = await post(routes, ROUTES.deleteEntry, { path: 'ssh://qy/srv/proj/dir', sessionId: 's-remote-ro' })
     check('a read-only session cannot delete', readOnly.status === 403 && /read-only/u.test(readOnly.body), JSON.stringify(readOnly))
+    check('...and the refusal carries the machine-readable reason',
+      JSON.parse(readOnly.body).code === 'FS_SANDBOX_DENIED' && JSON.parse(readOnly.body).readOnlyReason === 'read-only',
+      readOnly.body)
+
+    const weirdDelete = await post(routes, ROUTES.deleteEntry, { path: 'ssh://qy/srv/proj/dir', sessionId: 's-remote-weird' })
+    check('an unreadable mode is refused, but not described as read-only',
+      weirdDelete.status === 403 && JSON.parse(weirdDelete.body).code === 'FS_SANDBOX_DENIED' &&
+        JSON.parse(weirdDelete.body).readOnlyReason === 'unrecognised-mode', weirdDelete.body)
 
     const policy = await get(routes, `${ROUTES.mutationPolicy}?sessionId=s-remote-ro`)
     check('the policy endpoint reports read-only so the UI can disable the actions',
       policy.status === 200 && /"readOnly":true/u.test(policy.body), policy.body)
+    check('...and names the reason',
+      JSON.parse(policy.body).readOnlyReason === 'read-only' && JSON.parse(policy.body).modeRecognised === true, policy.body)
+    const weirdPolicy = await get(routes, `${ROUTES.mutationPolicy}?sessionId=s-remote-weird`)
+    check('...while an unreadable mode is reported as such',
+      JSON.parse(weirdPolicy.body).readOnly === true && JSON.parse(weirdPolicy.body).readOnlyReason === 'unrecognised-mode' &&
+        JSON.parse(weirdPolicy.body).modeRecognised === false, weirdPolicy.body)
     const unknownPolicy = await get(routes, `${ROUTES.mutationPolicy}?root=ssh://qy/not-a-session`)
     check('...and reports no session for a root nothing owns',
       unknownPolicy.status === 200 && /"sessionFound":false/u.test(unknownPolicy.body), unknownPolicy.body)

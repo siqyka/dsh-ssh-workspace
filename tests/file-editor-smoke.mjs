@@ -298,7 +298,7 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
     textEncoding.includes('BOM_UTF8') && /^\s+bom: format\.bom,$/mu.test(textRoutes))
   check('the save sends the BOM flag back', editor.includes('bom: state.bom'))
   check('...and the line-ending policy is the server\'s, not the browser\'s',
-    editor.includes("eol: 'auto'") && !/\\r\\n/u.test(editor))
+    editor.includes("eol: state.eolPolicy === 'auto' ? 'auto' : state.eolPolicy") && !/\\r\\n/u.test(editor))
   check('every refusal reason maps to its own copy key',
     ["'read-only'", "'binary'", "'not-utf8'", "'too-large'", "'not-file'"].every((reason) => editor.includes(`reason === ${reason}`)))
   check('the refusals are worded for all five reasons', ['edit.readOnly', 'edit.binary', 'edit.notUtf8', 'edit.tooLarge', 'edit.notFile']
@@ -1031,6 +1031,74 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   const mapped = [...editor.matchAll(/return '(edit\.[A-Za-z]+)'/gu)].map(match => match[1])
   check('the reason-to-copy mapping only names real keys',
     mapped.every(key => locale.includes(`'${key}':`)), mapped.filter(key => !locale.includes(`'${key}':`)).join(','))
+  const eolKeys = ['edit.eolLabel', 'edit.eolHint', 'edit.eolAuto']
+  check('...including the line-ending control\'s copy',
+    eolKeys.every(key => locale.includes(`'${key}':`)), eolKeys.filter(key => !locale.includes(`'${key}':`)).join(','))
+}
+
+{
+  // A save reply is keyed to the file it started on. The panel used to write
+  // the returned baseline tokens into whichever tab was visible when the
+  // request settled, which marked the wrong file dirty and guaranteed a 409 on
+  // its next save.
+  check('a save pins the file it started on',
+    editor.includes('const savingPath = target') &&
+      editor.includes('const sent = state.text'))
+  check('...and decides every post-await write against the live path',
+    editor.includes('const stillActive = () => stateRef.current.path === savingPath') &&
+      /if \(!stillActive\(\)\) return/u.test(editor) &&
+      editor.includes('openTabs.remember(sessionId, savingPath, null)'))
+  check('a failed save is only announced on the tab that asked for it',
+    /if \(stillActive\(\)\) \{\s*setNotice/u.test(editor))
+  check('tab switches are refused while a save is in flight',
+    (editor.match(/if \(busy\) return/gu) ?? []).length >= 2 &&
+      /disabled: busy/u.test(editor) &&
+      editor.includes('[busy, rememberActive, sessionId, target]'))
+
+  // Save results are plain text that appears beside the title: without a live
+  // region a screen reader never hears "saved" or "409".
+  check('the save notice is a live status region',
+    /className: 'sshwsp-editor-notice'[\s\S]{0,400}?role: 'status'[\s\S]{0,400}?'aria-live': 'polite'/u.test(editor))
+  check('the conflict dialog has an accessible name',
+    /role: 'alertdialog'[\s\S]{0,400}?'aria-labelledby': 'sshwsp-editor-conflict-title'/u.test(editor) &&
+      editor.includes("id: 'sshwsp-editor-conflict-title'"))
+
+  // Counting a 60k-line buffer cost ~3 ms on EVERY keystroke, even when
+  // CodeMirror was on screen and the number was never read.
+  check('line counting is cached by buffer identity',
+    /let lastLineCount = \{ text: null, count: 1 \}/u.test(editor) &&
+      editor.includes('function lineCountCached (text)') &&
+      editor.includes('lastLineCount.text === text'))
+  check('...and the gutter is the only consumer that counts',
+    editor.includes('gutterWidth(lineCountCached(state.text))') &&
+      editor.includes('gutterNumbers(lineCountCached(state.text))') &&
+      !editor.includes('const lines = lineCount(state.text)'))
+  check('the footer reports the same cached count',
+    editor.includes("t('edit.lines', { count: lineCountCached(state.text) })"))
+
+  // The ending badge is a control now, not decoration: the save body reads its
+  // value, and the file's own ending is only the default.
+  check('the ending badge is a save-policy control',
+    editor.includes('value: state.eolPolicy') &&
+      editor.includes("eol: state.eolPolicy === 'auto' ? 'auto' : state.eolPolicy") &&
+      editor.includes("jsx('option', { value: 'LF', children: 'LF' })") &&
+      editor.includes("jsx('option', { value: 'CRLF', children: 'CRLF' })"))
+  check('a pending ending change counts as unsaved work',
+    editor.includes('const eolDirty = state.phase === \'ready\' && state.eolPolicy !== \'auto\' && state.eolPolicy !== state.eol'))
+  check('a successful save adopts the ending the server wrote',
+    /eol: typeof reply\.data\.eol === 'string' \? reply\.data\.eol : current\.eol/u.test(editor) &&
+      editor.includes("eolPolicy: 'auto',"))
+
+  // A tablist is a keyboard contract (roving tabindex, arrows, aria-controls).
+  // This strip never implemented one, and claiming the role while ignoring the
+  // contract is worse for a keyboard user than plain buttons. It says `group`
+  // and exposes the one fact that matters through `aria-current`.
+  check('the tab strip does not claim tablist semantics it does not implement',
+    editor.includes("className: 'sshwsp-editor-tabs', role: 'group'") &&
+      !/className: 'sshwsp-editor-tabs', role: 'tablist'/u.test(editor))
+  check('...and marks the open file with aria-current instead of aria-selected',
+    editor.includes("'aria-current': tabPath === target ? 'true' : undefined") &&
+      !/role: 'tab',\n\s+'aria-selected'/u.test(editor))
 }
 
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)

@@ -536,7 +536,7 @@ console.log('\n[a11y: the menu contract]')
 // The index arithmetic is EXTRACTED from the source and executed here rather
 // than grepped for. A grep for `'ArrowDown'` passes whether the wrapping is
 // right or the modulo is wrong — and this repository has already shipped
-// assertions of exactly that kind (see O-14 in docs/optimization-and-future03.md).
+// assertions of exactly that kind (see O-14 in docs/FF/09-remaining-work.md).
 {
   const source = clientSource(packageRoot)
   const count = (re) => (source.match(re) ?? []).length
@@ -949,7 +949,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
 // ---------------------------------------------------------------------------
 console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 //
-// C-01 (closed; the ledger is docs/optimization-and-future03.md). The panel had four dialogs and wired
+// C-01 (closed; the index is docs/FF/09-remaining-work.md). The panel had four dialogs and wired
 // three; the fourth (DirectoryBrowser) had a backdrop and a dialog frame, so it
 // LOOKED covered while keyboard focus walked straight through it into the page
 // behind. Two more holes sat in the same area: the browser's rows were
@@ -1931,6 +1931,20 @@ console.log('\n[the scheme rules are published, not duplicated]')
   const onlyEn = [...enKeys].filter(key => !zhKeys.has(key))
   check('the two dictionaries have the same keys', onlyZh.length === 0 && onlyEn.length === 0,
     JSON.stringify({ onlyZh, onlyEn }))
+}
+
+// The marks observer is the one listener that sees EVERY streamed token, so its
+// cost is a property of the module, not of a component. These three assertions
+// are the observable half of "a burst must not scan the document per token".
+{
+  const marksSource = readFileSync(path.join(here, '..', 'lib', 'client', 'client.marks.js'), 'utf8')
+  check('the marks observer does not retain the replaced text of every token',
+    /characterDataOldValue:\s*false/u.test(marksSource), 'characterDataOldValue is not disabled')
+  check('...and coalesces passes behind a minimum interval',
+    /const MARKS_MIN_INTERVAL_MS = \d+/u.test(marksSource) && /lastMarkPassAt/u.test(marksSource),
+    'no interval gate, so a token burst still schedules a pass per frame')
+  check('...whose pending timer is cleared when the module is uninstalled',
+    /clearTimeout\(markPassTimer\)/u.test(marksSource), 'a queued pass survives dispose')
 }
 
 // A numeric summary, in the same `=== N passed, M failed ===` shape every other

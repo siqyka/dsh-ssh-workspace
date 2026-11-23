@@ -81,6 +81,17 @@ console.log('\n=== text routes smoke ===\n')
   check('the sent body is measured before the file is read',
     sentSizeAt >= 0 && firstReadAt >= 0 && sentSizeAt < firstReadAt,
     `size ${sentSizeAt}, read ${firstReadAt}`)
+  // The CURRENT file must be read with the editing cap as its limit, not with
+  // `Number.MAX_SAFE_INTEGER`: the latter disables the readBytes guard, so a
+  // save pointed at a multi-gigabyte file pulled it into the host process
+  // before answering 413.
+  check('the current file is read with the editing cap, not an unbounded read',
+    text.includes('readRemoteRaw(router, context.parts, EDIT_MAX_BYTES + 1, signal)') &&
+      text.includes('readLocalRaw(context.local, EDIT_MAX_BYTES + 1)') &&
+      !text.includes('Number.MAX_SAFE_INTEGER'),
+    'saveText reads unbounded or lacks the cap')
+  check('a truncated read is refused before the token checks',
+    /if \(current\.truncated\) throw tooLarge\(target, current\.size\)/u.test(text))
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +198,9 @@ if (!coreRoot) {
     const sessions = [
       { id: 's-rw', header: { cwd: 'ssh://box/srv/app' }, mode: 'workspace-write' },
       { id: 's-ro', header: { cwd: 'ssh://box/srv/app' }, mode: 'read-only' },
+      // A mode the gate cannot read. It must refuse like read-only but must not
+      // be DESCRIBED as read-only: switching to a writable mode cannot fix it.
+      { id: 's-weird', header: { cwd: 'ssh://box/srv/app' }, mode: 'yolo-mode' },
       // A session whose own workspace is the SECOND mount.
       { id: 's-other', header: { cwd: 'ssh://other/srv/other' }, mode: 'workspace-write' },
     ]
@@ -332,6 +346,10 @@ if (!coreRoot) {
     const probeRo = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-ro', path: notes, probe: '1' })}`)
     check('a probe refuses in a read-only session, and says so',
       probeRo.status === 200 && probeRo.json?.editable === false && probeRo.json?.reason === 'read-only', probeRo.body)
+    const probeWeird = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-weird', path: notes, probe: '1' })}`)
+    check('a probe names an unreadable mode instead of calling it read-only',
+      probeWeird.status === 200 && probeWeird.json?.editable === false && probeWeird.json?.reason === 'unrecognised-mode',
+      probeWeird.body)
 
     // ---- truncated read
     const big = 'x'.repeat(64)
@@ -454,6 +472,31 @@ if (!coreRoot) {
     check('a CRLF file saved with eol auto stays CRLF',
       seeded.tree.read('/srv/app/crlf.txt') === 'one\r\ntwo\r\nthree\r\n', JSON.stringify(seeded.tree.read('/srv/app/crlf.txt')))
 
+    // The badge's contract: a save may CONVERT the ending, and the reply names
+    // the one it actually wrote so the client can stop showing the old one.
+    const convertRead = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/crlf.txt' })}`)
+    const toLf = await post(routes, ROUTES.writeText, {
+      sessionId: 's-rw',
+      path: 'ssh://box/srv/app/crlf.txt',
+      text: 'one\ntwo\nthree\n',
+      eol: 'LF',
+      expected: { version: convertRead.json.version, revision: convertRead.json.revision },
+    })
+    check('eol LF converts a CRLF file', seeded.tree.read('/srv/app/crlf.txt') === 'one\ntwo\nthree\n',
+      JSON.stringify(seeded.tree.read('/srv/app/crlf.txt')))
+    check('...and the reply reports the ending it wrote', toLf.json?.eol === 'LF', toLf.body)
+    const backRead = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/crlf.txt' })}`)
+    const toCrlf = await post(routes, ROUTES.writeText, {
+      sessionId: 's-rw',
+      path: 'ssh://box/srv/app/crlf.txt',
+      text: 'one\ntwo\nthree\n',
+      eol: 'CRLF',
+      expected: { version: backRead.json.version, revision: backRead.json.revision },
+    })
+    check('eol CRLF converts an LF file', seeded.tree.read('/srv/app/crlf.txt') === 'one\r\ntwo\r\nthree\r\n',
+      JSON.stringify(seeded.tree.read('/srv/app/crlf.txt')))
+    check('...and the reply reports CRLF', toCrlf.json?.eol === 'CRLF', toCrlf.body)
+
     const bomRead = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/bom.txt' })}`)
     await post(routes, ROUTES.writeText, {
       sessionId: 's-rw',
@@ -503,6 +546,15 @@ if (!coreRoot) {
     })
     check('a read-only session cannot save',
       roSave.status === 403 && /read-only/u.test(roSave.body), roSave.body)
+    const weirdSave = await post(routes, ROUTES.writeText, {
+      sessionId: 's-weird',
+      path: notes,
+      text: 'nope\n',
+      expected: { version: save.json.version, revision: save.json.revision },
+    })
+    check('an unreadable mode refuses with the same code, but a different reason',
+      weirdSave.status === 403 && weirdSave.json?.code === 'FS_SANDBOX_DENIED' &&
+        weirdSave.json?.readOnlyReason === 'unrecognised-mode', weirdSave.body)
 
     const outside = await post(routes, ROUTES.writeText, {
       sessionId: 's-rw',
@@ -536,6 +588,22 @@ if (!coreRoot) {
       tooBig.status === 413 && tooBig.json?.code === 'FS_TOO_LARGE', tooBig.body)
     check('...and the oversized body was never written',
       seeded.tree.read('/srv/app/notes.md') === 'alpha\nGAMMA\n', JSON.stringify(seeded.tree.read('/srv/app/notes.md')))
+
+    // A save pointed at a file that is already past the editing cap must not
+    // pull that file over SFTP first. Deliberately WRONG tokens: if the size
+    // refusal happened after the token checks this would be a 409; the 413 with
+    // an untouched file is the proof that the read was bounded.
+    const hugeSave = await post(routes, ROUTES.writeText, {
+      sessionId: 's-rw',
+      path: 'ssh://box/srv/app/over-cap.txt',
+      text: 'small\n',
+      expected: { version: '1:2:3', revision: 'a'.repeat(64) },
+    })
+    check('saving an over-cap file is refused with FS_TOO_LARGE',
+      hugeSave.status === 413 && hugeSave.json?.code === 'FS_TOO_LARGE', hugeSave.body)
+    check('...and the over-cap file is untouched',
+      seeded.tree.bytes('/srv/app/over-cap.txt').length === EDIT_MAX_BYTES + 16,
+      String(seeded.tree.bytes('/srv/app/over-cap.txt').length))
 
     // ---- edit-text
     const editRead = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/notes.md' })}`)

@@ -344,6 +344,31 @@ console.log('\n[9] the tool renderer keeps the three cases apart')
   } else {
     check('placeholder', true)
   }
+
+  // The tool surface is what the MODEL reads. `execute` has always returned
+  // `skipped`/`storeError`; the renderer threw them away, so an unreadable
+  // store looked exactly like "no hosts configured" — an actionable-but-wrong
+  // suggestion. Drive the real tool object rather than the private renderer.
+  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
+  const tools = workspaceTools({ get: () => undefined }, {
+    store: {
+      listing: () => ({ rows: [], storeError: 'EACCES: permission denied', skipped: [] }),
+      rows: () => [],
+    },
+  })
+  const hostsTool = tools.find(tool => tool.name === 'ssh_workspace_hosts')
+  check('the hosts tool exists', hostsTool !== undefined)
+  const brokenValue = await hostsTool.execute({})
+  const brokenText = hostsTool.output.render({}, brokenValue)[0]?.text ?? ''
+  check('an unreadable store is visible in the rendered text',
+    brokenText.includes('the host store could not be read'), brokenText)
+  check('...and the store failure is spelled out beside it',
+    brokenText.includes('\nnote: the host store could not be read'), brokenText)
+
+  const emptyText = hostsTool.output.render({}, { hosts: [] })[0]?.text ?? ''
+  check('a genuinely empty host list keeps the add-a-host advice',
+    emptyText.startsWith('no SSH hosts available'), emptyText)
+  check('...and has no note noise', !emptyText.includes('note:'), emptyText)
 }
 
 console.log('\n[10] a config edit is detectable without re-parsing')

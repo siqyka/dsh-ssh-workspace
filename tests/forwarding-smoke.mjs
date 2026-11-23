@@ -489,6 +489,10 @@ try {
     track(() => manager.dispose())
 
     const forward = await manager.open('fake', { localPort: local.port, remotePort: 0 })
+    // Same guarantee as a local forward: the tunnel exists for this listener,
+    // so the idle sweeper must not reap the only connection carrying it.
+    const pinned = engine.pool.get('fake')
+    check('a reverse forward pins its connection', pinned?.holds === 1, String(pinned?.holds))
     check('the request reached the host', server.reverseRequests.length === 1,
       JSON.stringify(server.reverseRequests))
     check('the host bound a port', typeof forward.remotePort === 'number' && forward.remotePort > 0,
@@ -522,16 +526,43 @@ try {
 
     const forward = await manager.open('fake', { localPort: local.port, remotePort: 0 })
     const bound = forward.remotePort
+    const record = engine.pool.get('fake')
     check('the host is listening', server.reversePorts.includes(bound), JSON.stringify(server.reversePorts))
 
     const closed = manager.close(forward.id)
     check('close() reports it closed one', closed === true, String(closed))
+    check('close releases the connection hold', record?.holds === 0, String(record?.holds))
     // Server-side state, so this is a real round trip: the bind is gone only
     // when the cancel request landed.
     const released = await waitFor(() => !server.reversePorts.includes(bound))
     check('the host stopped listening', released, JSON.stringify(server.reversePorts))
     check('and the manager no longer lists it', manager.list().length === 0,
       JSON.stringify(manager.list()))
+  }
+
+  // ================== [3.5] a dead connection stops claiming the tunnel
+  console.log('\n[3.5] a dropped connection removes the reverse entry')
+  {
+    const server = await startFakeSshServer({ pluginRoot, password: 'sekret', allowReverseForwarding: true })
+    track(() => server.close())
+    const engine = engineFor(server)
+    const local = await startLocalService()
+    const manager = new ReverseForwardManager({ engine })
+    track(() => manager.dispose())
+
+    const forward = await manager.open('fake', { localPort: local.port, remotePort: 0 })
+    const record = engine.pool.get('fake')
+    check('the tunnel is open before the drop', manager.list().length === 1, JSON.stringify(manager.list()))
+
+    // Tearing the pooled connection down is what an idle sweep or a network
+    // drop does; the remote bind dies with the session, so the entry must not
+    // keep reporting `open`.
+    engine.closeRecord('fake', record)
+    const gone = await waitFor(() => manager.list().length === 0)
+    check('a dropped connection removes the reverse entry', gone, JSON.stringify(manager.list()))
+    check('a dropped connection releases the hold', record?.holds === 0, String(record?.holds))
+    // The remote bind goes with the SSH session; the fake server does not model
+    // session teardown, so that half is asserted against a real host instead.
   }
 
   // ============================ [4] a dead local target closes the channel
@@ -851,6 +882,40 @@ try {
         JSON.stringify(store.forwards().items.map(item => item.id)))
       check('the refusal names the port it could not bind',
         String(refused?.message ?? '').includes(String(busyPort)), String(refused?.message))
+      forwards.dispose()
+    } finally { dispose() }
+  }
+
+  // --- a saved mapping is never satisfied by an unrelated live tunnel ----
+  //
+  // A transient forward to the same target used to be returned by `open()`
+  // before the stable id was applied: the saved row was then marked enabled
+  // while its own id named no listener, and the stored local port had nothing
+  // bound to it. Two tunnels to one target on different local ports are legal,
+  // so the fix is to reuse only the id that was asked for.
+  {
+    const { store, dispose } = makeStore()
+    try {
+      const { engine } = fakeForwardEngine(echo.port)
+      const { forwards, saved } = makeController(store, { engine })
+      const transientPort = await pickFreePort()
+      const savedPort = await pickFreePort(transientPort)
+      const transient = await forwards.open('alpha', { remotePort: echo.port, localPort: transientPort })
+      check('the transient tunnel listens on its own port', transient.localPort === transientPort, JSON.stringify(transient))
+
+      const row = await saved.create({ alias: 'alpha', remotePort: echo.port, localPort: savedPort })
+      check('the saved row is live', row.live === true, JSON.stringify(row))
+      check('the saved row keeps its stored local port', row.localPort === savedPort, JSON.stringify(row))
+      const live = forwards.list()
+      check('the saved mapping added a second listener instead of reusing the transient one', live.length === 2,
+        JSON.stringify(live.map(entry => ({ id: entry.id, localPort: entry.localPort }))))
+      const byId = live.find(entry => entry.id === row.id)
+      check('a listener exists under the saved id', byId !== undefined, JSON.stringify(live.map(entry => entry.id)))
+      check('the transient listener still exists under its own id', live.some(entry => entry.id === transient.id))
+
+      const echoed = await roundTrip(savedPort, Buffer.from('saved-port-is-really-bound'))
+      check('bytes travel through the saved id\'s own listener',
+        echoed.toString() === 'saved-port-is-really-bound', JSON.stringify(echoed.toString()))
       forwards.dispose()
     } finally { dispose() }
   }

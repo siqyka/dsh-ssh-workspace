@@ -810,9 +810,14 @@ const teardown = source.match(/return \(\) => \{\s*\n\s*clearTimeout\(transferAc
 const stops = ('clearTimeout(transferActionsProbe)' + teardown)
   .split('\n').map(line => line.trim()).filter(line => line !== '')
 check('apply() returns the disposer',
-  stops.join(' | ') === 'clearTimeout(transferActionsProbe) | sessionCatchUp.stop() | detachBridges()',
+  stops.join(' | ') === 'clearTimeout(transferActionsProbe) | sessionCatchUp.stop() | detachBridges() | detachTriggerRects() | detachMarks?.()',
   stops.join(' | '))
 check('apply() keeps the installed disposer', source.includes('const detachBridges = installComposerBridges(ctx)'))
+check('the trigger-rect capture listener is removable',
+  /function trackTriggerRects[\s\S]{0,900}?return \(\) => document\.removeEventListener\('mousedown', onMouseDown, true\)/u.test(source))
+check('...and apply keeps its detach function',
+  source.includes('const detachTriggerRects = trackTriggerRects()') &&
+    source.includes('const detachMarks = installRemoteWorkspaceMarks(ctx)'))
 
 
   totalPassed += passes.length
@@ -1103,6 +1108,33 @@ console.log('\n[source contract]')
   totalPassed += passes.length
   totalFailures += failures.length
 })()
+
+// ---------------------------------------------------------------------------
+// marks lifecycle: the observer is owned, not leaked per materialization
+// ---------------------------------------------------------------------------
+{
+  const marksRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  const marks = readFileSync(path.join(marksRoot, 'lib', 'client', 'client.marks.js'), 'utf8')
+  let markPassed = 0
+  const markFailures = []
+  const markCheck = (name, ok, detail) => {
+    if (ok) { markPassed += 1; console.log(`  PASS  ${name}`) } else {
+      markFailures.push(name)
+      console.log(`  FAIL  ${name} — ${detail ?? ''}`)
+    }
+  }
+  markCheck('the marks pass keeps one module-level observer',
+    /let marksObserver = null/u.test(marks))
+  markCheck('...disconnects a previous one before observing again',
+    /marksObserver\?\.disconnect\(\)/u.test(marks))
+  markCheck('install returns a remover instead of leaking the observer',
+    /function installRemoteWorkspaceMarks[\s\S]{0,1400}?return \(\) => \{/u.test(marks) &&
+      marks.includes('observer.disconnect()'))
+  markCheck('...and the remover is idempotent (a stale remover cannot kill the new observer)',
+    /if \(marksObserver !== observer\) return/u.test(marks))
+  totalPassed += markPassed
+  totalFailures += markFailures.length
+}
 
 console.log(`\n=== ${totalPassed} passed, ${totalFailures} failed ===`)
 if (totalFailures > 0) {

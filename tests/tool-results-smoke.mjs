@@ -296,6 +296,23 @@ console.log('\n[ssh_workspace_status: real ring and pool shapes]')
 
 await conforms('ssh_workspace_status', {}, 'connected and broken hosts')
 
+// The bundle and the diagnosis used to gather the world separately: two
+// snapshots moments apart in one reply. One listing call is the observable
+// contract; the provenance must describe that same instant.
+{
+  let listingCalls = 0
+  const original = store.listing
+  store.listing = () => { listingCalls += 1; return original() }
+  const value = await byName.get('ssh_workspace_status').execute({}, {})
+  store.listing = original
+  check('status gathers the world exactly once', listingCalls === 1, String(listingCalls))
+  check('...and carries provenance for the cached sections',
+    value.provenance?.capabilities?.kind === 'live' && typeof value.provenance?.connections?.at === 'number',
+    JSON.stringify(value.provenance))
+  check('...even though both the bundle and the diagnosis rendered it',
+    typeof value.supportBundle === 'string' && typeof value.diagnosis?.text === 'string')
+}
+
 console.log('\n[ssh_workspace_unmount / enable: failure paths]')
 await conforms('ssh_workspace_unmount', { workspacePath: 'ssh://prod-db-01/srv/app' }, 'detach')
 await conforms('ssh_workspace_enable', { workspacePath: 'ssh://prod-db-01/srv/app' }, 're-enable')
