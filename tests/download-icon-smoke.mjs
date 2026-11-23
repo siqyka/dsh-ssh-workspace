@@ -285,8 +285,8 @@ check('the two directions keep their own marks in the queue column',
   /item\.direction === 'upload'\n\s*\? React\.createElement\(UploadIcon\)/u.test(code) &&
     /React\.createElement\(DownloadIcon\),/u.test(code))
 const rowMenu = sliceBetween(
-  '    function openTaskMenu (ctx, absPath, isDir, root, x, y, sessionId, selection) {',
-  '    /**\n     * The local blank-space menu',
+  '    function rowMenuModel ({ ctx, absPath, isDir, root, sessionId, selection, policy = null }) {',
+  '    /**\n     * The blank-area menu as data',
   'the row-menu action list',
 )
 const menuGlyphs = [...rowMenu.matchAll(/glyph:\s*'([^']+)'/gu)].map(match => match[1]).sort()
@@ -294,7 +294,7 @@ const menuGlyphs = [...rowMenu.matchAll(/glyph:\s*'([^']+)'/gu)].map(match => ma
 // "download the whole directory", because the scope is stated by the
 // destination dialog rather than by a second glyph with the same meaning.
 check('every row-menu action names a glyph instead of inheriting the row type',
-  (rowMenu.match(/createTransferItem\(\{/gu) ?? []).length === 8 &&
+  (rowMenu.match(/id: '/gu) ?? []).length === 8 &&
     menuGlyphs.join('|') === ['addToTask', 'copy', 'delete', 'download', 'newFile', 'newFolder', 'rename', 'upload'].join('|'),
   `row-menu glyphs: ${menuGlyphs.join(', ')}`)
 

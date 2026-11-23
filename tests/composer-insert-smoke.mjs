@@ -250,7 +250,7 @@ console.log('\n[fallback reuses the same span]')
   check('drop calls the batch inserter once, with the card and the recomputed point',
     /const at = dropOffsetFromEvent\(event, card\)\s*\n\s*addPathsToTask\(ctx, payload\.items, payload\.root, card, at\)/u.test(source.slice(source.indexOf('      const onDrop = (event) => {'), source.indexOf('      const onDragEnd = (event) => {'))))
   check('the row menu uses the same target set and inserter without a drop point',
-    /onSelect: \(\) => addPathsToTask\(ctx, targets, root\)/u.test(source))
+    /run: \(\) => addPathsToTask\(ctx, targets, root\),/u.test(source))
 }
 
 
@@ -657,7 +657,7 @@ console.log('\n[source wiring]')
   check('the payload still carries no pointer coordinates',
     !/clientX|clientY/u.test(payloadText))
   check('row-menu invocation stayed four-argument',
-    /onSelect: \(\) => addPathsToTask\(ctx, targets, root\)/u.test(source))
+    /run: \(\) => addPathsToTask\(ctx, targets, root\),/u.test(source))
 }
 
 

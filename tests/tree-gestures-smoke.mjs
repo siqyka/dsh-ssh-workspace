@@ -445,7 +445,21 @@ console.log('\n=== tree blank menu smoke ===\n')
 function functionText (name) {
   const start = source.indexOf(`function ${name} (`)
   if (start < 0) throw new Error(`client.js does not define ${name}()`)
-  const open = source.indexOf('{', start)
+  // Walk past the parameter list before looking for the body. A destructured
+  // first argument opens a brace of its own, and counting from THAT one ends
+  // the "body" at the parameter's closing brace — a slice with no statements
+  // in it, which every assertion about the function would then pass on.
+  let parens = 0
+  let afterParams = -1
+  for (let i = source.indexOf('(', start); i < source.length; i += 1) {
+    if (source[i] === '(') parens += 1
+    else if (source[i] === ')') {
+      parens -= 1
+      if (parens === 0) { afterParams = i; break }
+    }
+  }
+  if (afterParams < 0) throw new Error(`unbalanced parameters in ${name}()`)
+  const open = source.indexOf('{', afterParams)
   let depth = 0
   for (let i = open; i < source.length; i += 1) {
     if (source[i] === '{') depth += 1
@@ -693,23 +707,31 @@ console.log('\n[the empty attributes are refusals, not empty menus]')
 console.log('\n[the menu contract]')
 {
   const menu = functionText('openLocalBlankMenu')
-  check('the local blank menu creates exactly three items',
-    (menu.match(/createTransferItem\(/gu) ?? []).length === 3,
-    `items=${(menu.match(/createTransferItem\(/gu) ?? []).length}`)
-  check('...new file, new folder and copy path, and nothing else',
-    menu.includes("translate('rowmenu.newFile')") &&
-    menu.includes("translate('rowmenu.newFolder')") &&
-    menu.includes("translate('rowmenu.copyPath')") &&
-    !/rowmenu\.(rename|delete|upload|download)|transfer\.(download|upload)|createMenuSeparator/u.test(menu))
+  const model = functionText('blankMenuModel')
+  check('the local blank menu is three descriptors and nothing else',
+    (model.match(/id: '/gu) ?? []).length === 3 &&
+    model.includes("translate('rowmenu.newFile')") &&
+    model.includes("translate('rowmenu.newFolder')") &&
+    model.includes("translate('rowmenu.copyPath')") &&
+    !/rowmenu\.(rename|delete|upload|download)|transfer\.(download|upload)|createMenuSeparator/u.test(model),
+    `items=${(model.match(/id: '/gu) ?? []).length}`)
   check('...new file asks the shared dialog for the resolved directory',
-    /requestRowNewFile\(\{ path: dir, root, sessionId, row: null, container \}\)/u.test(menu))
+    /requestRowNewFile\(\{ path: dir, root, sessionId, row: null, container \}\)/u.test(model))
   check('...new folder asks the shared dialog for the resolved directory',
-    /requestRowNewFolder\(\{ path: dir, root, sessionId, row: null, container \}\)/u.test(menu))
-  check('...copy always works, while only the two create items are disabled by policy',
-    menu.includes("for (const create of [createFileItem, createFolderItem])") &&
-    menu.includes('create.disabled = true') &&
-    !/copy\.disabled|copy\.title/u.test(menu) &&
-    menu.includes('mutationPolicyOf({ sessionId, root })'))
+    /requestRowNewFolder\(\{ path: dir, root, sessionId, row: null, container \}\)/u.test(model))
+  check('...copy always works, while only the two create items are gated',
+    (model.match(/gated\(\{/gu) ?? []).length === 2 &&
+    !/gated\(\{[\s\S]{0,80}?copy-path/u.test(model) &&
+    /reason: dir,/u.test(model))
+  check('...and the renderer draws one row per descriptor, reading the rule from it',
+    (functionText('renderMenuDom').match(/createTransferItem\(/gu) ?? []).length === 1 &&
+    functionText('renderMenuDom').includes('entry.separatorBefore === true') &&
+    (menu.match(/createTransferItem\(/gu) ?? []).length === 0)
+  check('...while the late policy answer disables only the two create items',
+    menu.includes("for (const id of ['new-file', 'new-folder'])") &&
+    menu.includes('mutationPolicyOf({ sessionId, root })') &&
+    menu.includes('node.disabled = true') &&
+    !/copy-path/u.test(menu))
   check('a row point that is not a nested list keeps the row menu',
     /const nestedBlank = !onButton && row\.getAttribute\('data-files-entry'\) === 'directory'/u.test(source) &&
     /if \(!nestedBlank\) \{\n\s+if \(!openForRow\(row, event\)\) return/u.test(source))

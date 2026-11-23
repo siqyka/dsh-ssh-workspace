@@ -115,8 +115,8 @@ console.log('\n=== mutations smoke ===\n')
     return client.slice(start, end < 0 ? undefined : end)
   })()
   check('the row menu offers new file before new folder for a remote directory',
-    client.indexOf('const newFileItem') >= 0 &&
-      client.indexOf('const newFileItem') < client.indexOf('const newFolderItem') &&
+    client.indexOf("id: 'new-file'") >= 0 &&
+      client.indexOf("id: 'new-file'") < client.indexOf("id: 'new-folder'") &&
       client.includes("translate('rowmenu.newFile')"))
   check('...and the new-file prompt posts create-file, re-lists and selects the row',
     newFilePrompt.includes('fetchJson(API.createFile') &&

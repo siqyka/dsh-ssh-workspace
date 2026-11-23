@@ -1174,7 +1174,7 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
     /    async function copyRowPath \(/u.test(source) && /    async function mountRowAsRoot \(/u.test(source),
     'an `async function` is invisible to bodyOf, so liveIn would test an empty slice')
   check('the row menu offers copying the path',
-    liveIn('openTaskMenu', /translate\('rowmenu\.copyPath'\)/u),
+    liveIn('rowMenuModel', /translate\('rowmenu\.copyPath'\)/u),
     'the row menu has no copy action')
   check('...copying the ssh:// spelling, not the bare remote path',
     liveIn('copyRowPath', /writeText\(absPath\)/u),
@@ -1184,37 +1184,32 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       (bodyOf('copyRowPath').match(/rowmenu\.copyUnavailable/gu) ?? []).length === 2,
     'a copy that quietly did nothing leaves stale clipboard content behind')
   check('the row menu offers rename and delete for remote rows',
-    liveIn('openTaskMenu', /translate\('rowmenu\.rename'\)/u) &&
-      liveIn('openTaskMenu', /translate\('rowmenu\.delete'\)/u),
+    liveIn('rowMenuModel', /translate\('rowmenu\.rename'\)/u) &&
+      liveIn('rowMenuModel', /translate\('rowmenu\.delete'\)/u),
     'the row menu has no rename/delete actions')
-  check('...and the same pair for LOCAL rows (outside the remote branch)',
-    /if \(remote !== null\)[\s\S]{0,2600}?translate\('rowmenu\.delete'\)/u.test(bodyOf('openTaskMenu')) === false ||
-      (bodyOf('openTaskMenu').match(/translate\('rowmenu\.rename'\)/gu) ?? []).length >= 1,
+  check('...and both are appended to every menu, not only inside the remote branch',
+    /const destructive = \[\]/u.test(bodyOf('rowMenuModel')) &&
+      /return \[\.\.\.items, \.\.\.destructive\]/u.test(bodyOf('rowMenuModel')),
     'rename/delete sit inside the remote-only branch')
-  check('...at most eight single-line items and at most three rules',
-    (bodyOf('openTaskMenu').match(/createTransferItem\(/gu) ?? []).length <= 8 &&
-      (bodyOf('openTaskMenu').match(/createMenuSeparator\(\)/gu) ?? []).length <= 3 &&
-      !/menuitem-desc/u.test(bodyOf('openTaskMenu')),
-    'the row menu grew a description line, a fourth rule, or more than eight items')
+  check('...at most eight descriptors, and ONE renderer that draws them',
+    (bodyOf('rowMenuModel').match(/id: '/gu) ?? []).length <= 8 &&
+      (source.match(/createTransferItem\(/gu) ?? []).length === 1 &&
+      (source.match(/createMenuSeparator\(\)/gu) ?? []).length === 1 &&
+      !/menuitem-desc/u.test(bodyOf('rowMenuModel')),
+    'a second renderer, a description line, or more than eight items came back')
   // There is no longer a SECOND verb for a batch: one item, one label, and the
   // decision of what it acts on belongs to `resolveTargets` alone. A menu that
   // grew a batch entry back would be a second answer to the same question.
   check('...and there is exactly one download verb, whatever the selection',
-    (bodyOf('openTaskMenu').match(/translate\('transfer\.download'\)/gu) ?? []).length === 1 &&
-      !/batch/u.test(bodyOf('openTaskMenu')) &&
-      (bodyOf('openTaskMenu').match(/translate\('rowmenu\.delete'\)/gu) ?? []).length === 1,
+    (bodyOf('rowMenuModel').match(/translate\('transfer\.download'\)/gu) ?? []).length === 1 &&
+      !/batch/u.test(bodyOf('rowMenuModel')) &&
+      (bodyOf('rowMenuModel').match(/translate\('rowmenu\.delete'\)/gu) ?? []).length === 1,
     'a second, selection-sized verb came back into the row menu')
-  check('...with its own rule directly above rename/delete',
-    (() => {
-      const body = bodyOf('openTaskMenu')
-      const renameAt = body.indexOf("translate('rowmenu.rename')")
-      const guardAt = body.indexOf('lastBeforeDestructive')
-      return renameAt > 0 && guardAt > 0 && guardAt < renameAt &&
-        body.slice(guardAt, renameAt).includes('createMenuSeparator') &&
-        body.includes("!String(lastBeforeDestructive.className).includes('sshwsp-menusep')")
-    })(),
-    'the destructive pair lost the separator above rename')
-  check('...and a right-click hands the whole selection to resolveTargets',
+  check('...with its own rule directly above the destructive group',
+    /destructive\[0\]\.separatorBefore = true/u.test(bodyOf('rowMenuModel')) &&
+      /if \(entry\.separatorBefore === true\) menu\.appendChild\(createMenuSeparator\(\)\)/u.test(bodyOf('renderMenuDom')),
+    'the group rule is sniffed off the last child again, or the destructive group lost it')
+  check('...and a right-click hands the whole selection to the model',
     (() => {
       const body = bodyOf('installTreeMenuBridge')
       // The bridge must not pre-filter the selection. Every rule about "this
@@ -1222,7 +1217,8 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       // (only when the row happened to be inside a batch) is a second answer
       // waiting to disagree with what the action then does.
       return /openTaskMenu\(ctx, path, kind === 'directory', treeRootOf\(row\), x, y, undefined, \{ items: selected \}\)/u.test(body) &&
-        !/inSelection/u.test(body)
+        !/inSelection/u.test(body) &&
+        /resolveTargets\(clickedRow, selection\?\.items\)/u.test(bodyOf('rowMenuModel'))
     })(),
     'the bridge decided the target set before resolveTargets could')
   check('the row menu is 220px and runs compact (12px labels, 24px rows); the chooser keeps its width and two-line size',
@@ -1881,7 +1877,8 @@ console.log('\n[the scheme rules are published, not duplicated]')
   check('read-only sessions disable rename/delete before the click',
     source.includes("translate('rowmenu.readonly')") &&
       source.includes('mutationPolicyOf({ sessionId, root })') &&
-      source.includes('entry.disabled = true'),
+      source.includes('node.disabled = true') &&
+      source.includes('policyGate(policy, remoteTargetOf(absPath) === null)'),
     'the menu offers destructive actions a read-only session will refuse')
   check('no entry into the removed tab survives anywhere',
     !/browse\.entry/u.test(source) && !/browse\.tabTitle/u.test(source) && !/browse\.slotMissing/u.test(source),

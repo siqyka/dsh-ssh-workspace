@@ -685,10 +685,14 @@ console.log('\n[downloadRows]')
 
 console.log('\n[menu wiring]')
 
-const menuSource = functionText('    function openTaskMenu (ctx, absPath, isDir, root, x, y, sessionId, selection) {')
+const menuSource = sliceBetween(
+  '    function rowMenuModel ({ ctx, absPath, isDir, root, sessionId, selection, policy = null }) {',
+  '    /**\n     * The blank-area menu as data',
+  'the row-menu model',
+)
 check('the menu resolves its targets through resolveTargets',
-  /const resolved = resolveTargets\(clickedRow, selection\?\.items\)/u.test(menuSource) &&
-    /const targets = resolved\.targets/u.test(menuSource),
+  /const targets = resolveTargets\(clickedRow, selection\?\.items\)\.targets/u.test(menuSource) &&
+    /const clickedRow = \{ path: absPath, name: entryNameOf\(absPath\), isDir \}/u.test(menuSource),
   'the menu decided its own target set')
 check('the download label is fixed and count-free',
   /label: translate\('transfer\.download'\),/u.test(menuSource) &&
