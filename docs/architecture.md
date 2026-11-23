@@ -25,6 +25,9 @@
   描述数组（顺序、分隔线、禁用条件、动作都在里面），`openTreeMenu` 再看宿主有没有
   `ctx.contextMenus`——有就注册一个 provider 交给宿主画，没有就用插件自绘的浮动菜单。
   模型不发请求，所以打开菜单永远不等网络；宿主那条把只读策略做成 label 后缀，自绘那条仍用 `title`。
+  策略答案按「会话 + 根」缓存 30 秒，同一个 key 的在途请求只发一次（缓存要等答案落地才写，否则连点两次就是两个请求），缓存上限 32 条；
+  宿主 `resolve` 只读缓存、未命中先返回全可用再后台询问。宿主拒绝 provider 时回落到自绘——
+  `register` 与 `open` 在同一个 try 里，否则异常会冒泡出 `onContextMenu`、`preventDefault` 不执行，两种渲染器会一起失效。
   `apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何 slot——而且**分三批**：kernel 单独、图标单独、其余并发。分批不是洁癖：chunk 在**自己的 factory 执行期间**就会 destructure 借来的名字，所以「谁先到」是契约的一部分。
   最先取回的是**无状态底层**（`lib/client/client.kernel.js`，十二个 chunk 里最大的一个）：
   API 表、fetch、选择模型的接线、分块上传、选择器入口、菜单的 DOM 读取、forge 页的反射。

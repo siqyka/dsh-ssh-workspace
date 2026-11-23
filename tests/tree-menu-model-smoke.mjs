@@ -104,6 +104,9 @@ function build () {
   const mutationPolicyOf = (claim) => {
     state.policyCalls += 1
     state.lastClaim = claim
+    // A deferred answer lets a test hold two opens in flight at once, which is
+    // the only way to see whether the second one asks again.
+    if (state.deferred === true) return new Promise((resolve) => { state.settle = resolve })
     return Promise.resolve(state.policyAnswer)
   }
   const openMenuAt = (x, y, fill) => {
@@ -146,8 +149,10 @@ function fakeMenus () {
 /** A ctx that offers the service, the icon slot, or neither. */
 function fakeCtx (menus, options = {}) {
   const icons = []
+  const slot = { disposed: 0 }
   return {
     icons,
+    slot,
     ctx: {
       get (name) {
         if (options.throwing === true) throw new Error('no such service')
@@ -157,8 +162,9 @@ function fakeCtx (menus, options = {}) {
       slots: {
         inject (name, generator) {
           if (options.noSlots === true) throw new Error('no such slot')
-          if (name !== 'contextMenu.icon') return
+          if (name !== 'contextMenu.icon') return undefined
           for (const entry of generator()) icons.push(entry)
+          return () => { slot.disposed += 1 }
         },
         register (spec, component) { return { spec, component } },
       },
@@ -384,6 +390,66 @@ const noSlotHost = fakeCtx(noSlotMenus, { noSlots: true })
 const drawnNoSlot = noSlots.api.openTreeMenu(noSlotHost.ctx, hostModel, value, 0, 0)
 check('an icon slot that refuses does not stop the menu',
   drawnNoSlot === null && noSlotMenus.registrations.length === 1)
+
+// ---- the cache, and what it costs to open twice -----------------------------
+
+console.log('\n[a menu that opens twice asks once]')
+const dedupe = build()
+dedupe.state.deferred = true
+const firstAsk = dedupe.api.policyOf(CLAIM)
+const secondAsk = dedupe.api.policyOf(CLAIM)
+check('two opens in flight share one request', dedupe.state.policyCalls === 1, String(dedupe.state.policyCalls))
+dedupe.state.settle({ readOnly: true })
+const answers = await Promise.all([firstAsk, secondAsk])
+check('...and both callers get the same answer',
+  answers[0] === answers[1] && answers[0].readOnly === true)
+check('...which is now cached, so a third open costs nothing',
+  dedupe.api.cachedPolicyOf(CLAIM) !== null && dedupe.state.policyCalls === 1)
+
+const keyless = build()
+keyless.state.policyAnswer = { readOnly: false }
+await keyless.api.policyOf({})
+await keyless.api.policyOf({})
+check('a claim with no session is still cached, so the blank menu asks once',
+  keyless.state.policyCalls === 1, String(keyless.state.policyCalls))
+check('...under a key of its own, not the session one',
+  keyless.api.cachedPolicyOf({}) !== null && keyless.api.cachedPolicyOf(CLAIM) === null)
+
+const bounded = build()
+bounded.state.policyAnswer = { readOnly: true }
+for (let i = 0; i < 40; i += 1) await bounded.api.policyOf({ sessionId: 's' + i, root: '/r' + i })
+check('the cache keeps a bounded number of answers, oldest first out',
+  bounded.api.cachedPolicyOf({ sessionId: 's39', root: '/r39' }) !== null &&
+  bounded.api.cachedPolicyOf({ sessionId: 's0', root: '/r0' }) === null)
+check('...and a miss is still a miss, not a stale yes',
+  bounded.api.cachedPolicyOf({ sessionId: 'nobody', root: '/nowhere' }) === null)
+
+// ---- a host that publishes the service but refuses the provider -------------
+
+console.log('\n[a host that refuses the provider]')
+const refusing = build()
+const refusingHost = fakeCtx(null)
+const refusingMenus = {
+  registrations: 0,
+  register () { this.registrations += 1; throw new Error('target already taken') },
+  open () { throw new Error('never reached') },
+  close () {},
+}
+refusingHost.ctx.get = (name) => (name === 'contextMenus' ? refusingMenus : undefined)
+const attemptDraw = () => {
+  try { return refusing.api.openTreeMenu(refusingHost.ctx, hostModel, value, 5, 6) } catch { return null }
+}
+const refusedDraw = attemptDraw()
+check('a register that throws falls back to the plugin menu',
+  refusedDraw !== null && [...refusedDraw.nodes.keys()].length === hostModel.length)
+check('...rather than throwing out of the contextmenu handler',
+  refusingMenus.registrations === 1)
+const secondDraw = attemptDraw()
+check('...and the next open tries the host again instead of latching the failure',
+  secondDraw !== null && refusingMenus.registrations === 2)
+
+check('the icon registration is dropped together with the provider',
+  twiceHost.slot.disposed === 1, String(twiceHost.slot.disposed))
 
 // ---- the dictionaries -------------------------------------------------------
 

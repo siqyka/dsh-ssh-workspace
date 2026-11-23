@@ -4,6 +4,11 @@
 
 ## [未发布]
 
+### 修复
+
+- **右键菜单的三处竞态与两处泄漏**：审查这一轮新写的宿主菜单渲染器时发现的五个问题，行为不变，堵的是「偶尔」那条路。①`menus.register` 抛错时异常会冒泡出 `onContextMenu`——`preventDefault` 因此不执行，浏览器原生菜单弹出来、插件菜单也不出现，等于**两种渲染器同时失效**；现在 `openTreeMenu` 把注册和打开一起包进 try，宿主拒绝 provider 就回落自绘，而且下一次打开会重新试，不把失败记住。②`policyOf` 只写缓存、不查在途：缓存要等答案落地才写，所以同一秒里连点三次右键就是三个 `/mutation-policy` 请求；现在按 key 复用同一个 promise，`finally` 里只删自己那一条。③缓存无上限，长会话里每个开过菜单的工作区都留一个键；现在上限 32、先进先出。④`policyKeyOf` 对拿不到 `sessionId` 的 claim 直接返回 `null`，本地空白处菜单因此**每次打开都问一次**——而服务端对这种请求本来就是按 `root` 解析、两者都没有时解析为「无会话」，答案与调用者无关，所以现在同样缓存。⑤图标注册的撤销原本只跟着模块重载走，`disposeHostMenuProvider` 只撤 provider，热重载后的模块体会用同样的 key 再注册一次；现在 `ctx.slots.inject` 的返回值被保存下来，随 provider 一起撤销。`tree-menu-model-smoke` 63 → 74 项，五条各有反向验证。
+
+
 ### 变更
 
 - **文件树右键菜单改成「先出模型、再选渲染器」**：菜单原来由 `openTaskMenu` / `openLocalBlankMenu` 直接拼 DOM，条目、顺序、分隔线与禁用条件都焊在 `createElement` 调用里。现在 `rowMenuModel` / `blankMenuModel` 产出一份 `{ id, label, glyph, disabled, reason, danger, separatorBefore, run }` 数组，`renderMenuDom` 只负责把它画成插件自己的浮动菜单。宿主发布 `ctx.contextMenus` 时改由**宿主菜单**渲染（外观、键盘、关闭与焦点都交给宿主），没有时仍是自绘——两条路径读同一份模型，加一项只加一条 descriptor、两边同时生效。服务用 `ctx.get('contextMenus')` 探测而不写进 `inject`：写进去会让没有该服务的老宿主连整个客户端插件都不加载，而 `peerDependencies` 仍写着 `>= 0.2.0-rc.1`。宿主菜单没有 tooltip，所以禁用项把理由写进 label（`menu.disabledReason`），自绘那条仍用 `title`；宿主拒绝打开时回落到自绘，而不是什么都不显示。顺带：只读策略改为按「会话 + 根」缓存 30 秒（`policyOf`），宿主 `resolve` 只读缓存、未命中先返回全可用再后台询问——它只有一秒预算，等一次 `/mutation-policy` 往返就来不及了。
