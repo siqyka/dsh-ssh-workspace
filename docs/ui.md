@@ -848,9 +848,32 @@ MutationObserver 跟主题变化。我们没有照抄：根分散在 6 个文件
 ### 反向验证
 
 守卫测试只对着正确的代码跑过，等于什么都没证明。`scripts/reverse-verify-presentation.mjs` 逐个施加
-「把这次做的事删掉」的变异，要求套件变红；留在绿上的变异就是漏洞。它已经抓到过两个：第一版交互态
+「把这次做的事删掉」的变异，要求套件变红；留在绿上的变异就是漏洞。它已经抓到过三个：第一版交互态
 断言问的是「样式表里有没有焦点环」（一条环就满足所有元素），第一版死规则检查在包含样式表的源码里
-搜索类名（命中了规则自己）。它**不进 CI**，因为会改写源文件再还原。
+搜索类名（命中了规则自己），以及第三个——它没有抓到东西，而是**证明自己缺了一整层**（见下）。它
+**不进 CI**，因为会改写源文件再还原。
+
+### 样式表在模板字面量里，所以它必须被真的执行
+
+整个 sheet 是 `tag.textContent = \`…\`` 里的文本，这条路上有一个只改一个字符、症状却指向别处的故障：
+注释里一个**未转义的反引号**会提前结束模板，剩下的部分变成**标签模板**：
+
+```text
+/* The container is `.sshwsp` itself, so nothing here may style `.sshwsp`:
+```
+
+解析成 `` `…`.sshwsp`…` `` —— 合法 JavaScript。于是 `node --check` 通过，`indexOf`/`lastIndexOf`
+照样切出完整样式表，所有文本级断言全绿，而 `injectStyles()` 一执行就抛
+`TypeError: "…".sshwsp is not a function`；模块系统把它报成 chunk 加载失败，`apply` 没注册面板，
+侧栏一片空白。这个 bug 真的发布过一次（`acc6872` 修的）。
+
+**为什么所有 83 个套件都没抓到**：没有任何一个套件**执行**过那段模板。`injectStyles()` 第一行是
+`if (typeof document === 'undefined') return`，而 `client-chunk-smoke` 的 chunk 上下文是**故意**不提供
+`document` 的（让 apply 期的安装器走 headless 分支）。语法合法但语义错误的模板，没有任何途径变红。
+
+所以 `presentation-tokens-smoke` 现在把真 chunk 放进 `vm`，用桩 `document` 跑它的 factory、调
+`injectStyles()`，并要求**它写出来的文本等于断言读的那份 sheet**（差异只有模板用的那一种转义）。
+另两条断言直接点名这个错误：sheet 里不得出现裸反引号；转义序列只许有这一种。
 
 ## 相关
 
