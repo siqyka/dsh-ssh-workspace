@@ -450,6 +450,29 @@ check('the numeric rules exist, so this check has a subject',
 check('every numeric text rule uses tabular digits',
   withoutTabular.length === 0, [...new Set(withoutTabular)].join(' '))
 
+// ---- 5g. the panel reflows on its own width, not the window's -------------
+//
+// The panel sits in a sidebar the user drags narrow, so the window can be wide
+// while the panel is 300px. Only a container query reacts to that, and it
+// reacts only to DESCENDANTS of the container — a rule inside the query that
+// styles the container itself silently does nothing, which is a failure mode
+// with no symptom.
+
+check('the panel declares itself a container',
+  /\.sshwsp \{[^}]*container-type: inline-size/u.test(rules))
+check('...and gives the container a name, so a nested one cannot capture the query',
+  /\.sshwsp \{[^}]*container-name: sshwsp-panel/u.test(rules))
+
+const containerBlocks = [...rules.matchAll(/@container sshwsp-panel \(width < (\d+)px\) \{([\s\S]*?)\n\}/gu)]
+check('the panel has narrow-width queries',
+  containerBlocks.length >= 2, `${containerBlocks.length} blocks`)
+check('...and none of them styles the container itself',
+  containerBlocks.every(block => !/^\s*\.sshwsp\s*\{/mu.test(block[2])),
+  'a container query cannot restyle its own container')
+check('...and they are ordered narrow-last, so the tighter one wins',
+  containerBlocks.every((block, index) =>
+    index === 0 || Number(block[1]) < Number(containerBlocks[index - 1][1])))
+
 // ---- 6. the dead rules stayed dead ----------------------------------------
 
 check('the passthrough hint rule is gone',

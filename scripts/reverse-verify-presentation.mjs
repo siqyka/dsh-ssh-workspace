@@ -92,6 +92,16 @@ const MUTATIONS = [
     to: '.sshwsp-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }\n.sshwsp-icon-btn-busy:disabled { opacity: 1; cursor: default; }',
   },
   {
+    what: 'a container query restyles its own container',
+    from: '  .sshwsp-host { gap: 8px; }',
+    to: '  .sshwsp { padding: 16px; }\n  .sshwsp-host { gap: 8px; }',
+  },
+  {
+    what: 'the panel stops declaring itself a container',
+    from: 'container-type: inline-size; container-name: sshwsp-panel; ',
+    to: '',
+  },
+  {
     what: 'a portal root is dropped from the token block',
     // The queue panel is the last root before the one that closes the list, so
     // removing its line leaves the selector list syntactically valid — which is
