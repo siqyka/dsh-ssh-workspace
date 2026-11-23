@@ -322,15 +322,15 @@ check('...and naming the count in its accessible label, since the mark cannot pr
   /t\('queue\.openCount', \{ count: activeCount \}\)/u.test(trigger) &&
     /title: label,/u.test(trigger) && /'aria-label': label,/u.test(trigger))
 check('the idle entry is an icon seat, not a text pill',
-  /\.sshwsp-fileaction-queue \{ gap: 0; padding: 0 6px; color: var\(--dsw-alias-label-primary, #e0e0e0\); \}/u.test(source))
+  /\.sshwsp-fileaction-queue \{ gap: 0; padding: 0 6px; color: var\(--sshwsp-text\); \}/u.test(source))
 check('...while an active entry keeps its blue on hover instead of becoming a generic label',
-  /\.sshwsp-fileaction-queue-active:hover \{ color: var\(--dsw-alias-button-info-fill, #4a9eff\); \}/u.test(source))
+  /\.sshwsp-fileaction-queue-active:hover \{ color: var\(--sshwsp-accent\); \}/u.test(source))
 
 check('the icon column is no longer a monospace text column',
-  /\.sshwsp-queueicon \{ flex: 0 0 auto; display: inline-flex; align-items: center; width: 16px; color: var\(--dsw-alias-label-secondary, #999\); \}/u.test(source) &&
+  /\.sshwsp-queueicon \{ flex: 0 0 auto; display: inline-flex; align-items: center; width: 16px; color: var\(--sshwsp-muted\); \}/u.test(source) &&
     !/\.sshwsp-queueicon \{[\s\S]{0,200}monospace/u.test(source))
 check('the ring track borrows the queue bar\'s hue family, not a fourth colour',
-  /\.sshwsp-dlring-track \{ stroke: color-mix\(in srgb, var\(--dsw-alias-label-tertiary, #888\) 55%, transparent\); \}/u.test(source))
+  /\.sshwsp-dlring-track \{ stroke: color-mix\(in srgb, var\(--sshwsp-faint\) 55%, transparent\); \}/u.test(source))
 check('the arc starts at twelve o’clock and spins from there',
   /\.sshwsp-dlring-arc \{ transform-box: view-box; transform-origin: 50% 50%; transform: rotate\(-90deg\); \}/u.test(source) &&
     /\.sshwsp-dlring-live \.sshwsp-dlring-arc \{ animation: sshwsp-dlring-spin 1\.1s linear infinite; \}/u.test(source))

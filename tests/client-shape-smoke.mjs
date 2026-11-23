@@ -1224,12 +1224,12 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   check('the row menu is 220px and runs compact (12px labels, 24px rows); the chooser keeps its width and two-line size',
     /\.sshwsp-flowmenu \{[^}]*width: 220px/u.test(source) &&
       /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem \{ min-height: 24px; gap: 6px; padding: 3px 6px; \}/u.test(source) &&
-      /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem-title \{ font-size: 12px; \}/u.test(source) &&
+      /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem-title \{ font-size: var\(--sshwsp-font-xs\); \}/u.test(source) &&
       // The compact rules must not leak into the chooser: its rows keep the
       // shared base (13px title, 9px 10px padding) because descriptions are
       // its whole point.
-      /\.sshwsp-menuitem-title \{ display: block; font-size: 13px;/u.test(source) &&
-      /\.sshwsp-flowmenu-roomy \.sshwsp-menuitem \{ align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: 7px; \}/u.test(source) &&
+      /\.sshwsp-menuitem-title \{ display: block; font-size: var\(--sshwsp-font-sm\);/u.test(source) &&
+      /\.sshwsp-flowmenu-roomy \.sshwsp-menuitem \{ align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: var\(--sshwsp-radius-sm\); \}/u.test(source) &&
       /\.sshwsp-flowmenu-roomy \{ width: 250px;/u.test(source) &&
       /sshwsp-flowmenu sshwsp-flowmenu-roomy/u.test(source),
     'menu widths or row density drifted (compact geometry leaked into the chooser?)')
@@ -1712,8 +1712,13 @@ console.log('\n[the file-reference zone: two titles, and they are not interchang
     })(),
     'the subheading renders above the zone it belongs to')
   check('the h4 is styled one level down from the h3',
-    /\.sshwsp h4 \{ font-size: 12px; font-weight: 400; margin: 0 0 10px;/u.test(source) &&
-      /\.sshwsp h3 \{ font-size: 12px; font-weight: 500;/u.test(source),
+    // Same SIZE as the zone head so the block still reads as one unit, lighter
+    // WEIGHT so it reads as one level down. The sizes are scale tokens now, so
+    // the assertion pins the relationship rather than the number: a rewrite
+    // that made h4 the same weight would be the regression, and it is the one
+    // that actually made the subheading look like a second title.
+    /\.sshwsp h4 \{ font-size: var\(--sshwsp-font-xs\); font-weight: 400; margin: 0 0 10px;/u.test(source) &&
+      /\.sshwsp h3 \{ font-size: var\(--sshwsp-font-xs\); font-weight: 500;/u.test(source),
     'no lighter h4 rule — the subheading looks identical to the zone head, or is unstyled')
   check('the scheme box keeps its own accessible name',
     source.includes("'aria-label': t('passthrough.scheme')") &&

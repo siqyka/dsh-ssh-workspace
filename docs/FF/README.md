@@ -8,6 +8,7 @@
 | # | 工作流 | 方案 | 任务书 | 状态 |
 | --- | --- | --- | --- | --- |
 | 09 | 剩余工作（2026-11-23 全仓审查：R-01…R-10 已修 / 已落地；R-11 读窗口 A/B 需真机，按文档跳过；含上游接缝评估与不再做判定） | [09-remaining-work.md](./09-remaining-work.md) | [09-remaining-work-prompt.md](./09-remaining-work-prompt.md) | 可开工项已完成；R-11 待真机，暂保留判定与索引 |
+| 10 | 前端表现层重构（`--sshwsp-*` 令牌契约 + 视觉语言，风格参照 dsh-opencode-go；修掉 9 个假 token、62 个游离色字面量、散乱的圆角/字号/间距/z-index、缺失的交互态与浅色层） | [10-client-presentation.md](./10-client-presentation.md) | [10-client-presentation-prompt.md](./10-client-presentation-prompt.md) | 已定方向待评审 |
 
 01–08 已全部实施完成，方案与任务书已按上面的约定删除；09 的 R-01…R-10 已落地，只剩 R-11（读窗口 A/B，需真机，文档允许跳过），因此 09 暂时保留，兼作不再做判定与 O/F/C ID 索引。
 

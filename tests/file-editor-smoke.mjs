@@ -810,8 +810,13 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('...and the textarea is transparent only while the layer paints',
     /\.sshwsp-editor-area-box-hl \.sshwsp-editor-area \{[^}]*color: transparent/u.test(styles) &&
       /\.sshwsp-editor-area-box-hl \.sshwsp-editor-area \{[^}]*caret-color/u.test(styles))
+  // The selection has to stay translucent: the highlight layer paints the
+  // glyph colours underneath it, and an opaque wash would erase them. It used
+  // to be an rgba() literal; it is now a token, so the assertion follows the
+  // token and separately proves the token itself is a wash rather than a fill.
   check('...with a translucent selection, so the colour underneath survives it',
-    /\.sshwsp-editor-area-box-hl \.sshwsp-editor-area::selection \{[^}]*rgba\(/u.test(styles))
+    /\.sshwsp-editor-area-box-hl \.sshwsp-editor-area::selection \{[^}]*background: var\(--sshwsp-selection\)/u.test(styles) &&
+      /--sshwsp-selection: color-mix\(in srgb, var\(--sshwsp-accent\) \d+%, transparent\);/u.test(styles))
   // The light palette must follow the app's theme, not the desktop's: DSH
   // publishes `data-ds-theme-source` on <html> (the preference, `system`
   // included) and the OS query is only right when the app is following it.
@@ -853,10 +858,13 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
     Object.entries(darkPalette).map(([name, hex]) => `${name}=${contrastOn(hex, '#1e1e1e').toFixed(1)}`)
       .concat(Object.entries(lightPalette).map(([name, hex]) => `light.${name}=${contrastOn(hex, '#ffffff').toFixed(1)}`))
       .join(','))
+  // The relationship is what matters, not the numbers: the textarea sits above
+  // the colour layer so its caret and selection paint over the glyphs. Both
+  // now read from the z scale, so pin the two scale steps and their order.
   check('...and the layer is drawn where the textarea can paint over it',
-    /z-index: 1/u.test(layerAreaRule?.[1] ?? '') && /z-index: 0/u.test(
-      /\.sshwsp-editor-hl \{[^}]*\}/u.exec(styles)?.[0] ?? ''
-    ))
+    /z-index: var\(--sshwsp-z-raised\)/u.test(layerAreaRule?.[1] ?? '') &&
+      /z-index: var\(--sshwsp-z-base\)/u.test(/\.sshwsp-editor-hl \{[^}]*\}/u.exec(styles)?.[0] ?? '') &&
+      Number(/--sshwsp-z-raised: (\d+);/u.exec(styles)?.[1]) > Number(/--sshwsp-z-base: (\d+);/u.exec(styles)?.[1]))
   check('the panel puts the layer before the textarea in its own box',
     editor.indexOf('jsx(HighlightLayer') > 0 && editor.indexOf('jsx(HighlightLayer') < editor.indexOf("className: 'sshwsp-editor-area' +"))
   check('an IME composition hands the glyphs back to the textarea',
