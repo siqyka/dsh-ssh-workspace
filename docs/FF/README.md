@@ -7,14 +7,10 @@
 
 | # | 工作流 | 方案 | 任务书 | 状态 |
 | --- | --- | --- | --- | --- |
-| 01 | 测试骨架与代码整合（内存 SFTP + 插件宿主 + 渲染；清基线红） | — | — | **已实施**（`tests/support/`，`docs/development.md` 的「共享替身」一节） |
-| 02 | 远端 Skills 发现（默认关闭 + 主机白名单 + 围栏 + 上限） | — | — | **已实施**（`lib/surface/remote-skills.js`，`tests/remote-skills-smoke.mjs` 55 项；说明见 `docs/features.md` 五之三 与 `docs/architecture.md` 的「远端技能发现」一节） |
-| 03 | 右侧文件树的文件编辑（远端 + 本地同一条路由；版本 + 哈希双校验 + 409 不覆盖 + 写围栏） | — | — | **已实施**（`lib/routes/text.js` + `lib/client/client.editor.js`，`tests/text-routes-smoke.mjs` 69 项与 `tests/file-editor-smoke.mjs` 53 项；说明见 `docs/ui.md` 的「文件编辑」一节） |
-| 08 | 文件树菜单改成「数据模型 + 宿主渲染」（有 `ctx.contextMenus` 时由宿主画，老宿主保留自绘；菜单条目变成纯数据，便于加项） | [08-tree-context-menu.md](./08-tree-context-menu.md) | [08-tree-context-menu-prompt.md](./08-tree-context-menu-prompt.md) | 方案 |
+
+**本目录现已为空**：01–08 全部实施完成，方案与任务书已按上面的约定删除。
 
 状态取值：方案 = 已定方向待评审；进行中 = 已开工；完成 = 已合入（此时应删除本目录对应文件）。
-
-**07 与 08 的关系（2026-11-22 核对）**：07 **已实现**并已从本目录删除（改动仍在工作树里：`create-file` 路由、`API.createFile`、菜单里的新建文件项、`EXPECTED_ROUTES = 37`），索引见下表。所以现在只剩 08 要做，而且 08 是把**已经存在的**菜单项搬进模型，不需要等 07 再改一遍。
 
 ## 已完成的工作流（文件已删，留一行索引）
 
@@ -25,8 +21,9 @@
 | 05 | 同功能模块合并（16 组，`lib/` 83 → 57 个模块） | `CHANGELOG.md` 的 0.3.6「变更」一节（含合并带出的两处真缺陷）；「搬家会让检查静默变松」的四处修正见未发布段的「修复」 |
 | 06 | 文件系统与编辑器的参照取舍（对照第三方 side-bar 实现：4 条必做缺陷、4 条纯优化、5 条明确不做） | `CHANGELOG.md` 的 `## [未发布]` 各条（冲突基线、watcher 上限、`beforeunload`、编码读写、文件内查找、确定性排序、单例折叠、只读分页）；`docs/ui.md` 的「文件编辑」一节；「不照抄无围栏写路由」的判定进了 `docs/optimization-and-future03.md` §2 |
 | 07 | 右侧文件树的「新建文件」（远端目录行 + 远端空白处 + 本地空白处；`POST /create-file` 独占创建，0 字节，不自动打开） | `docs/features.md` 的「新建文件」一行、`docs/ui.md` 的行菜单与空白处菜单两节；`CHANGELOG.md` 的 `## [未发布]` 新增条；`tests/mutations-smoke.mjs` 与 `tests/tree-gestures-smoke.mjs` |
+| 08 | 文件树菜单改成「数据模型 + 宿主渲染」（有 `ctx.contextMenus` 时由宿主画，老宿主保留自绘） | `docs/ui.md` 的「行菜单、重命名与删除」一节（两个渲染器、禁用理由写进 label）；`docs/architecture.md` 的客户端半边；`tests/tree-menu-model-smoke.mjs`；`CHANGELOG.md` 的 `## [未发布]` 变更条 |
 
-已完成各条（01–07）的方案与任务书已按本目录的约定删除——它们记录的是「要做什么」，
+已完成各条（01–08）的方案与任务书已按本目录的约定删除——它们记录的是「要做什么」，
 做完之后唯一还有价值的部分（实测数字、边界、踩过的坑）已经搬进上面每个落点。
 
 ## 与 03 的关系

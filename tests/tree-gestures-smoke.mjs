@@ -729,7 +729,7 @@ console.log('\n[the menu contract]')
     (menu.match(/createTransferItem\(/gu) ?? []).length === 0)
   check('...while the late policy answer disables only the two create items',
     menu.includes("for (const id of ['new-file', 'new-folder'])") &&
-    menu.includes('mutationPolicyOf({ sessionId, root })') &&
+    menu.includes('policyOf({ sessionId, root })') &&
     menu.includes('node.disabled = true') &&
     !/copy-path/u.test(menu))
   check('a row point that is not a nested list keeps the row menu',
@@ -738,7 +738,7 @@ console.log('\n[the menu contract]')
   check('the shared menu lifecycle owns the dismissal listeners',
     /function openMenuAt \(x, y, fill\)/.test(source) &&
     /const local = localBlankTargetOf\(target\)/.test(source) &&
-    /openLocalBlankMenu\(local, event\.clientX, event\.clientY\)/.test(source))
+    /openLocalBlankMenu\(ctx, local, event\.clientX, event\.clientY\)/.test(source))
 }
 
 console.log('\n[one search, bounded by the panel]')

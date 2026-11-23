@@ -1876,26 +1876,41 @@ console.log('\n[the scheme rules are published, not duplicated]')
     'removing the tab took the host tree\'s menu with it')
   check('read-only sessions disable rename/delete before the click',
     source.includes("translate('rowmenu.readonly')") &&
-      source.includes('mutationPolicyOf({ sessionId, root })') &&
+      source.includes('policyOf(claim)') &&
       source.includes('node.disabled = true') &&
       source.includes('policyGate(policy, remoteTargetOf(absPath) === null)'),
     'the menu offers destructive actions a read-only session will refuse')
   check('no entry into the removed tab survives anywhere',
     !/browse\.entry/u.test(source) && !/browse\.tabTitle/u.test(source) && !/browse\.slotMissing/u.test(source),
     'the panel still advertises a tab that is gone')
-  // ONE label per verb, whatever the selection: a menu that changes its
-  // wording with the count is a second answer to "what will this delete", and
-  // the confirmation already owns the scope.
-  check('the row menu labels the two destructive verbs once, without a count',
-    !source.includes('rowmenu.downloadSelected') &&
-      !source.includes("translate('transfer.selected'") &&
-      /label: translate\('transfer\.download'\)/u.test(source) &&
-      /label: translate\('rowmenu\.delete'\)/u.test(source),
-    'a menu label still varies with the selection')
+  // The menu is a model plus two renderers: the host's own context menu when
+  // the host publishes one, and this plugin's floating menu otherwise. Both
+  // must exist — the plugin still declares rc.1 as its floor — and the service
+  // must stay out of `inject`, or a host without it loads no client at all.
+  check('the tree menu is drawn by two renderers, one of them the host\'s',
+    /function renderMenuDom \(model, x, y\)/u.test(source) &&
+      /function openTreeMenu \(ctx, model, value, x, y\)/u.test(source) &&
+      /if \(openHostMenu\(menus, value, x, y\)\) return null/u.test(source) &&
+      /return renderMenuDom\(model, x, y\)/u.test(source),
+    'one of the two renderers is gone, or openTreeMenu stopped falling back')
+  check('...and the optional service never enters the inject list',
+    /const inject = \['slots', 'locale'\]/u.test(source) &&
+      /ctx\?\.get\?\.\('contextMenus'\)/u.test(source),
+    'inject grew a peer that older hosts do not provide, so the plugin stops loading there')
+  check('...registering the provider only when the service answered',
+    /const menus = hostMenusOf\(ctx\)/u.test(source) &&
+      /id: HOST_MENU_ID/u.test(source) &&
+      /target: HOST_MENU_TARGET/u.test(source),
+    'the provider is registered without a service, or opened against the wrong target')
+  check('...and a right-click inside either menu is not a menu gesture',
+    /target\.closest\(`\[\$\{TASK_MENU_ATTR\}\], \[\$\{CONTEXT_MENU_ATTR\}\]`\)/u.test(source) &&
+      /menus\.close\?\.\(\)/u.test(source),
+    'the host menu reopens over itself, or closing the plugin menu leaves it behind')
   const keys = ['transfer.downloadTargetTitle',
     'transfer.downloadTargetSubtitle', 'transfer.chooseTarget', 'transfer.downloadQueued',
     'transfer.skippedLocal',
     'rowmenu.deleteOneFile', 'rowmenu.deleteOneDir', 'rowmenu.deleteMany', 'rowmenu.deleteCounts',
+    'menu.disabledReason', 'menu.actionFailed',
     'rowmenu.rename', 'rowmenu.delete', 'rowmenu.renameTitle',
     'rowmenu.renameFail', 'rowmenu.deleteFail', 'rowmenu.deleteDone', 'rowmenu.deletePartial']
   const missingZh = keys.filter(key => !new RegExp(`'${key.replace(/\./g, '\\.')}':`, 'u').test(source))

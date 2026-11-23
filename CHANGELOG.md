@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- **文件树右键菜单改成「先出模型、再选渲染器」**：菜单原来由 `openTaskMenu` / `openLocalBlankMenu` 直接拼 DOM，条目、顺序、分隔线与禁用条件都焊在 `createElement` 调用里。现在 `rowMenuModel` / `blankMenuModel` 产出一份 `{ id, label, glyph, disabled, reason, danger, separatorBefore, run }` 数组，`renderMenuDom` 只负责把它画成插件自己的浮动菜单。宿主发布 `ctx.contextMenus` 时改由**宿主菜单**渲染（外观、键盘、关闭与焦点都交给宿主），没有时仍是自绘——两条路径读同一份模型，加一项只加一条 descriptor、两边同时生效。服务用 `ctx.get('contextMenus')` 探测而不写进 `inject`：写进去会让没有该服务的老宿主连整个客户端插件都不加载，而 `peerDependencies` 仍写着 `>= 0.2.0-rc.1`。宿主菜单没有 tooltip，所以禁用项把理由写进 label（`menu.disabledReason`），自绘那条仍用 `title`；宿主拒绝打开时回落到自绘，而不是什么都不显示。顺带：只读策略改为按「会话 + 根」缓存 30 秒（`policyOf`），宿主 `resolve` 只读缓存、未命中先返回全可用再后台询问——它只有一秒预算，等一次 `/mutation-policy` 往返就来不及了。
+
 ### 新增
 
 - **右侧文件树能新建文件了（之前只能新建文件夹）**：远端目录行与远端空白处右键多一项「新建文件」，本地工作区的空白处菜单也从两项变三项。走一条独立的 `POST /create-file`（父目录 + 单个路径段名，与 `mkdir` 同形状），建出来是 **0 字节**文件：内容交给编辑器，预览里空文本可读、铅笔可编辑可保存。远端用 `'wx'` 独占创建、本地用 `open(..., 'wx')`，已存在一律 409 而不是覆盖；越界 / 只读 / 停用、父目录缺失 / 父目录是文件、名字带分隔符全部在写盘前拒绝，点开头（`.gitignore`）照常放行。成功后刷新并选中新行，**不自动打开**——抢走用户正在读的预览标签不是这条功能的收益。`write-text` 的令牌语义没有放宽：新建是独立路由。`mutations-smoke` 80 → 109 项、`tree-gestures-smoke` 83 → 84 项。

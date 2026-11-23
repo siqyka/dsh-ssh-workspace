@@ -83,6 +83,7 @@ const SUITES = [
   'panel-ctx',
   'selection',
   'tree-gestures',
+  'tree-menu-model',
   'composer-insert',
   'tree-os-drop',
   'selection-targets',
