@@ -2,7 +2,7 @@
 
 [根 README](../README.md) 面向「快速了解、安装、能力概览」；本目录存放展开的
 专题文档。内容已从 README 迁移并对照源码展开，**数字与清单均按当前源码核对**
-（路由 37 条、Agent 工具 11 个、冒烟套件 81 个）。如发现与实现不符之处，
+（路由 37 条、Agent 工具 11 个、冒烟套件 82 个）。如发现与实现不符之处，
 以源码为准并欢迎修订。
 
 ## 目录
@@ -19,7 +19,7 @@
 | [upstream-workarounds.md](./upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 | 完成 |
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
-| [FF/README.md](./FF/README.md) | **待实施工作流**：01–08 已实施并从本目录删除，索引留在页内；09 承接 2026-11-23 全仓审查的剩余项（R-02…R-08）与不再做判定 | 初稿 |
+| [FF/README.md](./FF/README.md) | **工作流与判定**：01–08 已实施并从本目录删除，索引留在页内；09 承接 2026-11-23 全仓审查（R-01…R-10 已落地，R-11 待真机）与不再做判定 | 保留（R-11 待真机） |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 
@@ -28,7 +28,7 @@
 - **想确认某功能有没有** → [features.md](./features.md)
 - **想用起来** → 根 README 的快速开始 → [ui.md](./ui.md) → [tools.md](./tools.md)
 - **想改代码** → [architecture.md](./architecture.md) → [development.md](./development.md)
-- **想规划下一步** → [FF/README.md](./FF/README.md)（当前 09，含 R-02…R-08 与不再做判定）
+- **想规划下一步** → [FF/README.md](./FF/README.md)（09 只剩需真机的 R-11，其余判定与索引保留）
 - **出问题了** → [troubleshooting.md](./troubleshooting.md)
 
 ## 写作约定

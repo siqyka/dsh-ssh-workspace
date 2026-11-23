@@ -235,6 +235,30 @@ try {
       JSON.stringify([...files.keys()]))
   }
 
+  // --- a many-file tree walks each directory once -------------------------
+  //
+  // `uploadFile` used to re-run the full mkdirp walk for every file, so a
+  // 500-file tree on a 50 ms link spent minutes re-proving that the same five
+  // directories exist. The per-file fence stays (a leaf can be swapped after
+  // the directory was created); only the directory walk may be shared.
+  {
+    const { mkdir } = await import('node:fs/promises')
+    const deep = path.join(scratch, 'deep')
+    const leaf = path.join(deep, 'a', 'b', 'c')
+    await mkdir(leaf, { recursive: true })
+    for (let at = 0; at < 12; at += 1) await writeFile(path.join(leaf, `f${at}.txt`), String(at))
+    const { sftp, files, tree } = fakeSftp({ dirs: ['/srv', '/srv/app'] })
+    const result = await uploadTree(fakeSftpEngine(sftp), { alias: 'test', localPath: deep, remotePath: '/srv/deep' })
+    check('a many-file tree still lands every file', result.files === 12 && files.has('/srv/deep/a/b/c/f11.txt'),
+      JSON.stringify({ files: result.files, has: files.has('/srv/deep/a/b/c/f11.txt') }))
+    const dirs = new Set(['/srv', '/srv/deep', '/srv/deep/a', '/srv/deep/a/b', '/srv/deep/a/b/c'])
+    const directoryStats = tree.calls.filter(call => (call.method === 'stat' || call.method === 'lstat') && dirs.has(call.path)).length
+    // Twelve per-file mkdirp walks would be at least 60 stats on these five
+    // directories alone; the shared pass plus per-file leaf checks stays well
+    // under half of that.
+    check('...without re-walking the same directories per file', directoryStats < 40, `${directoryStats} directory stats`)
+  }
+
   // --- the upload tool answers to the session's sandbox mode ---------------
   //
   // `ssh_workspace_transfer` does not travel through `ctx.fs`, so the router's

@@ -42,7 +42,7 @@ ssh://<主机别名>/<远端绝对路径>
 | 远端 | `path` 是 `ssh://` 拼写 | 已挂载根 + 该主机 `/tmp`，且工作区已启用 | `assertRemoteFence` 栅栏子项（不是父目录） |
 | 本地 | `path` 不是 `ssh://` 且是绝对路径 | **只取自会话/策略**（`workspaceRoot` 或会话 `header.cwd`），请求里的 `root` 仅用于识别会话 | `realpath(root)` + `realpath(target)` 词法包含，防符号链接逃逸；目标必须是目录；子项用非递归 `mkdir`，已存在答复 409 |
 
-两半都先过 `mutationNameRefusal`（单个路径段、拒绝 `.` `..` 与分隔符）与 `assertMutationAllowed`（`read-only` → `FS_SANDBOX_DENIED`；会话无法识别 → `FS_PERMISSION_DENIED`），再碰文件系统。会话工作区是远端时，本地路径直接 403——本地路径不可能属于一个远端工作区。
+两半都先过 `mutationNameRefusal`（单个路径段、拒绝 `.` `..` 与分隔符）与 `assertMutationAllowed`（`read-only` → `FS_SANDBOX_DENIED`；会话无法识别 → `FS_PERMISSION_DENIED`），再碰文件系统。拒绝时回答带 `code` 与 `readOnlyReason`（`'read-only'` / `'unrecognised-mode'`），`mutation-policy` 同样回 `readOnlyReason` 与 `modeRecognised`——「读不懂的模式」不再被折叠成「用户开了只读」。会话工作区是远端时，本地路径直接 403——本地路径不可能属于一个远端工作区。
 
 这道围栏之外还有两道**独立的**围栏：
 

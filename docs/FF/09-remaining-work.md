@@ -1,10 +1,13 @@
 # 09 剩余工作与历史判定
 
-> 2026-11-23：原 `docs/optimization-and-future03.md`（第三辑账本）里的未完成项迁到这里，账本随后删除。本文件是**可执行的工作流方案**，不是已完成功能说明；第 1 节完成一项就删掉对应小节，全部完成后按 `docs/FF/README.md` 的约定删除本文件与任务书。
+> 2026-11-23：原 `docs/optimization-and-future03.md`（第三辑账本）里的未完成项迁到这里，账本随后删除。本文件是**可执行的工作流方案**，不是已完成功能说明；第 1 节完成一项就在该小节末尾记下结果，全部完成后按 `docs/FF/README.md` 的约定删除本文件与任务书（本轮只差 R-11，故保留）。
+>
+> **2026-11-23 晚更新**：R-03 / R-07 / R-08 剩余 / R-09 / R-10 已全部落地，结果写在各小节末尾；只剩 R-11（需真机测量，文档本身允许整条跳过）。文件因此尚未删除，同时保留第 2–5 节的判定与索引。
 
 ## 0. 起点与硬约束
 
 - 起点：`0.3.6`，分支 `refactor/code-splitting`；2026-11-23 全仓审查 R-01…R-08 中**已修五项**：R-01（下载绕过会话模式）、R-02（status 单 gather + provenance）、R-04（新建文件 mode 统一 0644 + chmod 拒绝入诊断）、R-05（写拒绝的机器可读形状）、R-06（JSON body 413），落点见 `CHANGELOG.md` 的「未发布」段；R-08 已修一半（过滤 + 幂等回收），剩时间窗。同批还合入：转发持有与连接关闭回收、abort 不拨号、hosts 渲染补 `skipped` / `storeError`、保存回包固化标签页、`apply` 期监听器回收、`saveText` 读上限、策略缓存真 LRU、行尾保存策略选择器、读屏可见性、`lineCount` 缓存。
+- 同日晚：R-03（目录上传去重）、R-07（标签栏语义降级）、R-08 剩余（120 ms 尾部窗口）、R-09（键盘手势走策略缓存）、R-10（小文件 probe 携带正文）也已落地；仍开着的只有 R-11。
 - 三道写围栏（workspace root / 会话 workspace / sandbox mode）**不得放宽**；任何「为了让某个操作能做而放宽围栏」的改法不接受。
 - 未明确要求时不改版本号、不发布；发布前 `npm run check` 必须全绿。
 - 每项都要：加测试断言、跑 `node tests/run.mjs`、`npm run check:docs`、`npm run check:client-map`，并同步 `CHANGELOG.md` 与本文件。
@@ -22,6 +25,8 @@
 
 **验收**：`tests/tree-menu-model-smoke.mjs` 补一条「键盘 claim 与菜单 claim 共享一个缓存键」（同一 root 连续两次只发一次请求）；F2 / Delete 的只读拒绝与本地根未知拒绝文案不变。
 
+**结果（2026-11-23 完成）**：`lib/client/client.js` 的 F2 / Delete 改为 `policyOf({ root })`，命中缓存与在途去重；`tree-menu-model-smoke` 增源码断言（键盘块内出现 `policyOf({ root })`、不再出现 `mutationPolicyOf`），76 → 77 项全过。右键与键盘现在共享同一个 30 秒答案，同一棵树上的第二次操作不再发请求。
+
 ### 1.2 R-08（剩余半步）marks 观察器的时间窗
 
 **现状（2026-11-23 复核）**：`mutationTouchesMarks` 过滤已把无关 mutation 挡在外面（流式 token 的 `characterData` 不命中 `MARKS_RELEVANT` 就不调度），观察器已幂等并随 `apply` 的 disposer 回收——本条原描述的「每个 mutation 全文档 7 次 `querySelectorAll`」已不成立。剩余成本在调度器本身：`scheduleRemoteMarks` 用 `requestAnimationFrame` 合并，60 fps 流式下每帧都可能跑一次 pass。
@@ -30,6 +35,8 @@
 
 **验收**：连续 100 条命中 `MARKS_RELEVANT` 的 `characterData` 只产生 ≤ 2 次扫描（计数桩断言）；标记、拖拽、多选行为不变。
 
+**结果（2026-11-23 完成）**：`client.marks.js` 的调度器加 **120 ms 尾部窗口**（`MARKS_MIN_INTERVAL_MS`），窗口内的 mutation 合并到一次 `requestAnimationFrame`；`client-shape-smoke` 三条源码断言（不保留旧文本、有最小间隔、dispose 清掉 timer），345 项全过。标记 / 拖拽 / 多选路径未改。
+
 ### 1.3 R-03 目录树上传的围栏与 mkdirp 去重
 
 **现状**：`lib/transfer/transfer.js` 对**每个文件**都重付一次写围栏判定与全路径 `mkdirp` 往返（`lib/fs/remote-fs.js` 的 `ensureDir`/`mkdirp`）；500 个文件、5 层目录、50 ms 链路上约 2 分钟纯开销。
@@ -37,6 +44,8 @@
 **修法**：目录树传输时按「目标目录」缓存「已确认存在」，walk 阶段先批量建目录，再并行传文件；每个文件的最终围栏判定不能省（防目录被换/符号链接），但可复用父目录的确认结果。
 
 **验收**：fake transport 统计 `mkdir`/`realpath` 往返数：100 个文件同目录时目录创建 ≤ 1 次；越界目标仍在**任何字节发出前**被拒；失败重试语义不变。这是本组风险最高的一项，先补计数测试再改实现。
+
+**结果（2026-11-23 完成）**：`uploadTree` 按 `normalizeRemotePath` 维护 `ensuredDirs`，walk 对每个目录只做一次「围栏 + mkdirp」；`uploadFile` 新增 `dirEnsured`，父目录已确认时跳过全路径 mkdirp，但**逐文件围栏保留**（叶节点可能在两次调用之间被换成链接）。顺带修正了空目录不被创建的行为。`transfer-smoke` 增加 12 文件 / 5 层目录用例，断言五层目录上的 stat/lstat < 40（逐文件 walk 至少 60），135 → 137 项全过。失败重试与越界语义未变。
 
 ### 1.4 R-07 编辑器标签栏的键盘语义
 
@@ -49,6 +58,8 @@
 
 **验收**：形状断言（role / tabindex / aria-current 或 aria-controls）；手工键盘走查 ←/→/Home/End 与关闭按钮 Tab 顺序；`tests/file-editor-smoke.mjs` 补断言。
 
+**结果（2026-11-23 完成，采用方案 1）**：标签容器 `role="group"`，标签按钮去掉 `role="tab"` / `aria-selected`，改用 `aria-current`；不承诺实现 APG 的 roving tabindex，因此也不再声称是 tablist。`file-editor-smoke` 两条源码断言，226 → 227 项全过。真正的键盘漫游留给「要做就做完整 APG」的独立事项，而不是留一个半实现的 tablist。
+
 ### 1.5 R-10 预览的探测与正文读合并，小文件少四个串行往返
 
 **现状**：铅笔按钮的探测是独立一次 `read-text?probe=1`，服务端是 `stat → open → read 8 KiB → close` 四次串行 SFTP 等待（`lib/routes/text.js` 的 `probeRemote`）；预览正文那次读是并行挂载的另一个请求。小文件（预览的大多数）的关键路径是**探测**那四个往返——正文早已到达，按钮还在等。
@@ -57,6 +68,8 @@
 
 **验收**：fake SFTP 计数桩：一次预览 = 1 stat + 1 open + 正文块数 + 1 close（不再是两套串行往返）；`tests/file-editor-smoke.mjs` 的探测断言改读合并后的形状；WAN 语义由 `read-window-smoke` 的既有常量断言兜底（窗口不受影响）。
 
+**结果（2026-11-23 完成，按「probe 携带正文」落地）**：`text.js` 新增 `PRELOAD_MAX_BYTES = 64 KiB`；probe 对 ≤ 64 KiB 且可编辑的文件读整份（本来就是一次 read），回包多一个 `preload`（`text` / `eol` / `encoding` / `bom` / `revision` / `version` / `size`）；客户端 `stashPreload` / `takePreload`（8 条上限）在点击时直接起稿，不再发第二次 `read-text`。大文件仍只读 8 KiB 头，probe 语义不变。`text-routes-smoke` 增「preload 正文与直接读一致、令牌同源」两项（112 → 114），`file-editor-smoke` 增源码形状一项（226 → 227）。这样编辑器打开不再另走一套 stat/open/read/close，正文随探测那一次读带回；分页（>2 MiB）分支未动。
+
 ### 1.6 R-11 读窗口的 512 KiB A/B（需真机，可跳过）
 
 **现状**：`READ_CHUNK_BYTES = 256 KiB × 4`（`lib/fs/read-window.js`），2 MiB 文件 = open + 2 次窗口等待 + close。512 KiB × 4 可把等待降到 1 次，但 SFTP 服务器对单次 READ 的实际上限因实现而异，盲改常量可能被服务器拆包反而变慢。
@@ -64,6 +77,8 @@
 **修法**：先测量后改——在真机（WAN）上对同一文件跑 256 vs 512 的 A/B 计时，量出收益再改常量；没有真机就保留 256，**本条可整条跳过**。
 
 **验收**：常量改动必须有实测数字写进 `read-window.js` 头部注释（现有格式已有先例）；`read-window-smoke` 的常量断言同步。顺带：压缩传输（主机卡片开关，默认关）实测 2 MiB 文本 12.2 s → 2.94 s（约 4×），比改任何代码便宜；慢链路上建议打开，`docs/features.md` 已有说明，不另立项。
+
+**状态（2026-11-23）**：**未做**。本机没有可复现的 WAN 主机，按本条约定的「没有真机就保留 256 KiB」跳过；不盲改常量。它不阻塞其余项，文件因这一条保持「未完成」。
 
 ## 2. 上游相关（本插件不能单方面完成）
 
@@ -77,7 +92,7 @@
 
 `0.2.2-rc.5` 新给的接缝（均尚未利用）：
 
-- `working-directory/access` 事件：可在 `ensure` / `set` 里直接返回字符串，跳过本机 `ctx.fs.resolve` + `stat`，并让远端目录不存在时报自己的错。**现在就能用**，属加固 + 省一次往返；不能退役 projection 补丁（补丁修的是 schema，不是 fs 访问）。
+- `working-directory/access` 事件：**2026-11-23 复核后不采用**。在 `0.2.2-rc.5` 的 `@deepseek-ai/dsh-working-directory` 里，`set()` 的 `commit()` 位于默认 `next()` 内部（`src/index.ts:188-195`），监听器直接返回字符串会跳过提交流程，投影仍停在旧目录；`ensure()` 若短路则跳过「当前目录消失时恢复原目录」。而它本来想省的 `ctx.fs.resolve` 对 `ssh://` 只是本地解析（`lib/fs/remote-fs.js:617` 一带），真正的往返是 `stat`，这一次省不掉。保留现有 projection 补丁与默认路径。
 - `preferredShells`：宿主可按家族名挑 shell；但 `dsh-terminal-panel.preferredShells` 默认空表，配成非空后才能退掉启动侧查表。
 - `dsh-client-ui-context-menu` / `file-actions` / `file-drag`：行菜单定位、拖拽载荷将来可注册给宿主；前提是先核对宿主注册面是否接受「不对应本机真实路径的远端条目」。
 
@@ -104,6 +119,7 @@
 | 系统钥匙串凭据后端 | 只换密钥位置，挡不住整目录拷贝，还多平台依赖 | 宿主提供统一凭据服务 |
 | SOCKS / 动态转发 | 需求未出现；ProxyJump 与反向转发已做 | 真实需求 + 测试夹具 |
 | 照抄「无围栏 fs 写路由」 | 三道写围栏是测试钉住的边界 | 不重开 |
+| `working-directory/access` 短路 `resolve`/`stat` | 复核 `0.2.2-rc.5`：`set()` 的 `commit()` 在默认 `next()` 内，短路会丢提交；`ensure()` 短路会丢「恢复原目录」；`resolve` 对 `ssh://` 本来就是本地解析，唯一往返 `stat` 省不掉 | 宿主把 `commit` 移出 `next`，或提供不牺牲恢复语义的校验入口 |
 
 ## 5. 已闭环 ID 索引
 

@@ -325,6 +325,17 @@ if (!coreRoot) {
     check('a probe says an ordinary text file is editable',
       probeOk.status === 200 && probeOk.json?.probe === true && probeOk.json?.editable === true, probeOk.body)
     check('...and ships no content with that answer', probeOk.json?.text === undefined, probeOk.body)
+    // A small file travels WITH its probe: the editor is about to ask for the
+    // same bytes, and two stat/open/read/close chains for one click is what the
+    // preload removes. The tokens must be the read's own, or saving from the
+    // preloaded body would compare against a different revision.
+    const notesRead = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: notes })}`)
+    check('a small probe carries the body the editor will need',
+      typeof probeOk.json?.preload?.text === 'string' && probeOk.json.preload.text === notesRead.json?.text,
+      probeOk.body)
+    check('...with the same tokens a direct read returns',
+      probeOk.json?.preload?.revision === notesRead.json?.revision &&
+      probeOk.json?.preload?.version === notesRead.json?.version, probeOk.body)
     const probeBin = await get(routes, `${ROUTES.readText}?${q({ sessionId: 's-rw', path: 'ssh://box/srv/app/binary.bin', probe: '1' })}`)
     check('a probe names the reason a binary file is not editable',
       probeBin.status === 200 && probeBin.json?.editable === false && probeBin.json?.reason === 'binary', probeBin.body)

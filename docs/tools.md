@@ -114,6 +114,11 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 最近的诊断事件 `events[{ seq, at, kind, message, alias? }]`，
 以及 `fsPatched`（远端服务是否在役）。
 
+返回体另带 `provenance`：`connections` / `forwards` / `shells` / `capabilities` / `events`
+各自是 `{ kind, at }`，`kind` 为 `live` 或 `cached`，`at` 是这份数据被采集/建模时刻。
+一次调用只 gather 一次，support bundle 与 diagnosis 读同一份快照——两处各查一次会
+让「诊断看到的」与「状态看到的」在中间发生变化，而它们本来回答的是同一个问题。
+
 `mounted` 与 `disabled` 是互斥的两个集合：停用会把路径从前者移到后者。
 
 `events` 是最多 10 条、最新的在后的状态转换记录（`kind` 为 `connect` / `disconnect` /
@@ -352,8 +357,11 @@ redirect URI），需要一并放行 localhost。
 - 错误语义与 `ctx.fs` 同一套（`FS_*` 码，另加远端专用的 `FS_OUTSIDE_WORKSPACE`），
   写入围栏对工具触发的写同样生效；`read-only` 会话会拒绝远端 `write` / `edit`
   （`FS_SANDBOX_DENIED`），`ssh_workspace_transfer` 的**上传同样是写入**，也受该模式约束
-  （工具自己从会话解析 `sandboxPolicy`，因为它不经 `ctx.fs`）；下载只读远端、写本机，
-  因此在 `read-only` 下照常可用；
+  （工具自己从会话解析 `sandboxPolicy`，因为它不经 `ctx.fs`）；下载**也**受模式约束，
+  因为它要写本机：`read-only` 与读不懂的模式拒绝，`workspace-write` 只允许本机临时目录
+  或会话自己的本地工作区根（远端会话没有本地根，所以是临时目录），
+  `danger-full-access` 才放开；面板的 `/transfer`、`/download` 不受影响——模式管 agent，
+  不管用户；
 - **命令执行同样受模式约束**：`ssh_workspace_exec`、`ssh_workspace_shell` 在 `read-only`
   下直接拒绝（返回 `success: false` / `ok: false`，文案自述原因与出路），因为本机沙箱跨不过
   SSH，没有可用的围栏手段。`ssh_workspace_shell` 的 `close: true` 不受限——关闭不改变远端任何东西。

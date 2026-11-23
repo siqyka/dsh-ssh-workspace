@@ -168,9 +168,9 @@ for (let index = 0; index < source.length; index += 1) source[index] = index % 2
     remoteFs.includes('async function sftpReadHandle') && remoteFs.includes('sftpReadHandle,'))
 
   const textRoute = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'text.js'), 'utf8')
-  check('the local probe reads a sample of the file, not the file',
+  check('the local probe reads a bounded prefix, never a readFile of the target',
     !textRoute.includes('readFile(target)') &&
-      textRoute.includes('const wanted = Math.min(info.size, SAMPLE_BYTES)'))
+      textRoute.includes('info.size <= PRELOAD_MAX_BYTES ? info.size : SAMPLE_BYTES'))
   check('...and a whole-file read is nowhere in the probe',
     /if \(wanted > 0\) \{\s*const handle = await open\(target, 'r'\)/u.test(textRoute))
 }

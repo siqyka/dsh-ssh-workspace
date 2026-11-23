@@ -21,6 +21,9 @@
 - **JSON body 超限回答 413 而不是断连（R-06）**：`readJsonBody` 超过 4 MiB 时原来直接 `req.destroy()`，浏览器只看到 `Failed to fetch`，而 2 MiB 的文本上限在 JSON 转义翻倍后完全合法——拒绝的是编码形式而不是内容。现在越界时停止缓冲、`req.resume()` 排空剩余 body，路由经 `refuseJsonBody` 回 `413 PAYLOAD_TOO_LARGE`；`BODY_TOO_LARGE` 哨兵让每个调用方不必自己数字节。
 - **远端新文件的 mode 统一为 0644，chmod 拒绝不再无声（R-04）**：`create-file` 落 `0600`、上传不传 mode（服务器 umask 决定）、编辑器保存又是第三种——同一个「新建」动作三种权限。现在 `mode-gate.js` 导出 `DEFAULT_REMOTE_FILE_MODE = 0o644`，新建 / 上传 / 保存共用；`chmodStrict` 把服务器的拒绝记进诊断（每主机一次，`#chmodNoted`），而不是静默当作成功。写本身成功，失败回写才是错。
 - **`ssh_workspace_status` 只 gather 一次并携带 provenance（R-02）**：`supportBundle` 与 `diagnosis` 各自调一次 `statusBundleInput`，两次之间状态可变，注释却自称 one gather；`oldestProbe` 关在 `routes/workspaces.js` 里，工具拿不到。现在快照组装一次、两个渲染共用，`oldestProbe` 上移到 `surface/status.js`，输出与 `render` 都带 `provenance`（连接 / listing / probe 年龄）——模型能说「这份状态有多旧」，而不是把 30 分钟前的 listing 当作现在。
+- **目录树上传对每个文件重付一次 mkdirp（R-03）**：`uploadFile` 每次都把父路径逐段 stat + mkdir，500 个文件 / 5 层目录在 50 ms 链路上是几分钟的纯往返。现在 `uploadTree` 按规范化路径记住「这个目录已建过」，walk 对每个目录只围栏 + 建一次；`uploadFile` 保留逐文件围栏（叶节点可能在两次调用之间被换成链接），只跳过已确认的 mkdirp。空目录现在也会被创建。`transfer-smoke` 增加 12 文件深目录用例，断言五层目录上的 stat/lstat < 40（逐文件走至少 60）。
+- **键盘手势绕过策略缓存（R-09）**：树上 F2 / Delete 直连 `mutationPolicyOf`，30 秒缓存与同 key 在途去重都不经过——右键刚拿到的答案帮不了键盘。现在两条路径都走 `policyOf`，同一棵树上第二次操作不再发请求；`tree-menu-model-smoke` 增源码断言（键盘块只许出现 `policyOf({ root })`）。
+- **小文件从预览到编辑要读两遍（R-10）**：铅笔按钮的 probe 与打开编辑器各走一次 stat/open/read/close，对小文件是同一份字节读两次。现在 probe 对 ≤64 KiB 且可编辑的文件把正文随答案一起回传（`preload`，含 `revision` / `version`），客户端点击时直接起稿，不再发第二次 `read-text`；更大的文件仍只读 8 KiB 样本。令牌同源，保存时仍会发现探测与点击之间被改过的文件。`text-routes-smoke` 增「preload 正文与直接读一致、令牌相同」，`file-editor-smoke` 增形状断言。
 
 ### 新增
 
@@ -28,6 +31,8 @@
 
 ### 变更
 
+- **编辑器标签栏不再声称是 tablist（R-07）**：容器改为 `role="group"`，标签去掉 `role="tab"` / `aria-selected`，用 `aria-current` 标出当前文件。原来是一个没有 roving tabindex、没有 `tabpanel` / `aria-controls`、关闭按钮还留在 tablist 里的 tablist——读屏得到的语义比没有更糟。要么完整实现 APG，要么不声称；这里选后者。
+- **标记扫描器有了 120 ms 尾部窗口（R-08 剩余）**：`requestAnimationFrame` 在 60 fps 流式输出下每帧都可能跑一次全文档扫描；现在命中 `MARKS_RELEVANT` 的 mutation 合并到 120 ms 窗口，窗口内的连续输出只触发一次。
 - **编辑器保存结果对读屏可见**：提示条改为 `role="status"` + `aria-live="polite"`；冲突条补 `aria-labelledby` 指向标题（`alertdialog` 无名时读屏只会说「对话框」）。
 - **行数统计按 buffer 身份缓存**：`lineCount` 逐字符扫描，60k 行 / 2 MiB 每次约 3 ms，而它原来在每次 render 都跑，哪怕 CodeMirror 在屏上、没任何消费者。新增 `lineCountCached`（单值缓存，React 重用同一个字符串对象时命中是常数时间），页脚与行号槽共用一个结果。
 - **前瞻账本退役，未做项迁入 `docs/FF/09`**：删除 `docs/optimization-and-future03.md`；审查遗留 R-02…R-08 按可执行方案重写为 `docs/FF/09-remaining-work.md`，并配 `09-remaining-work-prompt.md` 任务书。原账本的「不再做」判定、已闭环 ID 索引与客户端 chunk 等宿主事实作为附录保留，避免代码注释里的 `O-xx` / `F-xx` 悬空；根 README、`docs/README.md`、`docs/FF/README.md` 与三处源码注释的引用同步改到新位置。

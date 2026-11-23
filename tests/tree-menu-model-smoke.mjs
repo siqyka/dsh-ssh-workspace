@@ -415,6 +415,16 @@ check('a claim with no session is still cached, so the blank menu asks once',
 check('...under a key of its own, not the session one',
   keyless.api.cachedPolicyOf({}) !== null && keyless.api.cachedPolicyOf(CLAIM) === null)
 
+// The keyboard gestures (F2 / Delete) are the other way into the same four
+// verbs. They used to call the wire directly, so a right-click followed by a
+// Delete on one root was two full `/mutation-policy` round trips and the answer
+// the menu had just received could not help the key press.
+console.log('\n[the keyboard gestures share the menu cache]')
+const keyboardStart = source.indexOf("event.key === 'F2'")
+const keyboardBlock = keyboardStart < 0 ? '' : source.slice(Math.max(0, keyboardStart - 2000), keyboardStart + 6000)
+check('F2 / Delete resolve through the shared policy cache',
+  /\bpolicyOf\(\{ root \}\)/u.test(keyboardBlock) && !/mutationPolicyOf/u.test(keyboardBlock))
+
 const bounded = build()
 bounded.state.policyAnswer = { readOnly: true }
 for (let i = 0; i < 40; i += 1) await bounded.api.policyOf({ sessionId: 's' + i, root: '/r' + i })

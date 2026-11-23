@@ -1076,6 +1076,15 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('the footer reports the same cached count',
     editor.includes("t('edit.lines', { count: lineCountCached(state.text) })"))
 
+  // The probe is the only thing standing between a preview and a pencil, and
+  // for a small file it already read the whole body. Seeding the editor from it
+  // is the difference between one read round trip and two.
+  check('a small probe body seeds the editor instead of being read again',
+    editor.includes('function takePreload (sessionId, path)') &&
+      editor.includes('stashPreload(sessionId, absolutePath, reply.data?.preload)') &&
+      editor.includes('const preloaded = takePreload(sessionId, target)') &&
+      editor.includes('baseRevision: String(preloaded.revision'))
+
   // The ending badge is a control now, not decoration: the save body reads its
   // value, and the file's own ending is only the default.
   check('the ending badge is a save-policy control',
