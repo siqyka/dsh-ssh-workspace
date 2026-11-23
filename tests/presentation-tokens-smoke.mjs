@@ -388,8 +388,12 @@ for (const rule of rules.matchAll(/(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/gu)) {
  * DOM controller assigns `.className =` directly. Reading only the first one
  * reported the toast as unrendered — it is built by hand, not by JSX.
  */
+// A class list can be a ternary (a picked row carries one more class). Only the
+// TRUE branch is captured: the false branch is a subset of it, and the question
+// here is which classes can appear on the same element.
 const renderedGroups = [
   ...source.matchAll(/className:\s*'([^']*sshwsp[^']*)'/gu),
+  ...source.matchAll(/className:\s*[^'"]*?\?\s*'([^']*sshwsp[^']*)'/gu),
   ...source.matchAll(/\.className = '([^']*sshwsp[^']*)'/gu),
 ].map(match => match[1].split(/\s+/u).filter(name => name.startsWith('sshwsp')))
 // `clickable` holds selectors, so it carries the leading dot; the rendered

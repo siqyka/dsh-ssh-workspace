@@ -178,41 +178,34 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   check('the client bundle is inspectable for declared classes', false, 'bundle missing')
 }
 
-console.log('\n[detached rows refuse interaction, not just attention]')
-// A detached workspace's row must not only LOOK off — its buttons must stop
-// responding. The mark alone is decoration; the pointer-events rule is what
-// actually refuses the click, and it is easy to delete without noticing because
-// the row still renders, merely greyed.
+console.log('\n[detached rows are dimmed, never disabled]')
+// Detach is a STATE, not a lock. The row dims so the state is visible, and
+// every click still reaches DSH: the session opens, the row actions fire, and
+// whatever the host refuses reports itself where the user is looking. The
+// assertions below pin that down by their ABSENCE — an earlier version paired
+// the dimming with pointer-events and `inert`, which silently made the sidebar
+// swallow clicks, and a failure like that is felt by the user long before it is
+// seen by anyone reading the code.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
   const client = clientSource(packageRoot)
-  check('a detached row declares its actions inert',
-    /\[data-sshwsp-disabled="1"\]\s+button[^{]*\{[^}]*pointer-events:\s*none/.test(client),
-    'a greyed row whose buttons still fire is a lie the user only discovers by clicking')
-  check('...and the selector is generic, because those buttons belong to DSH',
-    client.includes('[data-sshwsp-disabled="1"] button'),
-    'naming our own class here would miss the sidebar row entirely')
-  // The workspace HEADER must stay clickable: expanding it is how the sessions
-  // a `detach` deliberately keeps stay reachable. Its own rule must therefore
-  // not carry pointer-events. The session rows inside it are the opposite case
-  // — the row IS the control that opens the session — and they are scoped by
-  // the row key so the two can never be confused for one another.
-  check('...while the workspace header itself stays clickable, so its group expands',
-    !/(^|,)\s*\[data-sshwsp-disabled="1"\]\s*\{[^}]*pointer-events:\s*none/m.test(client),
-    'disabling the header would hide which sessions the detach kept')
-  check('...but a detached workspace\'s session rows are fully unreachable',
-    /\[data-row-key\^="session:"\]\[data-sshwsp-disabled="1"\]\s*\{[^}]*pointer-events:\s*none/.test(client),
-    'the row is the control that opens the session; dimming only its buttons leaves that action live')
-
-  // CSS alone is not enough: `pointer-events: none` blocks the mouse but a row
-  // reached with Tab still fires its actions on Enter. The keyboard path needs
-  // `inert`, and the undo has to restore what was there rather than assuming
-  // nothing was — DSH may have set its own tabindex or aria-disabled.
-  check('the detached row also removes its buttons from the tab order',
-    client.includes("control.setAttribute('inert', '')") && client.includes("control.setAttribute('tabindex', '-1')"),
-    'a keyboard user could still trigger a disabled action')
-  check('the undo remembers what it overwrote',
-    client.includes('sshwspInertPrior') && /if \(was === null\) control\.removeAttribute\(name\)/.test(client),
-    'blindly removing attributes would delete values DSH set itself')
+  check('a detached row is dimmed',
+    /\[data-sshwsp-disabled="1"\]\s*\{[^}]*opacity/.test(client),
+    'without the dimming the state is invisible and the attribute is pointless')
+  check('...but nothing under the mark takes the pointer away',
+    !/\[data-sshwsp-disabled="1"\][^{]*\{[^}]*pointer-events/.test(client),
+    'pointer-events: none is the exact rule that made the row unclickable')
+  check('...including the session rows the mark reaches',
+    !/\[data-row-key\^="session:"\]\[data-sshwsp-disabled="1"\]\s*\{[^}]*pointer-events/.test(client),
+    'a session row is the control that opens the session; blocking it blocks the feature')
+  // CSS alone never covered the keyboard: `inert` plus a forced tabindex did,
+  // and the pair is easy to reintroduce "for consistency". Both must stay gone,
+  // because either one alone is enough to make a focusable row unreachable.
+  check('...and the mark script writes no inert/tabindex of its own',
+    !/data-sshwsp-selfinert|data-sshwsp-inert|sshwspSelfInertPrior|sshwspInertPrior/.test(client),
+    'an inert row cannot be focused or clicked, whatever the stylesheet says')
+  check('the mark is still just one attribute, set and cleared',
+    client.includes("setAttribute('data-sshwsp-disabled', '1')") && client.includes("removeAttribute('data-sshwsp-disabled')"),
+    'the whole treatment rides on this one attribute; both directions must exist or a re-enable never clears')
 }
 
 console.log('\n[detached workspaces mark their sessions, not just their header]')
@@ -375,41 +368,202 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   }
 }
 
-console.log('\n[the unmount hint states BOTH outcomes, and only in the tooltip]')
-// The two unmount modes have opposite consequences, so the hint has to name both
-// rather than reassure about one: "the record and its sessions are kept" is true
-// only while the checkbox is clear, and a user who ticks it and reads that line
-// has been told the opposite of what will happen. It also lives in the tooltip
-// alone — an always-on line under the row would have to be rewritten as the
-// checkbox flips, and a second copy of the same sentence drifts from the first.
+console.log('\n[the unmount hint says what unmount does — and where deleting lives]')
+// Unmount and delete are now two buttons, so this hint has exactly one job: say
+// that unmounting keeps everything and stays reversible, and point at the row's
+// other button for the destructive half. It must NOT describe an archive: that
+// branch belonged to the old "unmount with a checkbox" flow, and a leftover
+// sentence about archiving would tell the user unmount might take their sessions
+// when it never does.
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
   const client = clientSource(packageRoot)
   const hints = [...client.matchAll(/'mounted\.detachHint': '([^']*)'/g)].map(match => match[1])
   const [zhHint = '', enHint = ''] = hints
   check('both locales define the unmount hint', hints.length === 2, `${hints.length} definition(s)`)
-  check('the unmount hint names what happens WITHOUT the checkbox',
-    /未勾选/.test(zhHint) && /保留/.test(zhHint),
+  check('the hint says the record and the sessions are both kept',
+    /保留/.test(zhHint) && /工作区记录/.test(zhHint),
     zhHint)
-  check('...and what happens WITH it',
-    /勾选/.test(zhHint) && /归档/.test(zhHint),
+  check('...that the row stays and can be re-enabled',
+    /置灰/.test(zhHint) && /启用/.test(zhHint),
     zhHint)
+  check('...and points at the row\'s delete for the destructive half',
+    /删除/.test(zhHint),
+    'a hint that only reassures leaves the user guessing where deletion went')
   // The English hint is asserted on its own text, not on the bundle at large:
   // "archived" appears in unrelated keys, so a bundle-wide regex would pass even
-  // if this one hint still described only the reversible branch.
+  // if this one hint still described the old branch.
   check('...in English too, so the two locales cannot diverge in meaning',
-    /without/i.test(enHint) && /archived/i.test(enHint) && /deleted/i.test(enHint),
+    /kept/i.test(enHint) && /re-enabled/i.test(enHint) && /Delete/.test(enHint),
     enHint)
+  check('...and neither locale still promises an archive on unmount',
+    !/归档/.test(zhHint) && !/archiv/i.test(enHint),
+    'unmount never archives now, so describing it would be a leftover branch')
   check('the hint is carried by the unmount button',
-    /title: t\('mounted\.detachHint'\),\s*\n\s*onClick: \(\) => \{ setUnmountConfirm\(wsPath\)/
-      .test(client),
+    /title: t\('mounted\.detachHint'\),\s*\n\s*onClick: \(\) => \{ setUnmountConfirm\(wsPath\); setDiscardConfirm\(null\) \}/.test(client),
     'the button that starts the flow lost its explanation')
   check('...and by the confirm button, which replaces it once armed',
-    /title: t\('mounted\.detachHint'\),\s*\n\s*onClick: \(\) => handleUnmount\(wsPath, unmountMode\)/
-      .test(client),
+    /title: t\('mounted\.detachHint'\),\s*\n\s*onClick: \(\) => handleUnmount\(wsPath\)/.test(client),
     'the tooltip vanishes at the exact moment the click becomes irreversible')
+  // Unmount has no options left: the mode is a constant, and the old state that
+  // let the row choose between detach and deregister must be gone, not merely
+  // unused — a surviving `unmountMode` would be a second way to decide.
+  check('unmount always detaches, with no mode to choose',
+    /body: JSON\.stringify\(\{ workspacePath, mode: 'detach' \}\)/.test(client),
+    'unmount must be the reversible half every time')
+  check('...and the mode state that used to vary it is gone',
+    !/unmountMode/.test(client),
+    'a leftover mode selector is a second, silent answer to the same question')
   check('the hint is not duplicated as a standing line in the row',
     !/sshwsp-entry-meta', children: t\('mounted\.detachHint'\)/.test(client),
     'a second copy of the same sentence drifts from the tooltip')
+  // Unmount cannot delete anything any more, so it must not wear the danger
+  // styling: two adjacent red buttons would tell the user both are destructive
+  // and teach them to distrust the colour that does mark the one that is.
+  check('the reversible half is not painted as the destructive one',
+    /className: 'sshwsp-btn',\s*\n\s*disabled: busy,\s*\n\s*title: t\('mounted\.detachHint'\)/.test(client),
+    'danger styling on a reversible action dilutes the action that is not')
+  check('...while delete keeps it',
+    /className: 'sshwsp-btn sshwsp-btn-danger',\s*\n\s*disabled: busy \|\| \(!discardRecord && !discardSessions\)/.test(client),
+    'the destructive button must be the one that looks destructive')
+}
+
+console.log('\n[a workspace whose host is gone says so before it fails]')
+// Deleting a host does not delete the workspaces registered on it: they stay in
+// both lists and fail later, one operation at a time, with an unknown-alias
+// error that names the alias but not the cause. The red mark is that cause,
+// stated once, where the user is already looking.
+if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
+  const client = clientSource(packageRoot)
+  const texts = [...client.matchAll(/'workspace\.hostMissing': '([^']*)'/g)].map(match => match[1])
+  const [zhText = '', enText = ''] = texts
+  check('both locales define the missing-host message', texts.length === 2, `${texts.length} definition(s)`)
+  check('...and it names the host with a placeholder', /\{alias\}/.test(zhText) && /\{alias\}/.test(enText), zhText)
+  check('...saying the workspace cannot connect, not merely that it is greyed',
+    /连不上/.test(zhText) && /cannot connect/i.test(enText), zhText)
+  // The alias must come from the path prefix, never from a substring search:
+  // `ssh://a/b/c` and a host literally named `b` would otherwise collide.
+  check('the alias is parsed out of the ssh:// prefix',
+    /function workspaceAliasOf \(workspacePath\)/.test(client) && /\^ssh:\\\/\\\/\(\[\^\/\]\+\)\\\//.test(client),
+    'guessing the alias by substring would mark the wrong rows')
+  // A listing that could not be read must not be read as "every host is gone":
+  // three separate ways of not knowing, all of which must suppress the mark.
+  check('an unread listing never marks anything',
+    /if \(!listingComplete\) return null/.test(client),
+    'a red mark on every row after one failed fetch is worse than no mark')
+  check('...and the listing counts as read only after a successful fetch',
+    /setHostListingLoaded\(true\)/.test(client) && /const hostListingComplete = hostListingLoaded &&/.test(client),
+    'an empty list is legitimate, so the difference is whether the fetch succeeded')
+  check('...with an unreadable store or skipped entries also suppressing it',
+    /listingGaps\.storeError === undefined && \(listingGaps\.skipped \?\? \[\]\)\.length === 0/.test(client),
+    'a partial listing would turn "could not look" into "it is gone"')
+  // Both lists, because a detached workspace of a deleted host is the one the
+  // user will try to re-enable.
+  const marks = (client.match(/jsx\(MissingHostMark,/g) ?? []).length
+  check('the mark is rendered in the mounted list and the detached one', marks === 2, `${marks} use(s)`)
+  check('the mark is an accessible image with a tooltip, not a bare glyph',
+    /role: 'img'/.test(client) && /'aria-label': label/.test(client) && /title: label/.test(client),
+    'a keyboard user gets nothing from a title attribute on a span')
+  check('the badge is red and uses the danger tokens',
+    /\.sshwsp-hostgone \{[^}]*var\(--sshwsp-danger\)/.test(client),
+    'a warning that looks like every other dimmed row will not be seen')
+}
+
+console.log('\n[delete asks two questions, in both lists]')
+// "Unmount" is the reversible half: the record survives, so the row survives and
+// the panel offers Enable. "Delete" is the other half, and it is the only place
+// the two destructive questions are asked — whether the workspace goes, and
+// whether its sessions go with it. Both lists offer it because a workspace the
+// user is done with may be in either one, and the answers must be the same
+// request with the same meaning: mode follows the record box, archiveSessions
+// follows the sessions box, and neither is baked in.
+if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
+  const client = clientSource(packageRoot)
+  const hints = [...client.matchAll(/'workspace\.deleteHint': '([^']*)'/g)].map(match => match[1])
+  const [zhHint = '', enHint = ''] = hints
+  check('both locales define the delete hint', hints.length === 2, `${hints.length} definition(s)`)
+  check('the hint says the two boxes decide what happens',
+    /勾选框/.test(zhHint) && /工作区/.test(zhHint) && /会话/.test(zhHint),
+    zhHint)
+  check('...in English too, so neither locale can quietly promise a deletion',
+    /box/i.test(enHint) && /workspace/i.test(enHint) && /sessions/i.test(enHint),
+    enHint)
+  // "Delete the sessions" is an archive, and the checkbox's own tooltip has to
+  // say so: the files stay on disk, DSH has no session-delete API, and a word
+  // that promises unlinking would be a lie the plugin cannot keep.
+  const sessionHints = [...client.matchAll(/'workspace\.deleteSessionsHint': '([^']*)'/g)].map(match => match[1])
+  const [zhSessions = '', enSessions = ''] = sessionHints
+  check('both locales define the sessions hint', sessionHints.length === 2, `${sessionHints.length} definition(s)`)
+  check('the sessions box says ARCHIVE, not delete',
+    /归档/.test(zhSessions) && /不是删文件/.test(zhSessions),
+    zhSessions)
+  check('...in English too',
+    /archiv/i.test(enSessions) && /not deleted/i.test(enSessions),
+    enSessions)
+  // The record box is the irreversible one, so its hint must name Enable.
+  const recordHints = [...client.matchAll(/'workspace\.deleteRecordHint': '([^']*)'/g)].map(match => match[1])
+  const [zhRecord = '', enRecord = ''] = recordHints
+  check('the record box says Enable cannot bring it back',
+    /启用也救不回来/.test(zhRecord) && /Enable cannot bring it back/i.test(enRecord),
+    zhRecord)
+  // Both rows arm, both can be backed out of: a single click that cannot be
+  // undone is one click too few.
+  const armCount = (client.match(/onClick: \(\) => \{\s*\n\s*setDiscardConfirm\(wsPath\)/g) ?? []).length
+  check('both lists arm a confirmation instead of deleting on the first click',
+    armCount === 2,
+    `${armCount} arming button(s)`)
+  const cancelCount = (client.match(/onClick: \(\) => setDiscardConfirm\(null\)/g) ?? []).length
+  check('...and both armed rows can still be backed out of',
+    cancelCount === 2,
+    'an armed row with no cancel turns a misclick into a deletion')
+  // Two boxes, rendered by one component used in two places — one implementation,
+  // so the two lists cannot drift into asking different questions.
+  const choiceUses = (client.match(/jsx\(DiscardChoices, \{/g) ?? []).length
+  check('the same two-box component is used by both lists', choiceUses === 2, `${choiceUses} use(s)`)
+  const boxes = (client.slice(
+    client.indexOf('function DiscardChoices'),
+    client.indexOf('How many rows a section shows', client.indexOf('function DiscardChoices')),
+  ).match(/type: 'checkbox'/g) ?? []).length
+  check('...and it renders exactly the two checkboxes', boxes === 2, `${boxes} checkbox(es)`)
+  check('both boxes start ticked, because that is what "delete" means',
+    (client.match(/setDiscardRecord\(true\)[;\s]+setDiscardSessions\(true\)/g) ?? []).length === 2,
+    'one list arming with different defaults is a different action')
+  check('with both cleared there is nothing to do, so confirm is disabled',
+    (client.match(/disabled: busy \|\| \(!discardRecord && !discardSessions\)/g) ?? []).length === 2,
+    'a confirm button that quietly does one of the two is the bug this prevents')
+  // The request: the record box picks the mode, the sessions box picks archiving.
+  // Asserted as a pair so a refactor cannot wire one box to the other's field.
+  check('the record box picks deregister or detach',
+    /mode: record === true \? 'deregister' : 'detach'/.test(client),
+    'a fixed mode would make one of the two boxes a decoration')
+  check('...and the sessions box picks archiving, independently',
+    /archiveSessions: sessions === true/.test(client),
+    'keeping a workspace but clearing its sessions is a real answer')
+  check('deleting reuses the unmount endpoint, not a second route',
+    /API\.unmount/.test(client) && !/API\.discard|API\.deleteWorkspace/.test(client),
+    'a second endpoint would be a second set of semantics to keep in step')
+  // Three outcomes, and the toast must not claim sessions were archived when the
+  // user cleared that box.
+  check('the success toast reports how many sessions were archived',
+    /t\('workspace\.deleteOk'\)\.replace\('\{n\}', archived\)/.test(client),
+    'the user needs to know the action touched sessions at all')
+  check('...and has a separate message when the sessions were kept',
+    /t\('workspace\.deleteOkKeepSessions'\)/.test(client),
+    'one message for both answers would report an archive that did not happen')
+  check('a failed delete offers no retry, because it can partially succeed',
+    /toastError\(t\('workspace\.deleteFail'\), result\.error, 'SSHWSP-E-DISCARD'\)/.test(client),
+    'replaying a half-finished deregister is not a repeat of one action')
+  check('the disabled row still offers Enable alongside Delete',
+    /onClick: \(\) => handleEnable\(wsPath\)/.test(client) && /children: t\('workspace\.delete'\)/.test(client),
+    'delete must not have replaced the reversible action')
+  check('the mounted row offers both, so neither half is hidden',
+    /children: t\('mounted\.unmount'\)/.test(client) && /children: t\('workspace\.delete'\)/.test(client),
+    'a mounted workspace is exactly the one that may need deleting')
+  // Two boxes plus two buttons are wider than a narrow panel row, so the row must
+  // be allowed to wrap: squeezing the confirm button out of view hides the very
+  // click this flow exists to make explicit.
+  check('...and the armed row wraps instead of pushing a button out of view',
+    /\.sshwsp-mount \{[^}]*flex-wrap: wrap/.test(client),
+    'a row that cannot wrap clips the confirm button in a narrow panel')
 }
 
 console.log('\n[a deliberate disconnect looks like closing the tunnel by hand]')
@@ -536,7 +690,7 @@ console.log('\n[a11y: the menu contract]')
 // The index arithmetic is EXTRACTED from the source and executed here rather
 // than grepped for. A grep for `'ArrowDown'` passes whether the wrapping is
 // right or the modulo is wrong — and this repository has already shipped
-// assertions of exactly that kind (see O-14 in docs/FF/09-remaining-work.md).
+// assertions of exactly that kind (O-14, closed: fake SSH server + tri-state summary).
 {
   const source = clientSource(packageRoot)
   const count = (re) => (source.match(re) ?? []).length
@@ -659,6 +813,16 @@ console.log('\n[a11y: the menu contract]')
     'notes wear a severity badge')
   check('the advisory block has its own style',
     /\.sshwsp-diagnosis-notes \{/u.test(source), 'no style for the advisory block')
+  // A badge takes the colour of what it says: WARN is a warning (yellow), and
+  // red is reserved for the findings whose own text names something broken.
+  // Before this, every WARN finding wore the danger tone, so "needs attention"
+  // and "this is failing" were the same red.
+  check('a finding badge is yellow for a warning and red for a broken thing',
+    /function findingToneOf \(finding\) \{/u.test(source) &&
+      source.includes(String.raw`\bfailed\b|NOT PINNED|could not be saved`) &&
+      /findingToneOf\(finding\) === 'bad' \? 'sshwsp-status-err'/u.test(source) &&
+      /: findingToneOf\(finding\) === 'warn' \? 'sshwsp-status-warn'/u.test(source),
+    'the badge must agree with the report line for the same finding')
 }
 
 // ---------------------------------------------------------------------------
@@ -824,7 +988,10 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // without a trailing line ending: the bundle's line endings are not part of
   // what this pins, and a CRLF checkout would otherwise break the slice.
   const start = client.indexOf('// ---- Diagnostic report')
-  const end = client.indexOf('// ---- Diagnostic report dialog', start)
+  // The pane arrays end just before the return, so the report section runs from
+  // its marker to the first line after the diagnostics pane — ending it at the
+  // dialog marker would swallow the head and tab bar that now sit between them.
+  const end = client.indexOf('const panes = {', start)
   const section = start >= 0 && end > start ? client.slice(start, end) : ''
   const countIn = (re) => (section.match(re) ?? []).length
   check('the report section is locatable', section.length > 0, 'section markers missing')
@@ -847,17 +1014,32 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     /reportText !== null && jsx\(DialogSlot, \{[\s\S]{0,120}?component: ReportDialog/u.test(client), 'dialog not mounted')
   check('the report text comes from a fetch of the route',
     /await fetch\(API\.supportBundle\)/u.test(client), 'no fetch of the report route')
-  check('the dialog shows the text in a read-only, selectable field',
-    /readOnly: true/u.test(client) && /spellCheck: false/u.test(client),
-    'a plain <pre> is not selectable enough to copy from by hand')
+  check('the dialog renders the report as one selectable element per line',
+    /className: 'sshwsp-report-body'/u.test(client) &&
+      /role: 'document'/u.test(client) &&
+      /lines\.map\(\(line, index\) =>/u.test(client),
+    'a single text field cannot carry a tone per line')
 
   // Wrapping replaced sideways scrolling: a report is read line by line, and
   // dragging horizontally to finish a sentence is the step that makes it unread.
   check('the dialog wraps long lines instead of scrolling sideways',
-    /wrap: 'soft'/u.test(client) &&
-      /\.sshwsp-report-text \{[^}]*white-space: pre-wrap/u.test(client) &&
-      /\.sshwsp-report-text \{[^}]*overflow-x: hidden/u.test(client),
+    /\.sshwsp-report-body \{[^}]*white-space: pre-wrap/u.test(client) &&
+      /\.sshwsp-report-body \{[^}]*overflow-x: hidden/u.test(client),
     'sideways scrolling makes the reader drag to finish a sentence')
+
+  // The tones are the reason the report is not a wall of one colour. They are
+  // derived from the leading word the report already prints, so the assertion
+  // is on the derivation, not on a hand-maintained list of lines.
+  check('a line is toned by its own first word',
+    /function reportLineTone \(line\) \{/u.test(client) &&
+      /\^WARN\\b/u.test(client) && /\^UNKNOWN\\b/u.test(client) && /\^NOTE\\b/u.test(client),
+    'the tone must come from the text, never from a second source of truth')
+  check('a warning is yellow and a broken thing is red',
+    /\^WARN\\b[\s\S]{0,120}?return 'warn'/u.test(client) &&
+      /NOT PINNED\|\^store error:/u.test(client) &&
+      /\.sshwsp-report-line-warn \{ color: var\(--sshwsp-warn\)/u.test(client) &&
+      /\.sshwsp-report-line-bad \{ color: var\(--sshwsp-danger\)/u.test(client),
+    'the two tones a reader acts on must not be the same colour as the prose')
 
   // Copying moved from the section's toolbar into the report window itself.
   check('the dialog carries its own copy control',
@@ -879,17 +1061,18 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   const dlgStart = dialogs.indexOf('function ReportDialog (')
   const dlgEnd = dialogs.indexOf('    exports.HostEditor', dlgStart)
   const dlg = dlgStart >= 0 && dlgEnd > dlgStart ? dialogs.slice(dlgStart, dlgEnd) : ''
-  const selectSites = (dlg.match(/\.select\(/gu) ?? []).length
+  const selectSites = (dlg.match(/addRange\(/gu) ?? []).length
   const handleCopyAt = dlg.indexOf('const handleCopy = async () => {')
-  const selectAt = dlg.indexOf('.select(')
+  const selectAt = dlg.indexOf('addRange(')
   check('the report dialog is locatable', dlg.length > 0, 'component not found')
   check('the text is not auto-selected when the dialog opens',
     selectSites === 1 && handleCopyAt >= 0 && selectAt > handleCopyAt,
-    `${selectSites} select() call(s) — the only one may be the copy fallback`)
+    `${selectSites} addRange() call(s) — the only one may be the copy fallback`)
   // ...but a FAILED copy does select it: the user pressed "copy" and must be
-  // able to finish it by hand.
+  // able to finish it by hand, on the very lines they are reading.
   check('a failed clipboard write selects the text for a manual copy',
-    /if \(\(await onCopy\(\)\) === true\) return[\s\S]{0,400}?\.select\(\)/u.test(dlg),
+    /if \(\(await onCopy\(\)\) === true\) return[\s\S]{0,400}?addRange\(range\)/u.test(dlg) &&
+      /range\.selectNodeContents\(body\)/u.test(dlg),
     'the copy button would silently do nothing without clipboard permission')
 
   // One fetch spelling. Asserting the CALL COUNT would just re-state the
@@ -899,6 +1082,117 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   check('the report route is fetched in exactly one place',
     /function fetchReportText \(\)/u.test(client) && fetchSites === 1,
     `${fetchSites} fetch site(s) — a second fetch spelling drifts`)
+
+  // ---- panel tabs
+  //
+  // Three tabs, and the property worth pinning is the MAPPING rather than the
+  // markup: a section that lands in two panes is rendered twice with the same
+  // element ids, and one that lands in none disappears while the panel still
+  // looks complete. So the sections are counted per pane instead of trusting
+  // the tab list to be exhaustive.
+  const PANE_NAMES = ['Hosts', 'Workspaces', 'Settings']
+  const paneStarts = PANE_NAMES.map(name => client.indexOf(`const pane${name} = [`))
+  const paneBodies = paneStarts.map((at, index) => {
+    const next = index + 1 < paneStarts.length
+      ? paneStarts[index + 1]
+      : client.indexOf('const panes = {', at)
+    return at >= 0 && next > at ? client.slice(at, next) : ''
+  })
+  check('the panel declares its three panes in tab order',
+    paneBodies.every(body => body.length > 0) &&
+      client.includes("const PANEL_TABS = ['hosts', 'workspaces', 'settings']"),
+    paneBodies.map(body => (body.length > 0 ? 'ok' : 'missing')).join(' '))
+  const PANEL_SECTIONS = [
+    '// ---- Hosts',
+    '// ---- Port forwards',
+    '// ---- Mounted workspaces',
+    '// ---- Detached workspaces',
+    '// ---- Persistent remote shells',
+    '// ---- File references',
+    '// ---- Remote environment self-check',
+    '// ---- Recent remote commands',
+    '// ---- Diagnostic report',
+  ]
+  const doubleParked = PANEL_SECTIONS.filter(marker =>
+    paneBodies.filter(body => body.includes(marker)).length !== 1)
+  check('every section lives in exactly one pane',
+    doubleParked.length === 0,
+    doubleParked.join(' | '))
+  // The grouping itself: workspaces = mounted + detached; settings = the three
+  // areas that used to be tabs of their own (forwards + sessions, file
+  // references, and the diagnostic report with the command history above it).
+  // Merging them is only correct if all three really moved — a leftover
+  // forwards section still rendered by a deleted tab would simply vanish.
+  check('the panes group the sections the way the tabs promise',
+    paneBodies[1].includes('// ---- Mounted workspaces') && paneBodies[1].includes('// ---- Detached workspaces') &&
+      paneBodies[2].includes('// ---- Port forwards') && paneBodies[2].includes('// ---- Persistent remote shells') &&
+      paneBodies[2].includes('// ---- File references') &&
+      paneBodies[2].includes('// ---- Recent remote commands') &&
+      paneBodies[2].includes('// ---- Diagnostic report'),
+    'a tab shows a section another tab already owns')
+  // Only the selected pane renders. A `display: none` over all five would keep
+  // every section mounted, which is how a panel ends up running five sections'
+  // effects at once.
+  check('only the selected pane is rendered',
+    /const visiblePane = panes\[panelTab\] \?\? paneHosts/u.test(client) &&
+      /children: visiblePane/u.test(client),
+    'all panes mounted at once')
+  check('the tab row is a real tablist',
+    /className: 'sshwsp-tabs',\s*\n?\s*role: 'tablist'/u.test(client) &&
+      /role: 'tab',/u.test(client) &&
+      /'aria-selected': id === panelTab \? 'true' : 'false'/u.test(client) &&
+      /'aria-controls': PANEL_TABPANEL_ID/u.test(client) &&
+      /tabIndex: id === panelTab \? 0 : -1/u.test(client) &&
+      /role: 'tabpanel'/u.test(client) &&
+      /'aria-labelledby': panelTabIdOf\(panelTab\)/u.test(client),
+    'missing roving tabindex, selection state, or the panel association')
+  check('arrow keys move between tabs and the move takes focus with it',
+    /event\.key === 'ArrowRight'/u.test(client) && /event\.key === 'Home'/u.test(client) &&
+      /selectPanelTab\(PANEL_TABS\[next\]\)/u.test(client) &&
+      /if \(button instanceof HTMLElement\) button\.focus\(\)/u.test(client),
+    'a keyboard user could select a tab they cannot see the focus on')
+  // The host unmounts the panel on every return to the conversation, so a
+  // component-local tab would reset to "hosts" each time. The choice is module
+  // state for exactly that reason.
+  check('the selected tab survives the panel remounting',
+    /let panelTabChoice = 'hosts'/u.test(client) &&
+      /React\.useState\(panelTabChoice\)/u.test(client) &&
+      /panelTabChoice = id/u.test(client),
+    'a per-mount tab resets on every re-entry')
+  check('switching tabs puts the new pane back at the top',
+    /scroller\.scrollTop = 0/u.test(client) && /closest\('\.sshwsp'\)/u.test(client),
+    'switching halfway down a section lands halfway down the next one')
+  // The column: the panel used to paint edge to edge. Centred content with side
+  // whitespace is what the Host's own page does, and it is the reason the panel
+  // stops looking like a settings dump once docked wide.
+  const stylesText = clientPartSource(packageRoot, 'client.styles.js')
+  check('the panel content sits in a centred, width-capped column',
+    /\.sshwsp \{[^}]*padding: 0;/u.test(stylesText) &&
+      /\.sshwsp-panel-inner \{[^}]*max-width: 980px/u.test(stylesText) &&
+      /\.sshwsp-panel-inner \{[^}]*margin: 0 auto/u.test(stylesText) &&
+      /\.sshwsp-panel-inner \{[^}]*padding: 72px 24px 40px/u.test(stylesText),
+    'the column either lost its cap or its side padding')
+  // A percentage padding resolves against the containing block, so centring a
+  // 720px box with `calc(50% - 360px)` eats the whole column on a wide page and
+  // the panel renders as a strip of vertical text. Centring is margin's job.
+  check('the centred column is sized by its cap, never by percentage padding',
+    !/\.sshwsp-panel-inner \{[^}]*padding:[^;}]*%/u.test(stylesText) &&
+      !/\.sshwsp-panel-inner \{[^}]*padding:[^;}]*calc\(50%/u.test(stylesText),
+    'a percentage padding resolves against the container, not the capped box')
+  check('the tab labels exist in both dictionaries',
+    ['panel.tabHosts', 'panel.tabWorkspaces', 'panel.tabSettings', 'panel.tabsLabel']
+      .every(key => (client.match(new RegExp(`'${key.replace(/\./gu, '\\.')}':`, 'gu')) ?? []).length === 2),
+    'a tab without a label renders as its key in one language')
+  // The list is ids, not records. Dereferencing a field off a string yields
+  // `undefined`, and the whole row degrades silently in a way that still
+  // "renders five tabs": every label folds to an empty string, every id becomes
+  // `sshwsp-tab-undefined`, and every click selects the same pane. Nothing
+  // throws, so only this shape pins it down.
+  check('the tab row iterates the id list rather than record fields',
+    /const PANEL_TABS = \['hosts', 'workspaces', 'settings'\]/u.test(client) &&
+      /PANEL_TABS\.map\(id => jsx\('button'/u.test(client) &&
+      /children: t\(PANEL_TAB_KEYS\[id\]\)/u.test(client),
+    'an id list read as records renders empty labels and one shared pane')
 
   // ---- the status dot
   //
@@ -949,7 +1243,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
 // ---------------------------------------------------------------------------
 console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
 //
-// C-01 (closed; the index is docs/FF/09-remaining-work.md). The panel had four dialogs and wired
+// C-01 (closed). The panel had four dialogs and wired
 // three; the fourth (DirectoryBrowser) had a backdrop and a dialog frame, so it
 // LOOKED covered while keyboard focus walked straight through it into the page
 // behind. Two more holes sat in the same area: the browser's rows were
@@ -1021,36 +1315,70 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   // directory row is the control, and a type test has no business in the map:
   // the request (`dirs=1`) already guarantees what arrives.
   check('a directory row is a real button control',
-    liveIn('DirectoryBrowser', /return jsx\('button', \{[\s\S]{0,300}?className: 'sshwsp-entry sshwsp-entry-dir'/u) &&
+    liveIn('DirectoryBrowser', /return jsx\('button', \{[\s\S]{0,600}?className: isPicked[\s\S]{0,160}?'sshwsp-entry sshwsp-entry-dir'/u) &&
       !/rowcheck|type: 'checkbox'/u.test(bodyOf('DirectoryBrowser')),
     'a directory row is no longer a button, or a checkbox column came back')
   check('...and no file row survives anywhere',
     !/sshwsp-entry-file|function FileIcon/u.test(source) &&
       !/entry\.type !== 'directory'[\s\S]{0,80}?sshwsp-entry/u.test(bodyOf('DirectoryBrowser')),
     'a file row, its glyph or its branch is back in a picker that only lists directories')
-  check('...with no selection contract left behind',
-    !/rowClassName|rowChildren/u.test(bodyOf('DirectoryBrowser')) &&
-      !/'aria-selected'|setSelection|selectReduce/u.test(bodyOf('DirectoryBrowser')) &&
-      !/\.sshwsp-entry-selected \{/u.test(source),
-    'the selection paint came back')
+  // One picked row, not a selection set: this picker has exactly one verb, and a
+  // set would only exist to serve a batch action that is not here.
+  check('...and the picker holds one picked row, not a selection set',
+    liveIn('DirectoryBrowser', /const \[picked, setPicked\] = React\.useState\(null\)/u) &&
+      liveIn('DirectoryBrowser', /setPicked\(full\)/u) &&
+      !/rowClassName|rowChildren|selectReduce/u.test(bodyOf('DirectoryBrowser')) &&
+      !/new Set\(|new Map\(/u.test(bodyOf('DirectoryBrowser')),
+    'a batch selection set came back to a picker with one verb')
   check('...and both pickers ask for directories only',
     (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []).length === 2 &&
       !/BROWSE_LIST_LIMIT\}&all=1/u.test(source),
     'a picker asks for files it can neither enter nor act on')
 
-  // A directory row is entered by DOUBLE click. A single click used to enter
-  // too, which made the listing impossible to read: every attempt to inspect a
-  // row left the directory. Keyboard activation is the exception, because
-  // React reports it as a click carrying `detail === 0` — dropping the click
-  // handler outright would have made both pickers mouse-only.
-  check('a directory row is entered by double click, not a single one',
+  // A single click PICKS a row and a double click ENTERS it. A single click used
+  // to enter, which made the listing impossible to read; it then did nothing at
+  // all, which meant the only way to act on a subdirectory was to enter it first.
+  // Picking separates "which one" from "go there". Keyboard activation arrives
+  // as a click carrying `detail === 0`; it picks too, and pressing it again on
+  // the picked row enters — otherwise the pickers would be mouse-only again.
+  check('a single click picks a row and a double click enters it',
     liveIn('DirectoryBrowser', /onDoubleClick: \(\) => handleEntry\(entry\)/u) &&
-      liveIn('DirectoryBrowser', /onClick: \(event\) => \{ if \(event\.detail === 0\) handleEntry\(entry\) \}/u),
-    'a single click navigates again, so the listing cannot be read without leaving it')
+      liveIn('DirectoryBrowser', /if \(event\.detail === 0 && isPicked\) \{ handleEntry\(entry\); return \}/u) &&
+      liveIn('DirectoryBrowser', /setPicked\(full\)/u),
+    'a single click navigates again, or a keyboard user cannot pick and then enter')
   check('...and the remote workspace picker uses the same gesture',
     liveIn('RemoteWorkspaceDialog', /onDoubleClick: \(\) => handleEntry\(entry\)/u) &&
-      liveIn('RemoteWorkspaceDialog', /onClick: \(event\) => \{ if \(event\.detail === 0\) handleEntry\(entry\) \}/u),
-    'the two directory pickers disagree about how a row is entered')
+      liveIn('RemoteWorkspaceDialog', /if \(event\.detail === 0 && isPicked\) \{ handleEntry\(entry\); return \}/u) &&
+      liveIn('RemoteWorkspaceDialog', /setPicked\(full\)/u),
+    'the two directory pickers disagree about how a row is picked and entered')
+  // The pick has to be the thing the verb acts on, or it is decoration.
+  check('the mount target is the picked row, else the listed directory',
+    liveIn('DirectoryBrowser', /const target = picked \?\? path/u) &&
+      liveIn('DirectoryBrowser', /remotePath: target,/u),
+    'the pick is decoration: the request still mounts the listed directory')
+  check('...and creating a workspace uses the same rule',
+    liveIn('RemoteWorkspaceDialog', /const target = picked \?\? path/u) &&
+      liveIn('RemoteWorkspaceDialog', /remotePath: target,/u),
+    'a workspace would be created at the listed directory no matter which row was picked')
+  // A refresh can remove the row the pick named. The pick must go with it, or the
+  // button keeps acting on a directory that is no longer on screen.
+  check('...and a new listing drops the pick',
+    liveIn('DirectoryBrowser', /setPicked\(null\)/u) &&
+      liveIn('RemoteWorkspaceDialog', /setPicked\(null\)/u),
+    'an invisible target survives a refresh')
+  check('the picked row is painted and announced',
+    /\.sshwsp-entry-picked \{[^}]*box-shadow/u.test(source) &&
+      (source.match(/'aria-current': isPicked \? 'true' : undefined/gu) ?? []).length === 2,
+    'a pick with no visible state is a pick the user cannot verify')
+  // Both buttons name their target, and the dialog says it in words: the path bar
+  // keeps showing the LISTED directory, so a pick that only changes a tooltip
+  // leaves the user reading one path while the click uses another.
+  check('the target is stated in words, not only in a tooltip',
+    /t\('browser\.picked', \{ path: target \}\)/u.test(source) &&
+      /t\('remote\.picked', \{ path: target \}\)/u.test(source) &&
+      /title: target \?\? undefined/u.test(source) &&
+      (source.match(/'browser\.picked': '[^']*'|'remote\.picked': '[^']*'/gu) ?? []).length === 4,
+    'the visible path and the acted-on path can disagree without a word about it')
 
   // ONE scrollport per dialog, and it is the LIST — not the body. Both listings
   // used to carry a max-height of their own inside a body that ALSO scrolled;
@@ -1221,18 +1549,33 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
         /resolveTargets\(clickedRow, selection\?\.items\)/u.test(bodyOf('rowMenuModel'))
     })(),
     'the bridge decided the target set before resolveTargets could')
-  check('the row menu is 220px and runs compact (12px labels, 24px rows); the chooser keeps its width and two-line size',
-    /\.sshwsp-flowmenu \{[^}]*width: 220px/u.test(source) &&
-      /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem \{ min-height: 24px; gap: 6px; padding: 3px 6px; \}/u.test(source) &&
-      /\.sshwsp-flowmenu:not\(\.sshwsp-flowmenu-roomy\) \.sshwsp-menuitem-title \{ font-size: var\(--sshwsp-font-xs\); \}/u.test(source) &&
-      // The compact rules must not leak into the chooser: its rows keep the
-      // shared base (13px title, 9px 10px padding) because descriptions are
-      // its whole point.
-      /\.sshwsp-menuitem-title \{ display: block; font-size: var\(--sshwsp-font-sm\);/u.test(source) &&
-      /\.sshwsp-flowmenu-roomy \.sshwsp-menuitem \{ align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: var\(--sshwsp-radius-sm\); \}/u.test(source) &&
-      /\.sshwsp-flowmenu-roomy \{ width: 250px;/u.test(source) &&
+  check('the fallback menu wears the Host context menu metrics, and the chooser keeps its two-line size',
+    // The plugin sheet is what draws when the Host has no context-menu service —
+    // and what draws when the Host refuses to open one. It stands in for the
+    // Host's own menu, so it has to measure like it: content-sized between 144px
+    // and 360px, a 16px sheet radius, 34px rows at 6px 8px padding with a 12px
+    // item radius, and a .5px rule inset by 8px. It used to run 24px rows at a
+    // 12px label inside a fixed 220px sheet, which read as a different menu.
+    /\.sshwsp-flowmenu \{[^}]*width: max-content; min-width: min\(144px, calc\(100vw - 24px\)\); max-width: min\(360px, calc\(100vw - 24px\)\)/u.test(source) &&
+      /\.sshwsp-flowmenu \{ position: fixed;[^}]*border-radius: var\(--sshwsp-radius-lg\)/u.test(source) &&
+      /\.sshwsp-menuitem \{[^}]*min-height: 34px;[^}]*padding: 6px 8px;[^}]*border-radius: var\(--sshwsp-radius-md\)/u.test(source) &&
+      /\.sshwsp-menusep \{ height: 0\.5px; margin: 3px 8px;/u.test(source) &&
+      // The chooser keeps its own geometry: two-line rows are its whole point,
+      // so it is the one sheet that is fixed-width and lets the label wrap.
+      /\.sshwsp-flowmenu-roomy \{ width: 250px; max-width: none;/u.test(source) &&
+      /\.sshwsp-flowmenu-roomy \.sshwsp-menuitem \{ align-items: flex-start; gap: 10px; min-height: 0; padding: 9px 10px; \}/u.test(source) &&
+      /\.sshwsp-flowmenu-roomy \.sshwsp-menuitem-text \{ overflow: visible; white-space: normal; \}/u.test(source) &&
       /sshwsp-flowmenu sshwsp-flowmenu-roomy/u.test(source),
-    'menu widths or row density drifted (compact geometry leaked into the chooser?)')
+    'the fallback menu stopped matching the Host menu it stands in for, or the chooser lost its two-line rows')
+  check('...and a content-sized sheet is measured, not assumed',
+    // The companion to the rule above: the old clamp subtracted a fixed 220px,
+    // which would slide a 360px menu off the right edge. It has to read the
+    // mounted element — and keep the constant only as the not-yet-laid-out
+    // fallback.
+    /const sheetWidth = el\.getBoundingClientRect\(\)\.width/u.test(source) &&
+      /el\.appendChild|document\.body\.appendChild\(el\)[\s\S]{0,600}?getBoundingClientRect\(\)\.width/u.test(source) &&
+      !/window\.innerWidth - FLOW_MENU_WIDTH - 8/u.test(source),
+    'the clamp went back to a fixed width, so a wide menu can overflow')
   check('...through the SAME route the browser dialog uses',
     liveIn('mountRowAsRoot', /fetchJson\(API\.mount,/u) &&
       // `handleMount` is a `const … = async () =>` arrow inside the dialog
@@ -1888,34 +2231,25 @@ console.log('\n[the scheme rules are published, not duplicated]')
   check('no entry into the removed tab survives anywhere',
     !/browse\.entry/u.test(source) && !/browse\.tabTitle/u.test(source) && !/browse\.slotMissing/u.test(source),
     'the panel still advertises a tab that is gone')
-  // The menu is a model plus two renderers: the host's own context menu when
-  // the host publishes one, and this plugin's floating menu otherwise. Both
-  // must exist — the plugin still declares rc.1 as its floor — and the service
-  // must stay out of `inject`, or a host without it loads no client at all.
-  check('the tree menu is drawn by two renderers, one of them the host\'s',
+  // The menu has ONE renderer, and it is this plugin's. Handing the model to
+  // the host's context-menu service is what made the same right-click look like
+  // the host in a local tree and like the plugin in a remote one.
+  check('the tree menu is drawn by this plugin and nothing else',
     /function renderMenuDom \(model, x, y\)/u.test(source) &&
-      /function openTreeMenu \(ctx, model, value, x, y\)/u.test(source) &&
-      /if \(openHostMenu\(menus, value, x, y\)\) return null/u.test(source) &&
-      /return renderMenuDom\(model, x, y\)/u.test(source),
-    'one of the two renderers is gone, or openTreeMenu stopped falling back')
-  check('...and the optional service never enters the inject list',
+      /function openTreeMenu \(model, x, y\) \{\s*return renderMenuDom\(model, x, y\)/u.test(source) &&
+      !/hostMenuEntries|openHostMenu|registerHostMenuProvider|hostMenusOf/u.test(source),
+    'a second renderer is back, or openTreeMenu stopped drawing')
+  check('...and the client still asks the host for nothing extra',
     /const inject = \['slots', 'locale'\]/u.test(source) &&
-      /ctx\?\.get\?\.\('contextMenus'\)/u.test(source),
-    'inject grew a peer that older hosts do not provide, so the plugin stops loading there')
-  check('...registering the provider only when the service answered',
-    /const menus = hostMenusOf\(ctx\)/u.test(source) &&
-      /id: HOST_MENU_ID/u.test(source) &&
-      /target: HOST_MENU_TARGET/u.test(source),
-    'the provider is registered without a service, or opened against the wrong target')
-  check('...and a right-click inside either menu is not a menu gesture',
-    /target\.closest\(`\[\$\{TASK_MENU_ATTR\}\], \[\$\{CONTEXT_MENU_ATTR\}\]`\)/u.test(source) &&
-      /menus\.close\?\.\(\)/u.test(source),
-    'the host menu reopens over itself, or closing the plugin menu leaves it behind')
+      !/\.get\??\.\('contextMenus'\)/u.test(source),
+    'the menu grew a host service dependency')
+  check('...while a right-click inside a host menu is still not a menu gesture',
+    /target\.closest\(`\[\$\{TASK_MENU_ATTR\}\], \[\$\{CONTEXT_MENU_ATTR\}\]`\)/u.test(source),
+    'right-clicking inside a menu reopens ours over it')
   const keys = ['transfer.downloadTargetTitle',
     'transfer.downloadTargetSubtitle', 'transfer.chooseTarget', 'transfer.downloadQueued',
     'transfer.skippedLocal',
     'rowmenu.deleteOneFile', 'rowmenu.deleteOneDir', 'rowmenu.deleteMany', 'rowmenu.deleteCounts',
-    'menu.disabledReason', 'menu.actionFailed',
     'rowmenu.rename', 'rowmenu.delete', 'rowmenu.renameTitle',
     'rowmenu.renameFail', 'rowmenu.deleteFail', 'rowmenu.deleteDone', 'rowmenu.deletePartial']
   const missingZh = keys.filter(key => !new RegExp(`'${key.replace(/\./g, '\\.')}':`, 'u').test(source))

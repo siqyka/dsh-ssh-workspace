@@ -19,7 +19,8 @@
 | [upstream-workarounds.md](./upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 | 完成 |
 | [upstream-workaround-pattern.md](./upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、四条反模式与成本边界 | 完成 |
 | [troubleshooting.md](./troubleshooting.md) | 排查与常见问题：错误语义、停用围栏、连接问题、已知限制 | 完成 |
-| [FF/README.md](./FF/README.md) | **工作流与判定**：01–08 已实施并从本目录删除，索引留在页内；09 承接 2026-11-23 全仓审查（R-01…R-10 已落地，R-11 待真机）与不再做判定 | 保留（R-11 待真机） |
+| [manual-test-checklist.md](./manual-test-checklist.md) | **手动验收清单**：只列自动化测不到、必须真人在 GUI 里做的部分——13 组（主机 / 工作区生命周期 / 文件读写围栏 / 编辑器 / 文件树 / 传输 / 执行与终端 / 转发 / 路径直通 / 远端技能 / 诊断 / 表现层 / issue #11），每条注明为何必须手测 | 完成 |
+| [FF/README.md](./FF/README.md) | **已完成工作流索引**：01–10 的方案与任务书均已删除，索引指向最终落点；保留 client chunk 宿主事实与「不再做」判定摘要 | 完成 |
 
 状态取值：初稿 = 主要内容已成；完成 = 已校对。
 

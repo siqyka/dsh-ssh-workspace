@@ -1273,10 +1273,13 @@ async function postChunk (route, body, chunks = []) {
   const dir = mkdtempSync(path.join(tmpdir(), 'dsh-routes-detach-'))
   try {
     const store = new HostConfigStore(path.join(dir, 'dsh-ssh.json'))
-    const calls = { disabled: [], enabled: [], archived: [], unarchived: [], deleted: [] }
+    const calls = { disabled: [], enabled: [], archived: [], unarchived: [], deleted: [], created: 0 }
     const record = { id: 'ws-1', path: 'ssh://alpha/home/dev/proj', title: 'proj', sessionIds: ['s1', 's2'] }
+    // Mutable on purpose: the "enable must not create a workspace" case below
+    // needs a registry that no longer knows the path.
+    const records = [record]
     const registry = {
-      list: () => [record],
+      list: () => records.slice(),
       async archiveSession (id) {
         calls.archived.push(id)
         // A session with running work is refused by the registry; the route
@@ -1285,7 +1288,7 @@ async function postChunk (route, body, chunks = []) {
       },
       async unarchiveSession (id) { calls.unarchived.push(id) },
       async delete (id) { calls.deleted.push(id) },
-      async createCanonical () { return record },
+      async createCanonical () { calls.created += 1; return record },
     }
     const fakeRouter = {
       listRoots: () => [],
@@ -1436,6 +1439,28 @@ async function postChunk (route, body, chunks = []) {
       check('enable cleared the disabled list', !store.isWorkspaceDisabled(record.path))
       check('enable unarchived the workspace sessions', calls.unarchived.length >= 2, JSON.stringify(calls.unarchived))
       check('enable reports the workspace as registered', body.registered === true, state.body)
+    }
+
+    // Enabling must NOT create a workspace record. The row is created by an
+    // explicit mount (or by a session running work there), never as a side
+    // effect of pressing "enable" on a detached path: after the user deletes
+    // the workspace and its sessions, one more enable used to bring a workspace
+    // back that nobody asked for.
+    {
+      records.length = 0
+      const { res, state } = fakeRes()
+      await findDetach(ROUTES.enable).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { workspacePath: record.path },
+      }), res)
+      const body = JSON.parse(state.body)
+      check('enable serves a path the registry forgot', body.ok === true, state.body)
+      check('enable creates no workspace record', calls.created === 0, String(calls.created))
+      check('...and reports the workspace as unregistered', body.registered === false, state.body)
+      check('...and unarchives nothing, since there is no record to restore into',
+        body.unarchived.length === 0, state.body)
+      records.push(record)
     }
 
     // A non-remote path is refused outright on enable.
@@ -1932,6 +1957,61 @@ async function postChunk (route, body, chunks = []) {
       check('...and a blank list is stored as an empty array, not omitted',
         Array.isArray(rows.find(row => row.alias === 'alpha')?.tags),
         JSON.stringify(rows.find(row => row.alias === 'alpha')?.tags))
+    }
+
+    // A host that ALSO has a Host block in ~/.ssh/config is not the store's to
+    // remove or to edit. Deleting the shadowing record used to succeed and the
+    // host simply came back (as an ssh-config row) — "delete did nothing".
+    // Editing it silently changed what every other ssh client resolves, which
+    // is the harm the create-time alias check exists to prevent, skipped here
+    // because a store record already existed.
+    {
+      const realAliases = contractEngine.store.sshConfigAliases
+      contractEngine.store.sshConfigAliases = () => ['alpha']
+      try {
+        const { res, state } = fakeRes()
+        await findRoute(ROUTES.hostDelete).handler(fakeReq({
+          method: 'POST',
+          headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+          body: { alias: 'alpha' },
+        }), res)
+        const body = JSON.parse(state.body)
+        check('deleting a host that ~/.ssh/config also defines answers 409',
+          state.status === 409, `${state.status} ${state.body}`)
+        check('...and points at the config file instead',
+          /~\/\.ssh\/config/u.test(body.error) && /Host block/u.test(body.error), state.body)
+        check('...and the store record survives the refusal',
+          contractEngine.store.entryStore.load().some(row => row.alias === 'alpha'),
+          JSON.stringify(contractEngine.store.entryStore.load().map(row => row.alias)))
+
+        const { res: editRes, state: editState } = fakeRes()
+        await findRoute(ROUTES.hostSave).handler(fakeReq({
+          method: 'POST',
+          headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+          body: { originalAlias: 'alpha', alias: 'alpha', host: '10.0.0.77', user: 'dev', auth: { kind: 'agent' } },
+        }), editRes)
+        check('editing a store record whose alias is in ~/.ssh/config answers 409',
+          editState.status === 409, `${editState.status} ${editState.body}`)
+        check('...and the edit did not reach the store',
+          contractEngine.store.entryStore.load().find(row => row.alias === 'alpha')?.host !== '10.0.0.77',
+          JSON.stringify(contractEngine.store.entryStore.load().find(row => row.alias === 'alpha')))
+
+        // Renaming away from the shadowing alias is the way out, and it works.
+        const { res: renameRes, state: renameState } = fakeRes()
+        await findRoute(ROUTES.hostSave).handler(fakeReq({
+          method: 'POST',
+          headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+          body: { originalAlias: 'alpha', alias: 'alpha-store', host: '10.0.0.77', user: 'dev', auth: { kind: 'agent' } },
+        }), renameRes)
+        check('renaming the record to a free alias is allowed',
+          renameState.status === 200, `${renameState.status} ${renameState.body}`)
+        check('...and the record moved rather than forking',
+          contractEngine.store.entryStore.load().some(row => row.alias === 'alpha-store') &&
+          !contractEngine.store.entryStore.load().some(row => row.alias === 'alpha'),
+          JSON.stringify(contractEngine.store.entryStore.load().map(row => row.alias)))
+      } finally {
+        contractEngine.store.sshConfigAliases = realAliases
+      }
     }
 
     // A transport failure is not the caller's fault: 502.

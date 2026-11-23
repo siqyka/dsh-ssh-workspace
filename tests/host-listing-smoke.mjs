@@ -404,6 +404,32 @@ console.log('\n[10] a config edit is detectable without re-parsing')
   check('and it is stable', missing.configStamp() === missing.configStamp(), missing.configStamp())
 }
 
+console.log('\n[11] a store record that shadows a config alias says so')
+{
+  // The panel decides whether to offer 编辑/删除 from `source`. A store record
+  // whose alias ALSO has a Host block in ~/.ssh/config used to look like a
+  // plain store row, so both buttons were offered — but deleting it only
+  // uncovered the block (the host came back) and editing it shadowed the file
+  // for every other ssh client. The row now reports the overlap.
+  const { store, dir } = storeWith({
+    configText: 'Host shared\n  HostName shared.example\n  Port 22\n',
+    entries: [
+      { alias: 'shared', host: '10.0.0.9', port: 22, user: 'dev', auth: { kind: 'agent' } },
+      { alias: 'solo', host: '10.0.0.10', port: 22, user: 'dev', auth: { kind: 'agent' } },
+    ],
+  })
+  track(dir)
+  const listing = store.listing()
+  const shared = listing.rows.find(row => row.alias === 'shared')
+  const solo = listing.rows.find(row => row.alias === 'solo')
+  check('the shadowing record is still one store row', shared?.source === 'store', JSON.stringify(shared))
+  check('...and it is marked as also living in the config', shared?.configAlias === true, JSON.stringify(shared))
+  check('a store-only record carries no such mark', solo !== undefined && solo.configAlias === undefined,
+    JSON.stringify(solo))
+  check('the shadowed alias appears once, not twice',
+    listing.rows.filter(row => row.alias === 'shared').length === 1, JSON.stringify(listing.rows))
+}
+
 for (const cleanup of cleanups) cleanup()
 
 console.log(`\n=== ${passed} passed, ${failures} failed ===`)

@@ -447,7 +447,7 @@ Explicitly **not supported**:
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | Upstream workaround register: host defects, the one-line fix, the self-retiring signal, and the removal steps |
 | [upstream-workaround-pattern.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workaround-pattern.md) | **The retirement pattern for upstream workarounds**: when it applies, the seven pieces, tri-state probing, a reachable notification channel, anti-patterns, and its cost boundary |
 | [troubleshooting.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/troubleshooting.md) | Troubleshooting & FAQ: error semantics, connection issues, known limitations |
-| [FF/README.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/FF/README.md) | **Pending workflows**: design + task brief; 01–08 are done, 09 carries the remaining review items and the explicit non-goals |
+| [FF/README.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/FF/README.md) | **Completed-workflow index**: designs and task briefs for 01–10 were removed per convention; the index points to their final homes and keeps the client-chunk host facts and the explicit non-goals |
 | [CONTRIBUTING.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CONTRIBUTING.md) | Contributing: environment, the three test tiers, code conventions, before you ship |
 | [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY.md) | Security policy: how credentials are stored, host-key verification, known boundaries, reporting |
 | [CHANGELOG.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CHANGELOG.md) | Changelog: additions, fixes and changes per version |

@@ -180,6 +180,49 @@ const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFile
 }
 
 // ---------------------------------------------------------------------------
+// A detached root nested inside a MOUNTED one is still served by the parent
+// ---------------------------------------------------------------------------
+// The ordinary case that broke: `/home/me/project` is mounted, and
+// `/home/me/project/plugin` was mounted too and then detached. The parent tree
+// lists the child directory, so a click must not answer "detached" — the path
+// is still served, by the parent root. The fence is about paths nothing serves.
+{
+  const engine = new SshWorkspaceEngine({})
+  engine.withSftp = async () => { throw new Error('reached SFTP') }
+  const router = new RemoteFileSystem({ engine })
+  // Production wires this in `attachFileSystem`; the fence reads it to ask which
+  // roots are still served.
+  engine.attachFileSystem(router)
+  const parent = formatRemotePath('alpha', '/home/dev/proj')
+  const nested = formatRemotePath('alpha', '/home/dev/proj/plugin')
+  router.addRoot('alpha', '/home/dev/proj')
+  router.addRoot('alpha', '/home/dev/proj/plugin')
+  router.disableRoot(nested)
+
+  check('the nested workspace is recorded as detached', router.listDisabled().includes(nested), JSON.stringify(router.listDisabled()))
+  check('...but the mounted parent root still serves it', !router.isDetached('alpha', '/home/dev/proj/plugin/x.js'), 'a detached child must not break the tree of the workspace that contains it')
+  check('...including the nested root itself', !router.isDetached('alpha', '/home/dev/proj/plugin'))
+  check('the detached root is not in the served set', !router.listRoots().includes(nested))
+
+  // The read must reach SFTP: the fake above throws, and WHICH layer answered is
+  // the whole assertion — a fence refusal would say "detached".
+  let reached = ''
+  try {
+    await router.readText({ targetKey: `${nested}/x.js`, displayPath: `${nested}/x.js` })
+  } catch (error) {
+    reached = error instanceof Error ? error.message : String(error)
+  }
+  check('a read inside the nested workspace reaches SFTP instead of the fence', reached === 'reached SFTP', reached)
+
+  // The reverse nesting: the child is mounted and the parent is detached. The
+  // path is served by the child, so it stays reachable; its siblings are not.
+  router.addRoot('alpha', '/home/dev/proj/plugin')
+  router.disableRoot(parent)
+  check('a mounted child survives its parent being detached', !router.isDetached('alpha', '/home/dev/proj/plugin/x.js'))
+  check('...while a sibling under the detached parent is still refused', router.isDetached('alpha', '/home/dev/proj/other/x.js'))
+}
+
+// ---------------------------------------------------------------------------
 // The command seams: shell, terminal, subprocess
 // ---------------------------------------------------------------------------
 {
@@ -283,6 +326,34 @@ const { formatRemotePath, isInsideAnyRemoteWorkspace } = await import(pathToFile
     .execute({ workspacePath: 'ssh://alpha/home/dev/proj' }, {})
   check('enabling does not probe through the fenced router', routerProbes === beforeEnable, `router probes=${routerProbes}`)
   check('enabling a detached workspace succeeds', enable.ok === true, JSON.stringify(enable))
+}
+
+// Enabling is not creating.
+//
+// The tool and the route share one rule: `enable` answers "serve this path
+// again". It must not call `createCanonical` when the registry no longer knows
+// the path — that turned one click on a stale detached row into a brand-new
+// workspace record nobody asked for (detach, delete the sessions, enable again).
+// The registry here HAS `createCanonical`, so only the rule itself can keep it
+// from running.
+{
+  const { workspaceTools } = await import(pathToFileURL(path.join(pluginRoot, 'lib/surface/tools.js')).href)
+  const engine = new SshWorkspaceEngine({})
+  engine.withSftp = async (_alias, fn) => await fn({ stat: (_path, cb) => cb(undefined, { isDirectory: () => true }) })
+  const router = new RemoteFileSystem({ engine })
+  let created = 0
+  const registry = {
+    list: () => [],
+    async createCanonical () { created += 1; return { id: 'ws-new', path: 'ssh://alpha/home/dev/proj', sessionIds: [] } },
+    async unarchiveSession () { throw new Error('there is no record to restore into') },
+  }
+  const tools = workspaceTools({ get: name => (name === 'workspaceRegistry' ? registry : undefined) }, engine, router, { list: () => [] }, { list: () => [] })
+  const enable = await tools.find(tool => tool.name === 'ssh_workspace_enable')
+    .execute({ workspacePath: 'ssh://alpha/home/dev/proj' }, {})
+  check('the tool enable serves a path the registry forgot', enable.ok === true, JSON.stringify(enable))
+  check('the tool enable creates no workspace record', created === 0, `createCanonical calls=${created}`)
+  check('...and reports the workspace as unregistered', enable.registered === false, JSON.stringify(enable))
+  check('...and claims no session was unarchived', enable.unarchived.length === 0, JSON.stringify(enable))
 }
 
 // The probe's FAILURE has to name what it probed.

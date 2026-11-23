@@ -222,6 +222,23 @@ check('an ssh-config host hides edit and delete, but keeps disconnect',
   actionKeyed(sshConfigCard, 'delete') === undefined &&
   actionKeyed(sshConfigCard, 'disconnect') !== undefined)
 
+// A store record whose alias ALSO has a Host block is half-owned: the panel used
+// to offer both buttons because it only looked at `source`, so deleting the
+// record uncovered the block (the host came back) and editing it shadowed the
+// file for every other ssh client. `configAlias` is what the listing route adds
+// for exactly this overlap; the card must honour it and say why.
+const shadowedCard = renderCard(connected, { host: { source: 'store', configAlias: true } })
+check('a store record that shadows a config alias hides edit and delete',
+  actionKeyed(shadowedCard, 'edit') === undefined &&
+  actionKeyed(shadowedCard, 'delete') === undefined)
+check('...and it still offers the actions that do not rewrite the host',
+  actionKeyed(shadowedCard, 'test') !== undefined &&
+  actionKeyed(shadowedCard, 'browse') !== undefined)
+check('...and it says where the host actually lives',
+  [...elementsOf(shadowedCard)].some(node => node.props?.children === 'hosts.configShadow'))
+check('a plain store record is still editable',
+  actionKeyed(neverConnected, 'edit') !== undefined && actionKeyed(neverConnected, 'delete') !== undefined)
+
 // ---- the meta row asks for interpolated keys --------------------------------
 //
 // The card builds both of these by interpolation — `t(`hosts.auth.${host.auth}`)`

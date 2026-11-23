@@ -4,20 +4,20 @@
  * ## What this suite drives
  *
  * The row menu and the blank-area menu are built by `rowMenuModel` /
- * `blankMenuModel` and drawn by ONE of two renderers: the host context menu
- * (`ctx.contextMenus`) when the host publishes one, and the plugin's own
- * floating menu otherwise. Both shipped halves are lifted out of
- * `lib/client/client.js` by their own source text and driven with stubs, so the
- * assertions are about behaviour — order, separators, disabled conditions, the
- * host entry shape — and not about strings happening to sit next to each other.
+ * `blankMenuModel` and drawn by `renderMenuDom`, this plugin's own floating
+ * menu — one renderer, the same one in a local tree and in a remote one. The
+ * shipped section is lifted out of `lib/client/client.js` by its own source
+ * text and driven with stubs, so the assertions are about behaviour — order,
+ * separators, disabled conditions, and what the drawing pass receives — and not
+ * about strings happening to sit next to each other.
  *
- * ## The two failures this catches
+ * ## The failures this catches
  *
  * A model that reads a request (a policy lookup, a listing) makes opening the
- * menu wait on the network, and the host gives `resolve` one second. A host
- * entry whose disabled reason lives only in a tooltip is a menu that offers an
- * action and refuses it on click, because the host menu has no tooltip. Both
- * are asserted here.
+ * menu wait on the network, so the model stays pure and the policy answer
+ * arrives after the menu is up. A second renderer — the host's context-menu
+ * service — is what made one gesture look like two different menus, so the
+ * source must not name it at all.
  *
  * Run: node tests/tree-menu-model-smoke.mjs
  */
@@ -25,7 +25,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clientSource } from './support/client-source.mjs'
+import { clientPartSource, clientSource } from './support/client-source.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginRoot = path.resolve(here, '..')
@@ -55,15 +55,6 @@ const endAt = source.indexOf(END, startAt + 1)
 if (startAt < 0 || endAt < 0) throw new Error('client.js no longer marks the menu model section')
 const SECTION = source.slice(startAt, endAt)
 
-/** The shipped `hostMenuEntries`, for the "does it fetch" source assertion. */
-const entriesSource = SECTION.slice(
-  SECTION.indexOf('function hostMenuEntries ('),
-  SECTION.indexOf('function menuGlyphComponent ('),
-)
-if (entriesSource === '') throw new Error('client.js no longer defines hostMenuEntries()')
-
-const GLYPHS = { file: ['M0 0'], rename: ['M1 1'] }
-
 /**
  * Build the shipped menu section with stubs for everything it talks to.
  *
@@ -76,10 +67,7 @@ function build () {
   const state = { now: 1000000, policyAnswer: null, policyCalls: 0, lastClaim: null }
   const FakeDate = { now: () => state.now }
   const jsx = (type, props) => ({ type, props })
-  const dict = {
-    'menu.disabledReason': '{label} ({reason})',
-    'menu.actionFailed': 'The action failed',
-  }
+  const dict = {}
   const translate = (key, params) => {
     const template = dict[key] ?? key
     if (params === undefined) return template
@@ -121,14 +109,14 @@ function build () {
     'translate', 'entryNameOf', 'resolveTargets', 'mentionToken', 'remoteTargetOf', 'remoteDirOf', 'rowOfPath',
     'addPathsToTask', 'downloadRows', 'uploadTreeRow', 'copyRowPath', 'requestRowNewFile', 'requestRowNewFolder',
     'requestRowRename', 'requestRowDelete', 'mutationPolicyOf', 'openMenuAt', 'createTransferItem',
-    'createMenuSeparator', 'jsx', 'MENU_GLYPH_PATHS', 'Date',
-    SECTION + '\nreturn { rowMenuModel, blankMenuModel, policyGate, hostMenuEntry, hostMenuEntries, hostMenusOf, openHostMenu, openTreeMenu, registerHostMenuProvider, disposeHostMenuProvider, policyOf, cachedPolicyOf, renderMenuDom, HOST_MENU_ID, HOST_MENU_TARGET, POLICY_GATED_ROW_IDS }',
+    'createMenuSeparator', 'jsx', 'Date',
+    SECTION + '\nreturn { rowMenuModel, blankMenuModel, policyGate, openTreeMenu, policyOf, cachedPolicyOf, renderMenuDom, POLICY_GATED_ROW_IDS }',
   )
   const api = factory(
     translate, entryNameOf, resolveTargets, mentionToken, remoteTargetOf, remoteDirOf, rowOfPath,
     record('addPathsToTask'), record('downloadRows'), record('uploadTreeRow'), record('copyRowPath'),
     record('requestRowNewFile'), record('requestRowNewFolder'), record('requestRowRename'), record('requestRowDelete'),
-    mutationPolicyOf, openMenuAt, createTransferItem, createMenuSeparator, jsx, GLYPHS, FakeDate,
+    mutationPolicyOf, openMenuAt, createTransferItem, createMenuSeparator, jsx, FakeDate,
   )
   return { api, calls, state, record }
 }
@@ -288,108 +276,29 @@ check('...and the unknown-root policy says so instead',
   blankRun.api.blankMenuModel({ target, policy: { readOnly: false, sessionFound: false } })
     .filter((e) => e.disabled === true).every((e) => e.reason === 'rowmenu.localRootUnknown'))
 
-// ---- the host renderer ------------------------------------------------------
+// ---- one renderer -----------------------------------------------------------
 
-console.log('\n[the host renderer]')
-const hostRun = build()
-const menus = fakeMenus()
-const host = fakeCtx(menus)
-const hostModel = hostRun.api.rowMenuModel({ ctx: host.ctx, absPath: REMOTE_DIR, isDir: true, root: ROOT, sessionId: 's1' })
-const value = { blank: false, path: REMOTE_DIR, isDir: true, root: ROOT, sessionId: 's1', selection: null }
-const drawn = hostRun.api.openTreeMenu(host.ctx, hostModel, value, 10, 20)
-check('a host with the service draws the menu', drawn === null && menus.opened !== null)
-check('...registered under the plugin target',
-  menus.registrations.length === 1 &&
-  menus.registrations[0].id === 'ssh-workspace.tree' &&
-  menus.registrations[0].target === 'ssh-workspace.files' &&
-  menus.registrations[0].order === 100)
-check('...opened at the pointer with the value the model needs',
-  menus.opened.point.x === 10 && menus.opened.point.y === 20 &&
-  menus.opened.target.kind === 'ssh-workspace.files' && menus.opened.target.value === value)
-const entries = menus.registrations[0].resolve(value)
-check('resolve answers with an array, synchronously', Array.isArray(entries))
-check('...one entry per descriptor', entries.length === hostModel.length)
-check('...each naming an icon the plugin publishes',
-  entries.every((e) => typeof e.icon?.key === 'string' && e.icon.key.startsWith('ssh-workspace:')))
-check('...each with a run function and a failure label',
-  entries.every((e) => typeof e.run === 'function' && e.failureLabel === 'The action failed'))
-check('...and a rule only where the model has one',
-  entries.filter((e) => e.separatorBefore === true).map((e) => e.id).join(',') === 'download,new-file')
-check('...carrying the danger flag through',
-  entries.filter((e) => e.danger === true).map((e) => e.id).join(',') === 'delete')
-check('the row-menu marks are published under the host icon slot',
-  host.icons.length === Object.keys(GLYPHS).length &&
-  host.icons.map((entry) => entry.spec.key).join(',') === 'ssh-workspace:file,ssh-workspace:rename')
-check('...as components that draw the same paths',
-  host.icons[0].component().type === 'svg' && host.icons[0].component().props.children.length === 1)
-
-// ---- what resolve must NOT do ----------------------------------------------
-
-console.log('\n[resolve reads the cache, never the wire]')
-check('the entries builder names no fetch and awaits nothing',
-  !/fetchJson|\bawait\b/u.test(entriesSource) && /cachedPolicyOf\(claim\)/u.test(entriesSource))
-const bg = build()
-const beforeCalls = bg.state.policyCalls
-const immediate = bg.api.hostMenuEntries(host.ctx, value)
-check('an empty cache still answers at once, and asks in the background',
-  Array.isArray(immediate) && bg.state.policyCalls === beforeCalls + 1)
-check('...with every verb enabled, because nothing is known yet',
-  immediate.every((e) => e.disabled !== true))
-const cached = build()
-cached.state.policyAnswer = { readOnly: true }
-await cached.api.policyOf(CLAIM)
-const afterFill = cached.state.policyCalls
-const answered = cached.api.hostMenuEntries(host.ctx, value)
-check('a cached answer disables the four verbs without another round trip',
-  answered.filter((e) => e.disabled === true).map((e) => e.id).join(',') === 'new-file,new-folder,rename,delete' &&
-  cached.state.policyCalls === afterFill)
-const renameEntry = answered.find((e) => e.id === 'rename')
-check('...and states the reason in the label, because the host has no tooltip',
-  renameEntry.label === 'rowmenu.rename (rowmenu.readonly)', renameEntry.label)
-check('...while an enabled entry keeps its plain label',
-  answered.find((e) => e.id === 'download').label === 'transfer.download')
-const ttl = build()
-ttl.state.policyAnswer = { readOnly: true }
-await ttl.api.policyOf(CLAIM)
-ttl.state.now += 30001
-check('an answer older than 30 s is not trusted', ttl.api.cachedPolicyOf(CLAIM) === null)
-
-// ---- registration is reentrant, and absent when unsupported ----------------
-
-console.log('\n[one provider, or none]')
-const twice = build()
-const twiceMenus = fakeMenus()
-const twiceHost = fakeCtx(twiceMenus)
-const twiceModel = twice.api.rowMenuModel({ ctx: twiceHost.ctx, absPath: REMOTE_DIR, isDir: true, root: ROOT, sessionId: 's1' })
-twice.api.openTreeMenu(twiceHost.ctx, twiceModel, value, 1, 2)
-twice.api.openTreeMenu(twiceHost.ctx, twiceModel, value, 1, 2)
-check('a second open does not register a second provider',
-  twiceMenus.registrations.length === 1 && twiceMenus.disposed === 0)
-const otherMenus = fakeMenus()
-const otherHost = fakeCtx(otherMenus)
-twice.api.openTreeMenu(otherHost.ctx, twiceModel, value, 1, 2)
-check('...but a different service replaces the one it had',
-  otherMenus.registrations.length === 1 && twiceMenus.disposed === 1)
-check('...and publishes the icons once', twiceHost.icons.length === Object.keys(GLYPHS).length)
-const plain = build()
-const plainHost = fakeCtx(null)
-const drawnPlain = plain.api.openTreeMenu(plainHost.ctx, hostModel, value, 3, 4)
-check('a host without the service gets the plugin menu',
-  drawnPlain !== null && plainHost.icons.length === 0)
-check('...drawing one node per descriptor, in order',
-  [...drawnPlain.nodes.keys()].join(',') === hostModel.map((e) => e.id).join(','))
+console.log('\n[one renderer, and it is ours]')
+const drawRun = build()
+const drawModel = drawRun.api.rowMenuModel({ ctx: {}, absPath: REMOTE_DIR, isDir: true, root: ROOT, sessionId: 's1' })
+const drawnMenu = drawRun.api.openTreeMenu(drawModel, 12, 34)
+check('opening the menu draws it here', drawnMenu !== null && typeof drawnMenu.el === 'object')
+check('...one node per descriptor, in order',
+  drawnMenu !== null && [...drawnMenu.nodes.keys()].join(',') === drawModel.map((e) => e.id).join(','))
 check('...and one separator per rule',
-  drawnPlain.el.children.filter((child) => child.separator === true).length === 2)
-check('a get() that throws reads as "no service", not as a crash',
-  plain.api.hostMenusOf({ get () { throw new Error('nope') } }) === null)
-check('...and a service that is not an object reads the same way',
-  plain.api.hostMenusOf({ get: () => 42 }) === null)
-const noSlots = build()
-const noSlotMenus = fakeMenus()
-const noSlotHost = fakeCtx(noSlotMenus, { noSlots: true })
-const drawnNoSlot = noSlots.api.openTreeMenu(noSlotHost.ctx, hostModel, value, 0, 0)
-check('an icon slot that refuses does not stop the menu',
-  drawnNoSlot === null && noSlotMenus.registrations.length === 1)
+  drawnMenu !== null && drawnMenu.el.children.filter((child) => child.separator === true).length === 2)
+// The Host publishes a context-menu service; this plugin used to hand it the
+// model, so the same right-click answered with the Host's chrome in a local tree
+// and with the plugin's in a remote one. One gesture, one look.
+check('the drawing never asks the Host to draw',
+  !/\.get\??\.\('contextMenus'\)/u.test(source) &&
+  !/hostMenuEntries|openHostMenu|registerHostMenuProvider|disposeHostMenuProvider|hostMenusOf/u.test(source) &&
+  /function openTreeMenu \(model, x, y\) \{\s*return renderMenuDom\(model, x, y\)/u.test(source),
+  'a second renderer came back')
+check('...and both open paths use it',
+  /function openTreeMenu \(model, x, y\)/u.test(source) &&
+  (source.match(/const drawn = openTreeMenu\(model, x, y\)/gu) ?? []).length === 2,
+  'one of the two open paths still hands the model to a host renderer')
 
 // ---- the cache, and what it costs to open twice -----------------------------
 
@@ -446,43 +355,13 @@ check('a cache hit makes an entry recent, so eviction spares it',
 check('...and the genuinely coldest entry is the one that goes',
   lru.api.cachedPolicyOf({ sessionId: 's1', root: '/r1' }) === null)
 
-// ---- a host that publishes the service but refuses the provider -------------
-
-console.log('\n[a host that refuses the provider]')
-const refusing = build()
-const refusingHost = fakeCtx(null)
-const refusingMenus = {
-  registrations: 0,
-  register () { this.registrations += 1; throw new Error('target already taken') },
-  open () { throw new Error('never reached') },
-  close () {},
-}
-refusingHost.ctx.get = (name) => (name === 'contextMenus' ? refusingMenus : undefined)
-const attemptDraw = () => {
-  try { return refusing.api.openTreeMenu(refusingHost.ctx, hostModel, value, 5, 6) } catch { return null }
-}
-const refusedDraw = attemptDraw()
-check('a register that throws falls back to the plugin menu',
-  refusedDraw !== null && [...refusedDraw.nodes.keys()].length === hostModel.length)
-check('...rather than throwing out of the contextmenu handler',
-  refusingMenus.registrations === 1)
-const secondDraw = attemptDraw()
-check('...and the next open tries the host again instead of latching the failure',
-  secondDraw !== null && refusingMenus.registrations === 2)
-
-check('the icon registration is dropped together with the provider',
-  twiceHost.slot.disposed === 1, String(twiceHost.slot.disposed))
-
 // ---- the dictionaries -------------------------------------------------------
 
 console.log('\n[the two new strings]')
 const locale = readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.locale.js'), 'utf8')
-check("'menu.disabledReason' is defined in both dictionaries",
-  (locale.match(/'menu\.disabledReason':/gu) ?? []).length === 2)
-check("'menu.actionFailed' is defined in both dictionaries",
-  (locale.match(/'menu\.actionFailed':/gu) ?? []).length === 2)
-check('...and the template states the label and the reason in both',
-  locale.includes("'{label}（{reason}）'") && locale.includes("'{label} ({reason})'"))
+check('the host-menu-only strings are gone from both dictionaries',
+  (locale.match(/'menu\.disabledReason':/gu) ?? []).length === 0 &&
+  (locale.match(/'menu\.actionFailed':/gu) ?? []).length === 0)
 check('the gated verb list is the four write verbs',
   rowRun.api.POLICY_GATED_ROW_IDS.join(',') === 'new-file,new-folder,rename,delete')
 

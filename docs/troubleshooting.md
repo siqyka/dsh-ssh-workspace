@@ -55,7 +55,8 @@ Windows 把它当驱动器相对路径拼到进程 cwd 上，自然 ENOENT。这
 但该路径下的**一切**操作都会被拒绝——读写、列目录、变更监视、执行命令、开终端、glob / grep / git、传输，
 无一例外。这是停用造成的，**不是远端文件不存在**。
 
-判据是错误文案里带 `the remote workspace is detached`：
+判据是错误文案里带 `the remote workspace is detached`（**只有在没有别的根服务这条路径时才会出现**：
+父目录已挂载、子目录被单独停用的嵌套情形照常可读，那不是故障）：
 
 ```
 cannot access "ssh://myserver/home/user/project/src/app.ts": the remote workspace is detached

@@ -1132,6 +1132,33 @@ console.log('\n[source contract]')
       marks.includes('observer.disconnect()'))
   markCheck('...and the remover is idempotent (a stale remover cannot kill the new observer)',
     /if \(marksObserver !== observer\) return/u.test(marks))
+  // A detached workspace enabled outside this window leaves its rows wearing
+  // the block-everything marks. Nothing the user can click re-schedules a pass,
+  // so the only automatic way back is re-reading /status when they return —
+  // a bare pass would repaint from the very list that is stale.
+  markCheck('a return to the window re-reads /status instead of repainting from memory',
+    /function installMarkWakeups[\s\S]{0,1400}?void refreshRemoteWorkspaceMarks\(\)/u.test(marks))
+  markCheck('...listening to both focus and visibility',
+    /window\.addEventListener\('focus', wake\)/u.test(marks) &&
+      /addEventListener\('visibilitychange', onVisibility\)/u.test(marks))
+  markCheck('...throttled, because focus and visibilitychange arrive together',
+    /MARKS_WAKE_INTERVAL_MS/u.test(marks) &&
+      /now - lastAt < MARKS_WAKE_INTERVAL_MS/u.test(marks))
+  markCheck('...and its listeners leave with the observer',
+    /marksObserver = null\n\s*stopWakeups\(\)/u.test(marks))
+  // The marks entry points are FUNCTIONS, so the export published at module
+  // evaluation time is the stand-in `() => {}`. A lazy chunk that destructures
+  // them keeps that stand-in, and its call is a silent no-op: the sidebar never
+  // greys a workspace detached from the panel, never clears one it enabled.
+  const marksHost = readFileSync(path.join(marksRoot, 'lib', 'client', 'client.js'), 'utf8')
+  markCheck('the real marks entry points are republished once their chunk lands',
+    /function republishBootNames[\s\S]{0,2600}?installRemoteWorkspaceMarks,/u.test(marksHost) &&
+      /function republishBootNames[\s\S]{0,2600}?syncRemoteWorkspaceMarks,/u.test(marksHost))
+  markCheck('...and every one of them is a declared local, never an implicit global',
+    /let installRemoteWorkspaceMarks = \(\) => \{\}/u.test(marksHost) &&
+      /let refreshRemoteWorkspaceMarks = async \(\) => \{\}/u.test(marksHost) &&
+      /let syncRemoteWorkspaceMarks = \(\) => \{\}/u.test(marksHost) &&
+      /let scheduleRemoteMarks = \(\) => \{\}/u.test(marksHost))
   totalPassed += markPassed
   totalFailures += markFailures.length
 }

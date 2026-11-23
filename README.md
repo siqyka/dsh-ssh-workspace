@@ -396,7 +396,7 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 | [upstream-workarounds.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workarounds.md) | 上游临时补丁登记：宿主缺陷、一行修法、自动退役信号与删除步骤 |
 | [upstream-workaround-pattern.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/upstream-workaround-pattern.md) | **上游补丁的退役模式**：可复用的方法——适用判定、七件套、三态探测、可达的信号通道、反模式与成本边界 |
 | [troubleshooting.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/troubleshooting.md) | 排查与常见问题：错误语义、连接问题、已知限制 |
-| [FF/README.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/FF/README.md) | **待实施工作流**：方案 + 任务书；01–08 已完成，09 承接全仓审查剩余项与「不再做」判定 |
+| [FF/README.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/FF/README.md) | **已完成工作流索引**：01–10 的方案与任务书均已按约定删除，索引指向最终落点；保留 client chunk 宿主事实与「不再做」判定摘要 |
 | [CONTRIBUTING.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CONTRIBUTING.md) | 参与开发：环境、三种测试、代码约定、改完之后 |
 | [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY.md) | 安全策略：凭据如何存储、主机密钥校验、已知边界、漏洞报告 |
 | [CHANGELOG.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/CHANGELOG.md) | 更新日志：各版本的新增、修复与变更 |

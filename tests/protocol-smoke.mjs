@@ -7,7 +7,7 @@
  * Run: node tests/protocol-smoke.mjs
  */
 
-import { parseRemotePath, isRemotePath, normalizeRemotePath, formatRemotePath, formatRemoteFileUrl, isRemotePathUnder, remoteBasename, remoteDirname } from '../lib/core/protocol.js'
+import { parseRemotePath, isRemotePath, normalizeRemotePath, formatRemotePath, formatRemoteFileUrl, isRemotePathUnder, remoteBasename, remoteDirname, isDetachedTarget } from '../lib/core/protocol.js'
 
 const passes = []
 const failures = []
@@ -86,6 +86,31 @@ check('basename of the root is /', remoteBasename('/') === '/')
 check('dirname of a file', remoteDirname('/srv/app/file.txt') === '/srv/app')
 check('dirname one level deep is /', remoteDirname('/file.txt') === '/')
 check('dirname of the root is /', remoteDirname('/') === '/')
+
+
+console.log('\n[isDetachedTarget: a detached root is a fence only where nothing serves it]')
+const detachedList = ['ssh://alpha/home/dev/proj/plugin']
+const servedList = ['ssh://alpha/home/dev/proj']
+check('a path nothing serves is refused',
+  isDetachedTarget(detachedList, [], 'alpha', '/home/dev/proj/plugin/x.js'))
+check('...and so is the detached root itself',
+  isDetachedTarget(detachedList, [], 'alpha', '/home/dev/proj/plugin'))
+check('a mounted parent still serves the nested path, so it is NOT refused',
+  isDetachedTarget(detachedList, servedList, 'alpha', '/home/dev/proj/plugin/x.js') === false,
+  'browsing a mounted workspace must not break because a nested one was detached')
+check('...and the parent is not a detached path at all',
+  isDetachedTarget(detachedList, servedList, 'alpha', '/home/dev/proj/src/a.js') === false)
+check('a served root on ANOTHER host does not lift the fence',
+  isDetachedTarget(detachedList, ['ssh://beta/home/dev/proj'], 'alpha', '/home/dev/proj/plugin/x.js'))
+check('a served root does not cover a name-prefix sibling of itself',
+  isDetachedTarget(['ssh://alpha/home/dev/projx/plugin'], servedList, 'alpha', '/home/dev/projx/plugin/x.js'),
+  '/home/dev/proj must not serve /home/dev/projx')
+check('a detached parent with a mounted child keeps the child served',
+  isDetachedTarget(['ssh://alpha/home/dev/proj'], ['ssh://alpha/home/dev/proj/plugin'], 'alpha', '/home/dev/proj/plugin/x.js') === false)
+check('...while its sibling is refused',
+  isDetachedTarget(['ssh://alpha/home/dev/proj'], ['ssh://alpha/home/dev/proj/plugin'], 'alpha', '/home/dev/proj/other/x.js'))
+check('nothing detached refuses nothing',
+  isDetachedTarget([], servedList, 'alpha', '/home/dev/proj/plugin/x.js') === false)
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {

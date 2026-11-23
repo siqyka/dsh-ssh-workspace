@@ -78,20 +78,29 @@ const FolderIcon = function FolderIcon () {}
  * @returns {{row: object|undefined, navigated: string[]}} the element, and the
  *   directories the row asked to enter.
  */
-function renderRow (entry) {
+function renderRow (entry, options = {}) {
   const navigated = []
+  const picks = []
   const jsx = (type, props) => ({ type, props })
   const jsxs = jsx
   const React = { createElement: (type, props) => ({ type, props }) }
   const handleEntry = (clicked) => { navigated.push(clicked.name) }
+  // The row's closure reads these from the component: the listing it belongs to
+  // and the pick made in it. Passed in rather than faked globally, so the row is
+  // rendered by the shipped code with exactly the inputs a real render gives it.
+  const path = options.path ?? '/home/me'
+  const picked = options.picked ?? null
+  const setPicked = (value) => { picks.push(value) }
+  const childDirectoryPath = (dir, name) => `${String(dir).replace(/\/+$/u, '')}/${name}`
 
   // eslint-disable-next-line no-new-func
   const factory = new Function(
     'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
+    'path', 'picked', 'setPicked', 'childDirectoryPath',
     `return (${callbackSource})`,
   )
-  const callback = factory(jsxs, jsx, React, FolderIcon, handleEntry)
-  return { row: callback(entry), navigated }
+  const callback = factory(jsxs, jsx, React, FolderIcon, handleEntry, path, picked, setPicked, childDirectoryPath)
+  return { row: callback(entry), navigated, picks }
 }
 
 /** Element children only: a row mixes elements with `false` placeholders. */
@@ -120,10 +129,15 @@ check('...keyed by the entry name', dirRow.row?.props.key === 'logs')
 check('...and carrying the directory-row class',
   dirRow.row?.props.className.includes('sshwsp-entry-dir'),
   'the row lost the class that gives it a pointer cursor')
-check('...with no selection or focus semantics',
+// One pick, not a selection model: `aria-selected` belongs to listbox/option
+// semantics this listing does not have, and `role`/`tabIndex` are not overridden
+// on a button. `aria-current` is how the picked row is announced.
+check('...with no batch-selection or focus override',
   dirRow.row?.props.role === undefined &&
     dirRow.row?.props['aria-selected'] === undefined &&
-    dirRow.row?.props.tabIndex === undefined)
+    dirRow.row?.props.tabIndex === undefined &&
+    dirRow.row?.props['aria-current'] === undefined,
+  'an unpicked row claims to be picked, or the row re-declares its own role')
 
 // ---- and a file entry is not rendered as a second kind of row ---------------
 
@@ -145,16 +159,32 @@ const dirProps = dirRow.row.props
 dirProps.onDoubleClick()
 check('a double click asks to enter that directory', dirRow.navigated.join() === 'logs')
 
-// The gesture is a DOUBLE click on purpose: a listing the user cannot read
-// without leaving it is a listing they navigate blind. React reports a
-// keyboard activation as a click with `detail === 0`, so the row still works
-// from the keyboard — that is the only click that navigates.
+// A single click PICKS the row — it does not enter it. Reading the listing must
+// not cost a navigation, and the pick is what "mount this directory" acts on.
 dirProps.onClick({ detail: 1 })
 check('a single mouse click does not enter the directory', dirRow.navigated.length === 1,
   'a plain click navigated, so the listing cannot be read without leaving it')
-dirProps.onClick({ detail: 0 })
-check('...while a keyboard activation still enters it', dirRow.navigated.length === 2,
-  'the row is unreachable from the keyboard')
+check('...it picks that directory as the target instead',
+  dirRow.picks.length === 1 && dirRow.picks[0] === '/home/me/logs',
+  JSON.stringify(dirRow.picks))
+
+// React reports a keyboard activation as a click with `detail === 0`. It picks
+// too — and pressing it again on the picked row enters, which is the keyboard
+// path into a directory now that a plain activation no longer navigates.
+const keyRow = renderRow(logs)
+keyRow.row.props.onClick({ detail: 0 })
+check('a keyboard activation on an unpicked row picks it', keyRow.navigated.length === 0 &&
+  keyRow.picks.join() === '/home/me/logs',
+  'a keyboard user cannot pick, so the pickers would be mouse-only')
+const pickedRow = renderRow(logs, { picked: '/home/me/logs' })
+pickedRow.row.props.onClick({ detail: 0 })
+check('...and a second one on the picked row enters it',
+  pickedRow.navigated.join() === 'logs',
+  'a keyboard user can pick but never enter')
+check('the picked row is painted and announced',
+  pickedRow.row.props.className.includes('sshwsp-entry-picked') &&
+    pickedRow.row.props['aria-current'] === 'true',
+  'the pick has no visible or announced state')
 
 // ---- row anatomy -------------------------------------------------------------
 
@@ -187,9 +217,12 @@ const dialog = source.slice(source.indexOf('    function DirectoryBrowser'), sou
 check('the dialog renders no download, upload or queue control',
   !/DownloadIcon|TransferProgressIcon|enqueueUploads|pickFileTarget|TransferQueueInline/u.test(dialog),
   'a transfer control survived in a dialog that is supposed to only browse')
-check('the listing exposes no selection contract',
+check('the listing exposes no multi-select contract',
   !/aria-multiselectable|aria-selected|listbox|selectReduce/u.test(dialog),
   'the browse-only listing still advertises a selection model it does not have')
+check('...while still announcing the one row it will act on',
+  /'aria-current': isPicked \? 'true' : undefined/u.test(dialog),
+  'the pick is invisible to assistive technology')
 
 // ---- the harness can see the defect it guards --------------------------------
 
@@ -197,9 +230,11 @@ const withoutReturn = callbackSource.replace(/\breturn\s+jsx\(/gu, 'jsx(')
 check('the stripped slice is a different program', withoutReturn !== callbackSource)
 const stripped = new Function(
   'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
+  'path', 'picked', 'setPicked', 'childDirectoryPath',
   `return (${withoutReturn})`,
 )((type, props) => ({ type, props }), (type, props) => ({ type, props }),
-  { createElement: () => ({}) }, FolderIcon, () => {})
+  { createElement: () => ({}) }, FolderIcon, () => {}, '/home/me', null, () => {},
+  (dir, name) => `${dir}/${name}`)
 check('without the return the same callback yields undefined',
   stripped(logs) === undefined,
   'the regression assertion above would not have caught the shipped bug')

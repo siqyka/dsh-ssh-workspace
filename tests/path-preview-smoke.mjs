@@ -308,6 +308,9 @@ function makeDialog ({ name, props }) {
   const hooks = makeHooks()
   const clock = makeClock()
   const requests = []
+  // POST bodies, so "what did the button actually send" is observable rather than
+  // inferred from the rendered state.
+  const posts = []
   // What the server answers for `dirs=1`: directories only. A file in here would
   // be a fixture the real route cannot produce.
   const HOME_ROWS = [{ name: 'Documents', type: 'directory' }, { name: 'projects', type: 'directory' }]
@@ -328,7 +331,10 @@ function makeDialog ({ name, props }) {
     capabilityNotes: () => [],
     refreshRemoteWorkspaceMarks: () => {},
     fetchJson: async (url, init) => {
-      if (init?.method === 'POST') return { ok: true, workspacePath: 'ssh://box/home/me' }
+      if (init?.method === 'POST') {
+        posts.push(JSON.parse(init.body))
+        return { ok: true, workspacePath: 'ssh://box/home/me' }
+      }
       if (url.endsWith('/hosts')) return { hosts: [{ alias: 'box' }, { alias: 'other' }] }
       requests.push(url)
       const match = /[?&]path=([^&]*)/u.exec(url)
@@ -396,12 +402,28 @@ function makeDialog ({ name, props }) {
 
   return {
     requests,
+    posts,
     pump,
     settle,
     input,
     rows,
     texts,
     find: (predicate) => findAll(tree).find(predicate),
+    rowNode: (name) => findAll(tree).find((node) => node.type === 'button' &&
+      String(node.props.className).includes('sshwsp-entry-dir') && node.props.children[1].props.children === name),
+    /** One pointer click on a row: `detail` 1 is a mouse click, 0 a keyboard one. */
+    clickRow (name, detail = 1) {
+      const node = findAll(tree).find((candidate) => candidate.type === 'button' &&
+        String(candidate.props.className).includes('sshwsp-entry-dir') && candidate.props.children[1].props.children === name)
+      node.props.onClick({ detail })
+      return pump()
+    },
+    enterRow (name) {
+      const node = findAll(tree).find((candidate) => candidate.type === 'button' &&
+        String(candidate.props.className).includes('sshwsp-entry-dir') && candidate.props.children[1].props.children === name)
+      node.props.onDoubleClick()
+      return pump()
+    },
     mountButton: () => findAll(tree).find((node) => node.type === 'button' && String(node.props.className).includes('sshwsp-btn-primary')),
     tree: () => tree,
     setDraft (value) {
@@ -762,6 +784,100 @@ check('a debounced listing is cancelled when the draft moves on',
   (live.match(/clearTimeout\(timer\)/gu) ?? []).length >= 2)
 check('the pause is a short human-scale delay, not a second',
   Number.isInteger(DEBOUNCE) && DEBOUNCE > 0 && DEBOUNCE <= 500, String(DEBOUNCE))
+
+// ---- picking a row is what the verb acts on ---------------------------------
+
+// A single click used to do nothing here, so acting on a subdirectory meant
+// entering it first. It now PICKS the row, and the pick is the target the dialog
+// sends: these assertions run the shipped components and read the POST body, so
+// a pick that is only paint (or a button still sending the listed directory)
+// fails here rather than in the user's workspace list.
+console.log('[picking a row]')
+
+{
+  const browser = makeDialog({
+    name: 'DirectoryBrowser',
+    props: { alias: 'box', onClose () {}, onMount () {}, ctx: {}, t: (key) => key },
+  })
+  await browser.settle()
+  check('nothing is picked before a click',
+    browser.rows().length === 2 && browser.rowNode('projects').props['aria-current'] === undefined,
+    String(browser.rows().length))
+  browser.clickRow('projects')
+  check('a single click picks the row, it does not enter it',
+    browser.input().props.value === '/home/me/' &&
+      browser.rowNode('projects').props['aria-current'] === 'true',
+    String(browser.input().props.value))
+  check('...and the pick is painted',
+    String(browser.rowNode('projects').props.className).includes('sshwsp-entry-picked') &&
+      !String(browser.rowNode('Documents').props.className).includes('sshwsp-entry-picked'))
+  check('...and the dialog says which directory it will mount',
+    browser.find((node) => String(node.props?.className).includes('sshwsp-picked')) !== undefined,
+    'the visible path and the acted-on path can disagree with no word about it')
+  browser.mountButton().props.onClick()
+  await browser.settle()
+  check('mounting sends the PICKED directory, not the listed one',
+    browser.posts.length === 1 && browser.posts[0].remotePath === '/home/me/projects',
+    JSON.stringify(browser.posts[0]))
+  check('...with the same host the dialog was opened for',
+    browser.posts[0].alias === 'box', String(browser.posts[0].alias))
+}
+
+{
+  const chooser = makeDialog({
+    name: 'RemoteWorkspaceDialog',
+    props: { t: (key) => key, busy: false, onCancel () {}, onCreated () {} },
+  })
+  await chooser.settle(4)
+  chooser.clickRow('projects')
+  chooser.mountButton().props.onClick()
+  await chooser.settle(4)
+  check('creating a workspace sends the picked directory too',
+    chooser.posts.length === 1 && chooser.posts[0].remotePath === '/home/me/projects',
+    JSON.stringify(chooser.posts[0]))
+}
+
+{
+  // The pick names a row in the listing that was on screen when it was made.
+  // Entering another directory replaces that listing, so the pick must go with
+  // it — otherwise the mount button keeps acting on a directory the user can no
+  // longer see. Picking Documents and then entering projects makes the two
+  // answers differ, which is the only way this is observable.
+  const browser = makeDialog({
+    name: 'DirectoryBrowser',
+    props: { alias: 'box', onClose () {}, onMount () {}, ctx: {}, t: (key) => key },
+  })
+  await browser.settle()
+  browser.clickRow('Documents')
+  browser.enterRow('projects')
+  await browser.settle()
+  check('entering a directory drops the pick with the listing that named it',
+    browser.rowNode('src') !== undefined &&
+      browser.rowNode('src').props['aria-current'] === undefined &&
+      browser.find((node) => String(node.props?.className).includes('sshwsp-picked'))?.props.children !== undefined,
+    'the pick outlived the listing it was made in')
+  browser.mountButton().props.onClick()
+  await browser.settle()
+  check('...so the button mounts the directory now on screen, not the stale pick',
+    browser.posts.length === 1 && browser.posts[0].remotePath === '/home/me/projects',
+    JSON.stringify(browser.posts[0]))
+}
+
+{
+  const browser = makeDialog({
+    name: 'DirectoryBrowser',
+    props: { alias: 'box', onClose () {}, onMount () {}, ctx: {}, t: (key) => key },
+  })
+  await browser.settle()
+  browser.clickRow('projects', 0)
+  check('a keyboard activation picks as well',
+    browser.rowNode('projects').props['aria-current'] === 'true')
+  browser.clickRow('projects', 0)
+  await browser.settle()
+  check('...and a second one enters the picked row',
+    browser.input().props.value === '/home/me/projects/',
+    String(browser.input().props.value))
+}
 
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {
