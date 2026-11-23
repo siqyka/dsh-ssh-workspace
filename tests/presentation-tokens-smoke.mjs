@@ -31,6 +31,7 @@
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { clientChunkNames, clientPartSource } from './support/client-source.mjs'
 
@@ -62,6 +63,86 @@ const cssStart = openAt + openMarker.length
 const cssEnd = stylesPart.lastIndexOf('`')
 if (cssEnd <= cssStart) throw new Error(`${stylesFile}: cannot find the end of the sheet template`)
 const css = stylesPart.slice(cssStart, cssEnd)
+
+// ---- 0. the sheet the runtime produces IS the sheet checked below -----------
+//
+// Everything after this point reads the CSS as TEXT, and text survives a broken
+// template. A stray unescaped backtick inside the sheet — four of them shipped
+// in the container-query comment — turns the template into a tagged template:
+//
+//     `.sshwsp` itself, so nothing here may style `.sshwsp`:
+//
+// parses as `` `...`.sshwsp`...` `` — legal JavaScript, so `node --check` passes,
+// and `indexOf`/`lastIndexOf` still slice out the whole stylesheet, so every
+// text-level assertion below passed while the panel did not render at all. The
+// chunk threw `TypeError: "…".sshwsp is not a function` inside `injectStyles`,
+// which the module system reported as a failed chunk load; the panel never
+// registered and the sidebar came up empty.
+//
+// So the sheet is EXECUTED here, not merely sliced: the chunk runs in a vm
+// against a stub `document`, its factory is called, `injectStyles()` runs, and
+// the text it writes must be the text this suite validated. A check that only
+// reads source cannot tell "the sheet is this CSS" from "the sheet is this CSS
+// followed by a syntax error that throws before it is used".
+const sheetRuntime = await (async () => {
+  let registrations
+  const written = []
+  const tag = { dataset: {}, textContent: '' }
+  const document = {
+    querySelector: () => null,
+    createElement: () => {
+      written.push(tag)
+      return tag
+    },
+    head: { appendChild: () => {} },
+  }
+  registrations = []
+  const context = {
+    window: { __ModuleLoader__: { load: (registration) => registrations.push(registration) } },
+    document,
+    console,
+    Symbol,
+    Object,
+  }
+  vm.createContext(context)
+  try {
+    vm.runInContext(stylesPart, context, { filename: stylesFile })
+    const registration = registrations[0]
+    if (registration === undefined) throw new Error('the chunk registered nothing')
+    const exported = registration.factory(() => {
+      throw new Error('the stylesheet chunk must not require anything')
+    })
+    exported.injectStyles()
+  } catch (error) {
+    return { error }
+  }
+  return { text: tag.textContent }
+})()
+
+check('the sheet template evaluates, so injectStyles reaches the end',
+  sheetRuntime.error === undefined,
+  sheetRuntime.error === undefined ? undefined : `${sheetRuntime.error.name}: ${sheetRuntime.error.message}`)
+
+// The escape sequences are the ONLY difference the template makes to the text,
+// and the sheet uses exactly one kind (`` \` ``). Comparing unescaped-to-written
+// keeps this honest if a second kind is ever introduced: it will show up as a
+// mismatch here rather than as a stylesheet that silently differs from the one
+// under test.
+const sheetAsWritten = css.replace(/\\(.)/gsu, '$1')
+check('...and what it writes is the sheet the checks below read',
+  sheetRuntime.error !== undefined || sheetRuntime.text === sheetAsWritten,
+  sheetRuntime.error !== undefined
+    ? undefined
+    : `written ${sheetRuntime.text.length} chars, checked ${sheetAsWritten.length}`)
+// A bare backtick is the specific mistake, and it is worth naming directly:
+// the failure mode above is a one-character edit whose symptom (a missing
+// panel) points nowhere near the file that caused it. Escaped ones are the
+// intended spelling, so the check counts backticks that are NOT preceded by an
+// odd number of backslashes.
+const bareBackticks = [...css.matchAll(/(?<!\\)(?:\\\\)*\u0060/gu)]
+check('the sheet holds no bare backtick',
+  bareBackticks.length === 0,
+  'escape it as \\` — an unescaped one ends the template and turns the rest into a tagged template')
 
 /**
  * The sheet in three pieces, because the rules that may name a Host token are

@@ -16,7 +16,7 @@
 | upstream patch modules | 7 | `lib/patch/patch-*.js` |
 | modules under `lib/` | 62 | recursive listing |
 | test suites | 83 | `tests/run.mjs` |
-| passing assertions (sampled) | 5740 | measured 2026-11-23 |
+| passing assertions (sampled) | 5743 | measured 2026-11-23 |
 
 <!-- doc-numbers:end -->
 

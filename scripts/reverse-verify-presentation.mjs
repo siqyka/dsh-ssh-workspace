@@ -110,6 +110,18 @@ const MUTATIONS = [
     from: '.sshwsp-queuepanel,\n',
     to: '',
   },
+  {
+    what: 'a bare backtick ends the sheet template early',
+    // This is the one that shipped. The sheet lives in a template literal, so an
+    // unescaped backtick inside a CSS comment closes the string and turns the
+    // remainder into a TAGGED template: `…`.sshwsp`…` parses fine, `node --check`
+    // passes, `indexOf`/`lastIndexOf` still slice out the whole sheet, and every
+    // text-level assertion stays green — while the chunk throws
+    // `TypeError: "…".sshwsp is not a function` the moment `injectStyles` runs,
+    // so the panel never registers and the sidebar comes up empty.
+    from: '/* The container is .sshwsp itself',
+    to: '/* The container is `.sshwsp` itself',
+  },
 ]
 
 const original = readFileSync(SHEET, 'utf8')
