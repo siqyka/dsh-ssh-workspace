@@ -805,6 +805,53 @@ token 颜色全部走 CSS 变量（`--sshwsp-hl-keyword` 等），所以换肤�
 - **不乐观更新**：接口返回前不改列表；失败保持原样并给出原因。
 - **刷新**：改完由我们发出 `refreshFilesPanel()`；宿主文件树**不自动刷新时**，插件只点它公开的 `[data-files-reload]` 控件（不是私有 API）来重读，不向宿主 DOM 注入节点。目录浏览对话框自己重读当前目录，是可信的回退。
 
+## 表现层：一套令牌契约
+
+样式表开头是一块 `--sshwsp-*` 定义，其余规则只读这套名字。**规则体里不出现裸色值，也不直接读
+`--dsw-*`**，只有高亮调色板是例外（见下）。这不只是为了整齐：`var(--dsw-x, #4a9eff)` 里的 fallback
+从来不是设计，是当初某个 token 没解析出来时随手写的值，于是同一块面板在应用里和别处颜色不同，
+而且**静默**——未定义的自定义属性回落到 `initial`，不是回落到旁边那个字面量。
+
+### 三组令牌
+
+- **跟随宿主**（23 个）：`--sshwsp-bg` / `surface` / `text` / `muted` / `accent` / `danger` / `shadow` / `font` …
+  每个都是 `var(--dsw-…, <深色 fallback>)`。fallback 是**唯一**允许写字面量的地方，用途是宿主一个都
+  没发布时面板仍然可读。
+- **派生**（7 个）：`sunken` / `border-subtle` / `accent-soft` / `danger-soft` / `warn-soft` / `track` /
+  `selection`，全部 `color-mix` 出来，不引入新色相。
+- **自有刻度**：`radius-*`（映射宿主的 `--dsw-radius-*`）、`focus-width`（映射
+  `--dsw-focus-ring-width`）、`font-*`（映射宿主的字号）、`space-1…6`、`z-*`。
+
+### 八个根，而不是一份运行时样式
+
+参照对象 dsh-opencode-go 用 `themeStyle(tokens)` 在每个根上挂 `style`，靠 WeakMap 缓存，再加一个
+MutationObserver 跟主题变化。我们没有照抄：根分散在 6 个文件、其中 5 类是 portal，所以改成**一个
+选择器列表**（`.sshwsp` / `-backdrop` / `-editor-panel` / `-flowmenu` / `-inline-rename` /
+`-popbackdrop` / `-queuepanel` / `-toast`）。属性选择器天然随 `body[data-ds-dark-theme]` 重算，
+比参照对象少三个活动部件。
+
+**新增 portal 根必须加进这个列表**。漏了不是语法错误，是那个面板静默丢掉全部令牌——
+`presentation-tokens-smoke` 会从源码把根反推出来逐个比对，专门拦这一种。
+
+### 浅色层只覆盖六个令牌
+
+`body:not([data-ds-dark-theme])` 下只重声明 `text` / `muted` / `faint` / `border` / `border-strong` /
+`shadow`。其余全部继续跟随宿主——宿主自己会换，我们要修的是**原本就假的 token**，不是长出第二个
+主题（`docs/ui.md` 早就承诺过不新增第二份主题）。判定认 `data-ds-dark-theme`，不认
+`prefers-color-scheme`：宿主已经替我们判过一次，第二份判定迟早和它分叉。
+
+### 有意的例外：高亮调色板
+
+`--sshwsp-hl-*` 保持 6 位 hex。理由不是审美：`file-editor-smoke` 用正则把这些声明抽出来算 WCAG
+对比度，换成 `color-mix` 会让抽取返回空数组、循环 0 次、**断言假绿**。
+
+### 反向验证
+
+守卫测试只对着正确的代码跑过，等于什么都没证明。`scripts/reverse-verify-presentation.mjs` 逐个施加
+「把这次做的事删掉」的变异，要求套件变红；留在绿上的变异就是漏洞。它已经抓到过两个：第一版交互态
+断言问的是「样式表里有没有焦点环」（一条环就满足所有元素），第一版死规则检查在包含样式表的源码里
+搜索类名（命中了规则自己）。它**不进 CI**，因为会改写源文件再还原。
+
 ## 相关
 
 - [hosts.md](./hosts.md) — 主机与凭据在面板中的管理语义

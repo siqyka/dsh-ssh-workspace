@@ -71,7 +71,7 @@
 ### 1.6 死规则与假断言
 
 - `.sshwsp-passthrough-hint`（`client.styles.js:280`）：**没有任何生产者**，纯死规则。
-- `.sshwsp-icon-btn-busy:disabled`（`client.styles.js:376`）：同样**没有生产者**（全仓无 `icon-btn-busy` 字样），但 `tests/download-icon-smoke.mjs:340` 断言了这条规则。于是这条测试**证明的是"规则存在"，不是"行为正确"**——它保护了一条永远不会生效的样式。这是本次要一并修掉的审计缺陷。
+- `.sshwsp-icon-btn-busy:disabled`（`client.styles.js:376`）：同样**没有生产者**（全仓无 `icon-btn-busy` 字样），但 `tests/download-icon-smoke.mjs:340` 断言了这条规则。于是这条测试**证明的是"规则存在"，不是"行为正确"**——它保护了一条永远不会被任何元素命中的规则。**P6 已处置：删除规则 + 把断言反过来**（现在断言这个类名不再出现），并把检查提升为类别级：样式表里任何 `-busy` / `-loading` / `-pending` / `-disabled` 修饰符都必须在**样式表之外**找到生产者，否则算死规则。生产者必须排除 `client.styles.js` 本身——第一版检查在 `source` 里搜索，命中了规则自己的类名，反向验证把这个洞抓了出来。
 
 ### 1.7 测试对表现层的耦合（必须同步改）
 
@@ -223,7 +223,7 @@ body:not([data-ds-dark-theme]) .sshwsp, … { /* 浅色：只覆盖少数需要�
 
 **P5 主题与无障碍**：浅色层（§3.3）；滚动条；`@container` 窄面板；补 `prefers-reduced-motion` 到所有动画（现在 3 处，6 个 keyframes）。验收：假 token 清零；浅色下 15 处错色位置有断言。
 
-**P6 测试与文档**：把 4 处钉颜色的断言改成钉令牌名；`.sshwsp-icon-btn-busy:disabled` 二选一——要么给队列图标按钮补生产者（`busy` 时置 `disabled` 并保持环的不透明度），要么删规则 + 删断言，**不允许继续留一条无生产者的规则被测试保护**；同步 `docs/ui.md`（新增「表现层令牌契约」一节）与 `docs/development.md` 的模块数字（`npm run doc-numbers`）。
+**P6 测试与文档**：把 4 处钉颜色的断言改成钉令牌名；`.sshwsp-icon-btn-busy:disabled` **已按"删规则"处置**：补生产者是错的方向，因为忙碌态现在由进度环表达，让按钮在 `:disabled` 下保持满不透明度会和旁边真实的禁用按钮冲突；删规则、把断言反过来，并把检查提升为类别级（任何 `-busy`/`-loading`/`-pending`/`-disabled` 修饰符都必须在样式表之外有生产者）；同步 `docs/ui.md`（新增「表现层令牌契约」一节）与 `docs/development.md` 的模块数字（`npm run doc-numbers`）。
 
 ## 5. 验收判据
 

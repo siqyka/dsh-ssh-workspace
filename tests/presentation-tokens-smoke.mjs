@@ -457,6 +457,28 @@ check('the passthrough hint rule is gone',
 check('...and nothing in the client half still names it',
   !source.includes('sshwsp-passthrough-hint'))
 
+// A rule with no producer is worse than no rule: it is evidence of a state the
+// UI cannot reach, and the test that pins it makes the next reader believe the
+// state exists. This is the second one found (the first was the passthrough
+// hint), so the check is written to catch the class of problem rather than the
+// instance: every `-busy`, `-loading` and `-pending` modifier must be produced
+// somewhere in the source, or it does not belong in the sheet.
+//
+// The producer must be found OUTSIDE the stylesheet. Searching `source` alone
+// found the rule's own class name and passed — which is exactly how the first
+// version of this check reported a hole during reverse verification.
+const producerSource = clientChunkNames(pluginRoot)
+  .filter(chunk => chunk !== 'client.styles.js')
+  .concat('client.js')
+  .map(chunk => clientPartSource(pluginRoot, chunk))
+  .join('\n')
+const stateModifiers = [...new Set(
+  [...rules.matchAll(/\.(sshwsp-[a-z0-9-]*-(?:busy|loading|pending|disabled))\b/gu)].map(match => match[1]),
+)]
+const unproducedModifiers = stateModifiers.filter(name => !producerSource.includes(name))
+check('every busy/loading modifier in the sheet has a producer',
+  unproducedModifiers.length === 0, unproducedModifiers.join(' '))
+
 // ---- summary --------------------------------------------------------------
 
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===\n`)

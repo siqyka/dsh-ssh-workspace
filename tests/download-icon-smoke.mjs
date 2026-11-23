@@ -336,8 +336,12 @@ check('the arc starts at twelve o’clock and spins from there',
     /\.sshwsp-dlring-live \.sshwsp-dlring-arc \{ animation: sshwsp-dlring-spin 1\.1s linear infinite; \}/u.test(source))
 check('reduced motion stops the spinning arc instead of speeding it up',
   /\.sshwsp-dlring-live \.sshwsp-dlring-arc \{ animation: none; \}/u.test(source))
-check('a busy button keeps its ring at full opacity',
-  /\.sshwsp-icon-btn-busy:disabled \{ opacity: 1; cursor: default; \}/u.test(source))
+// This rule was removed rather than kept: nothing ever added the class, so
+// the assertion protected a rule no element could reach. A busy button is
+// reported by the progress ring now, not by holding its opacity against
+// :disabled.
+check('the unreachable busy-button rule is gone',
+  !source.includes('sshwsp-icon-btn-busy'))
 
 const removedLabels = ['browser.download', 'browser.downloadDir', 'browser.downloading',
   'browser.upload', 'browser.uploading', 'browser.uploadBlocked', 'browser.uploadBlockedNote']

@@ -87,6 +87,11 @@ const MUTATIONS = [
     to: 'font-family: var(--sshwsp-mono); }',
   },
   {
+    what: 'an unreachable busy modifier comes back into the sheet',
+    from: '.sshwsp-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }',
+    to: '.sshwsp-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }\n.sshwsp-icon-btn-busy:disabled { opacity: 1; cursor: default; }',
+  },
+  {
     what: 'a portal root is dropped from the token block',
     // The queue panel is the last root before the one that closes the list, so
     // removing its line leaves the selector list syntactically valid — which is
