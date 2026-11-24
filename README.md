@@ -55,7 +55,6 @@ shell / ripgrep / git
 - [快速开始](#快速开始)
 - [主机管理](#主机管理)
 - [配置](#配置)
-  - [本机路径直通（`localPassthrough`）](#本机路径直通localpassthrough)
   - [局域网部署（`allowLan`）](#局域网部署allowlan)
 - [Agent 工具](#agent-工具)
 - [能力一览](#能力一览)
@@ -176,67 +175,7 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 
 > `engine` 下各项均为可选（非法值回落默认），通常无需配置。
 
-### 本机路径直通（`localPassthrough`）
-
-`ssh://` 会话默认把所有绝对路径当成**远端绝对路径**。聊天框上传的附件却存在运行 DSH 的这台
-机器上，所以它的句柄路径需要一个例外：
-
-```yaml
-# 默认值；通常不用写
-localPassthrough:
-  - $DSH_HOME/attachments
-  - $DSH_HOME/plugins
-```
-
-#### 前缀匹配规则
-
-- 只接受**本机绝对路径前缀**；`$DSH_HOME`、`${DSH_HOME}` 和开头 `~` 会被展开，其它变量、
-  相对路径、`ssh://` 前缀会告警并忽略。
-
-#### 显式指定本机路径：`@`、scheme 与回退
-
-- **`@` 显式引用的本机路径**同样直通：你在消息里用 `@F:\123.txt` / `@"C:\a b.txt"` 点名一个
-  Windows 盘符或 UNC 路径（`@` 必须在行首或空白之后），它按本机路径读取，即使没写进上面的前缀。
-  这个例外只认盘符与 UNC——POSIX 远端没有盘符，拼写因此无歧义；`@src/a.js`、`@/tmp/x` 仍是
-  远端引用。登记表进程内共享、上限 256 条（先进先出），重启后按会话历史重新登记，所以恢复的
-  会话照样能读到；整目录 `$DSH_HOME` 即使被 `@` 点名也拒绝（那里有 SSH 私钥）。
-- **显式 scheme 点名**：`local:/Volumes/SSD/a.md`（POSIX）与 `local:F:\123.txt`（Windows）
-  无条件按本机读取，路径部分是去掉前缀后的绝对路径。前缀名就是 `localPassthroughScheme`，
-  在面板「文件引用设置」一区的「显式文件引用 scheme」里改（输入框的可访问名仍是「本机路径前缀」），
-  保存即生效（不必重启）。未启用的前缀**明确拒绝**
-  （`FS_PERMISSION_DENIED`），不会悄悄变成远端路径去试；`ssh:` 是保留名，配不上。
-  **同一时间只能配一个前缀**：换名字就是整体替换，旧前缀立刻失效，两个不会并列。
-  名字至少 **3 个字符**（1 个字符会与 Windows 盘符抢同一段文本，如 `c:/x`）；
-  `file:` / `sftp:` / `dsh-app:` 与常见 URL scheme 也被保留（`file:///` 是本插件为远端路径写出的
-  URI，同一拼写不能两头都占）。前缀名本身不区分大小写，冒号后的路径部分按平台
-  （Windows 不区分、macOS/Linux 区分）。
-  这个前缀只对匹配的前缀与 `@` 点名的路径有效——它不会把裸的 `F:\123.txt` 或 `/tmp/x`
-  变成本机读。
-- **远端优先、miss 再回退（可选）**：勾上「远端不存在时回退本机同名文件」后，`@/Volumes/SSD/PARAMS.md`
-  这类 POSIX 绝对路径仍先按远端解析；只有远端**确实报不存在**时，才试一次本机同名文件，并在
-  返回内容末尾附 `[ssh-workspace]` 说明来源。回退只发生在读（`read` / `read_image` /
-  `streamText` / `lstat`），写、`glob`、`grep` 与目录列表**从不回退**；关掉这个开关即恢复
-  「POSIX 绝对路径全是远端」。
-
-#### 边界与限制
-
-- 命中前缀的路径在本会话里走本机后端；未命中的绝对路径仍是远端，不会因为本机恰好存在同名
-  文件而改判（没有 `stat` / 存在性探测）。
-- 匹配是词法的：`attachments/../dsh-ssh.json` 归一化后不匹配；不解析符号链接。
-- **写围栏不变**：直通只决定“哪个世界”，不把前缀加入本地可写根；`read-only` /
-  `workspace-write` 的本地限制照旧。
-- 不要把整个 `$DSH_HOME` 加进来——那里有 `dsh-ssh.json`、`dsh-ssh.key` 和会话数据；插件
-  会拒绝这个前缀。远端若存在同名前缀，按本机直通优先，文档明确接受这一取舍。
-- `false` 或 `[]` 关闭直通；设置后需重启 DSH 生效。默认值跟随 `$DSH_HOME`（未设置时是
-  `~/.dsh`）。
-- **直通有边界，边界是 `ctx.fs`**：宿主官方 `read` / `write` / `edit` / `read_image` 与
-  `node:fs` 走这条缝，直通对它们生效；**不经过 `ctx.fs` 的读取仍然读不到**。本部署里
-  dsh-ops 的 `inspect_local_file` / `read_files` / `glob` / `grep` 会带着会话 cwd 启动本机
-  worker 进程，`ssh://` cwd 下必然失败（`EXECUTOR_UNAVAILABLE`，文案带
-  `only git and ripgrep`；带 `workdir` 的 `ops_bash` 报 `invalid workdir`）。这是上游的结构性
-  错配，不是授权拒绝，重试无用——换入口：读远端用 `ssh_workspace_exec` / `ssh_workspace_shell`，
-  读本机文件用 `ssh_workspace_transfer` 上传到该主机 `/tmp` 再读。详见
-  [troubleshooting.md](./docs/troubleshooting.md#直通了为什么还是读不到)。
+> `localPassthrough` 三项的完整规则（前缀匹配、`@` 引用、显式 scheme、远端优先回退、以及「直通边界是 `ctx.fs`」）见 [docs/features.md 的「本机路径直通」](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md#本机路径直通localpassthrough)。
 
 ### 局域网部署（`allowLan`）
 
@@ -450,6 +389,7 @@ exec 通道；空闲 30 分钟回收（有操作在飞的连接不回收）。
 <sub>用 SSH 的距离，换来本地的手感。</sub>
 
 </div>
+
 
 
 

@@ -56,7 +56,6 @@ and a host management panel out of the box
 - [Quick start](#quick-start)
 - [Host management](#host-management)
 - [Configuration](#configuration)
-  - [Host-path passthrough (`localPassthrough`)](#host-path-passthrough-localpassthrough)
   - [LAN deployments (`allowLan`)](#lan-deployments-allowlan)
 - [Agent tools](#agent-tools)
 - [Capabilities](#capabilities)
@@ -189,86 +188,7 @@ become inaccessible since the host no longer exists.
 
 > All `engine` entries are optional (invalid values fall back to the defaults) and rarely need tuning.
 
-### Host-path passthrough (`localPassthrough`)
-
-An `ssh://` session treats every absolute path as **remote-absolute**. Chat attachments, however,
-live on the machine running DSH, so their handle path needs an exception:
-
-```yaml
-# The defaults; usually no need to write this out
-localPassthrough:
-  - $DSH_HOME/attachments
-  - $DSH_HOME/plugins
-```
-
-#### Prefix matching
-
-- Only **host absolute prefixes** are accepted. `$DSH_HOME`, `${DSH_HOME}`, and a leading `~`
-  are expanded; any other variable, a relative path, or an `ssh://` prefix is warned about and
-  ignored.
-- A matching path goes through the host backend; an unmatched absolute path stays remote, even
-  when a same-named file happens to exist locally (there is no `stat` / existence probe).
-- Matching is lexical: `attachments/../dsh-ssh.json` normalizes out of the prefix and does not
-  match; symlinks are not resolved.
-
-#### The fence stays put
-
-- **The write fence is unchanged**: passthrough chooses a world, it does not add the prefix to any
-  local writable root; `read-only` / `workspace-write` still apply.
-- Do not add the whole `$DSH_HOME` — it holds `dsh-ssh.json`, `dsh-ssh.key`, and session data; the
-  plugin refuses that prefix. If the remote host has the same prefix, the local passthrough wins;
-  this trade-off is deliberate.
-
-#### Explicitly naming a host path
-
-- **A host path you name with `@` also passes through**: writing `@F:\123.txt` or
-  `@"C:\Users\me\a b.txt"` in a message records that spelling in the plugin's reference
-  table (shared by the sessions of this DSH process), so the model reads it locally. Only
-  **Windows drive / UNC** spellings are accepted (a POSIX remote has no drive letters, so there is
-  no ambiguity); `@src/a.js` and `@/tmp/x` remain workspace or remote references. The table is
-  capped at 256 entries, oldest evicted first. The whole `$DSH_HOME` stays refused even when
-  named with `@` (it holds the SSH key and stored host secrets).
-- **Naming a host path explicitly with a scheme**: `local:/Volumes/SSD/a.md` (POSIX) and
-  `local:F:\123.txt` (Windows) always read on this machine; the path is the absolute path
-  after the prefix. The prefix name is `localPassthroughScheme` and is edited in the panel's
-  "File reference settings" zone, in its "Explicit file reference scheme" block (the input's own
-  accessible name stays "Host scheme"), taking effect on save (no restart). A scheme you did not
-  enable is **refused loudly** (`FS_PERMISSION_DENIED`) rather than quietly retried as a
-  remote path; `ssh:` is reserved and cannot be configured. **Only one prefix can be configured
-  at a time**: saving a different name replaces it wholesale, and the old one stops working
-  immediately — the two are never listed side by side. The name needs at least **3 characters**
-  (one character would compete with a Windows drive letter such as `c:/x`); `file:`, `sftp:`,
-  `dsh-app:` and the common URL schemes are reserved as well (`file:///` is the URI this plugin
-  writes for *remote* paths, so one spelling cannot mean both machines). The prefix NAME is
-  case-insensitive; the path after the colon follows the platform (case-insensitive on Windows,
-  case-sensitive on macOS/Linux). The prefix unlocks the spellings
-  it names and the `@` references — it never turns a bare `F:\123.txt` or `/tmp/x` into a host
-  read.
-- **Remote first, host copy on a miss (optional)**: with "fall back to this machine when the
-  remote lacks it" checked, a POSIX absolute path such as `@/Volumes/SSD/PARAMS.md` still
-  resolves remotely first. Only when the remote **really reports it absent** does the plugin
-  try the host copy once, appending a `[ssh-workspace]` note that names the source. The
-  fallback covers reads only (`read` / `read_image` / `streamText` / `lstat`); writes, `glob`,
-  `grep` and directory listings **never** fall back. Unchecking it restores "every POSIX
-  absolute path is remote".
-
-#### Limits and boundary
-
-- `false` or `[]` disables it; restart DSH after changing it. The defaults follow `$DSH_HOME`
-  (`~/.dsh` when unset).
-- **Passthrough has a boundary, and the boundary is `ctx.fs`**: the host's official
-  `read` / `write` / `edit` / `read_image` and `node:fs` go through that seam, so they pass.
-  **Reads that do not go through `ctx.fs` still fail.** In this deployment dsh-ops'
-  `inspect_local_file` / `read_files` / `glob` / `grep` spawn a host worker process with the
-  session cwd, so an `ssh://` cwd fails every time (`EXECUTOR_UNAVAILABLE`, text mentions
-  `only git and ripgrep`; `ops_bash` with a `workdir` reports `invalid workdir`); the host's
-  `glob` / `grep` spawn `rg` directly and stay remote. Under the ops preset `read` is replaced
-  by `inspect_local_file`, so a host file is unreadable on that path — that is expected. This
-  is a structural upstream mismatch, not an authorization denial, and retrying does not help:
-  switch entry points — read remote content with `ssh_workspace_exec` / `ssh_workspace_shell`,
-  and read a host file by uploading it to that host's `/tmp` with `ssh_workspace_transfer` and
-  reading it there. See
-  [troubleshooting.md](./docs/troubleshooting.md#直通了为什么还是读不到).
+> The full rules for the `localPassthrough` fields above (prefix matching, `@` references, explicit schemes, remote-first fallback, and the "`ctx.fs` boundary") are in [docs/features.md → "Host-path passthrough"](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md#本机路径直通localpassthrough).
 
 ### LAN deployments (`allowLan`)
 
@@ -503,6 +423,7 @@ Explicitly **not supported**:
 <sub>SSH distance, local feel.</sub>
 
 </div>
+
 
 
 
