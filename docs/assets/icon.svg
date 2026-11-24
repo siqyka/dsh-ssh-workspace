@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" fill="none" stroke="#4d6bfe" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+  <!-- A directory whose face carries a shell prompt: the plugin's subject is a
+       remote directory mounted as a workspace. The tab keeps the silhouette
+       readable at the 30px row size; the chevron and cursor are drawn wider
+       than a literal shell glyph so they survive the same downscale. -->
+  <path d="M6.4 15.2a2.4 2.4 0 0 1 2.4-2.4h4.2v1.6a1.6 1.6 0 0 0 1.6 1.6h11.6a2.4 2.4 0 0 1 2.4 2.4v8.6a2.4 2.4 0 0 1-2.4 2.4H8.8a2.4 2.4 0 0 1-2.4-2.4z"/>
+  <path d="M13.2 19.4l4.2 3.4-4.2 3.4"/>
+  <path d="M20.6 26.2h4.2"/>
+</svg>

@@ -15,6 +15,7 @@
     "node": ">=20"
   },
   "main": "lib/index.js",
+  "icon": "docs/assets/icon.svg",
   "scripts": {
     "test": "node tests/run.mjs",
     "lint": "node scripts/lint.mjs",
@@ -79,7 +80,8 @@
     "lib/",
     "cordis.patch.yml",
     "README.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "docs/assets/icon.svg"
   ],
   "license": "MIT",
   "keywords": [

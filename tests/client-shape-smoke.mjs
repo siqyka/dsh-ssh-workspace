@@ -624,6 +624,35 @@ check('lib/ ships in the tarball', files.includes('lib/'), JSON.stringify(files)
 check('cordis.patch.yml ships in the tarball', files.includes('cordis.patch.yml'), JSON.stringify(files))
 check('tests are not shipped in the tarball', !files.some(entry => String(entry).startsWith('tests')), JSON.stringify(files))
 
+// The icon is metadata, not code: Plugin Manager reads it without activating the
+// plugin, and a missing or malformed one is silently replaced by the panel's
+// default artwork. Nothing else would notice either failure, so it is checked
+// here rather than left to a visual pass.
+console.log('\n[publish whitelist: the plugin icon]')
+const iconField = pkg.icon
+check('package.json names an icon', typeof iconField === 'string' && iconField !== '', String(iconField))
+if (typeof iconField === 'string' && iconField !== '') {
+  const iconFile = path.join(packageRoot, iconField)
+  check('the icon file exists', existsSync(iconFile), iconFile)
+  check('the icon ships in the tarball', files.includes(iconField), JSON.stringify(files))
+  // `files` does not filter a linked checkout, so the tarball assertion above
+  // and this size check are the only things standing between a 300 KiB icon and
+  // a silent fallback in every installed panel.
+  if (existsSync(iconFile)) {
+    const iconBytes = statSync(iconFile).size
+    check('the icon is within the 256 KiB the Host accepts', iconBytes <= 256 * 1024, `${iconBytes} bytes`)
+    const icon = readFileSync(iconFile, 'utf8')
+    // The Host turns the file into a data URL and renders it as an image, so
+    // anything that needs a document to interpret is dead weight at best: a
+    // script or an external reference is a self-containment bug.
+    check('the icon is self-contained SVG geometry',
+      !/<script|<foreignObject|<style|<image|externalResourcesRequired|\son[a-z]+=/iu.test(icon),
+      (icon.match(/<script|<foreignObject|<style|<image|\son[a-z]+=/iu) ?? ['clean'])[0])
+    check('the icon declares the 36-unit frame the artwork rules ask for',
+      /viewBox="0 0 36 36"/u.test(icon), (icon.match(/viewBox="[^"]*"/u) ?? ['none'])[0])
+  }
+}
+
 console.log('\n[a11y: the dialog contract]')
 
 // The dialogs already had Esc, aria-labels on icon buttons and focus rings.

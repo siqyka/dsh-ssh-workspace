@@ -16,7 +16,7 @@
 | upstream patch modules | 7 | `lib/patch/patch-*.js` |
 | modules under `lib/` | 62 | recursive listing |
 | test suites | 83 | `tests/run.mjs` |
-| passing assertions (sampled) | 5752 | measured 2026-11-23 |
+| passing assertions (sampled) | 5838 | measured 2026-11-24 |
 
 <!-- doc-numbers:end -->
 
@@ -193,8 +193,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `boot` / `tool-schemas` / `client-chunk` 缺真实装配树，`live` / `acceptance` 缺真实主机），
 另有 3 个 `partial`（`local-changes-remote` 的 live 段、`patch-sandbox` 缺装配树时的真实 ACL 段、
 `dirs-listing` 在 Windows 上没有能制造拒绝态的权限模型）；
-裸检出实测 **5740 项通过断言**（runner 汇总全部 83 条收尾行相加，其中 7 条是整体 SKIP 的 0）。生成表那一行就是这次
-**裸检出采样值**（2026-11-23：5642 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
+裸检出实测 **5838 项通过断言**（runner 汇总全部 83 条收尾行相加，其中 7 条是整体 SKIP 的 0）。生成表那一行就是这次
+**裸检出采样值**（2026-11-24：5838 项），由 `node scripts/doc-numbers.mjs --assertions N` 打时间戳；
 装配树上的数字更大，但换机器就会变，所以不写进表。
 带 `DSH_CORE_ROOT=<含 @deepseek-ai/dsh-fs 的 node_modules>` 时，`projection-real` / `lifecycle` /
 `tool-schemas` / `client-chunk` 四个再跑起来，`boot` 也真的跑 30 项（但内部 remote-host 段仍 SKIP）。
@@ -213,8 +213,8 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 `cannot resolve the DSH peer package "@deepseek-ai/dsh-fs"` 退出——看起来像代码坏了，实际是根指错了。
 判断方法是先验证 `<DSH_CORE_ROOT>/@deepseek-ai/dsh-fs` 存在；不存在就该让它们 SKIP，而不是 FAIL。
 
-**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 81 条
-收尾行就是断言总数（本轮采样：裸检出 5642 项 / 82 个套件）。
+**统计口径**：现在每个套件收尾都打印同一形状的 `=== N passed, M failed ===`，所以加总那 83 条
+收尾行就是断言总数（本轮采样：裸检出 5838 项 / 83 个套件）。
 逐行数 `PASS` 会少算几十项——
 `toast-smoke` 用的是 `ok` 而不是 `PASS`，两种记法都算通过，所以**按收尾行加总，不要按 token 数行**。
 这一点是**修出来的**，不是本来就成立——此前 `secrets` / `lifecycle` / `locale-register` /
