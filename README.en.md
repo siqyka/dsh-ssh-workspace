@@ -6,7 +6,7 @@
 
 **Use a directory on an SSH host as a DSH workspace.**
 
-`read` / `write` / `edit` go straight over SFTP to read and write remote files —
+Go straight over SFTP to read and write remote files —
 no manual sync, no mount driver, no third-party filesystem.
 
 [![version](https://img.shields.io/github/package-json/v/siqyka/dsh-ssh-workspace)](https://github.com/siqyka/dsh-ssh-workspace)

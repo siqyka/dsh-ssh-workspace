@@ -5,7 +5,7 @@
 
 **把一台 SSH 主机上的目录，当作 DSH 工作区使用。**
 
-`read` / `write` / `edit` 通过 SFTP 直接读写远端文件——
+通过 SFTP 直接读写远端文件——
 不需要手动同步、不需要挂载驱动、不需要装任何第三方文件系统。
 
 [![version](https://img.shields.io/github/package-json/v/siqyka/dsh-ssh-workspace)](https://github.com/siqyka/dsh-ssh-workspace)
