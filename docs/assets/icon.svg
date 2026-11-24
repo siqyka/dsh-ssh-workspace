@@ -1,9 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" fill="none" stroke="#4d6bfe" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-  <!-- A directory whose face carries a shell prompt: the plugin's subject is a
-       remote directory mounted as a workspace. The tab keeps the silhouette
-       readable at the 30px row size; the chevron and cursor are drawn wider
-       than a literal shell glyph so they survive the same downscale. -->
-  <path d="M6.4 15.2a2.4 2.4 0 0 1 2.4-2.4h4.2v1.6a1.6 1.6 0 0 0 1.6 1.6h11.6a2.4 2.4 0 0 1 2.4 2.4v8.6a2.4 2.4 0 0 1-2.4 2.4H8.8a2.4 2.4 0 0 1-2.4-2.4z"/>
-  <path d="M13.2 19.4l4.2 3.4-4.2 3.4"/>
-  <path d="M20.6 26.2h4.2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" fill="none">
+  <!-- A terminal window with a shell prompt: the plugin mounts a remote
+       directory as a workspace, which you drive from a shell. A local gradient
+       gives the glass depth that survives the 30px row size; all references are
+       self-contained so the image decodes without a document. -->
+  <defs>
+    <linearGradient id="sshwsp-terminal-glass" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#7ba7ff"/>
+      <stop offset="0.5" stop-color="#4a6cf7"/>
+      <stop offset="1" stop-color="#2b3f96"/>
+    </linearGradient>
+  </defs>
+  <rect x="4.5" y="7.5" width="27" height="21" rx="3.6" fill="url(#sshwsp-terminal-glass)"/>
+  <path d="M4.5 13.4h27" stroke="#fff" stroke-opacity="0.28" stroke-width="0.9"/>
+  <circle cx="8.8" cy="10.4" r="1" fill="#fff" fill-opacity="0.9"/>
+  <circle cx="12.4" cy="10.4" r="1" fill="#fff" fill-opacity="0.55"/>
+  <circle cx="16" cy="10.4" r="1" fill="#fff" fill-opacity="0.3"/>
+  <path d="M11.2 18.6l4.4 3.6-4.4 3.6" stroke="#fff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19 25.8h5" stroke="#fff" stroke-width="2.7" stroke-linecap="round"/>
 </svg>
