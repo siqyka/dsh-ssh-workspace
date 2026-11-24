@@ -233,106 +233,58 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 
 ## Capabilities
 
-> The complete inventory by domain (dependencies, degradation, limits included) is in [docs/features.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md).
+> The complete inventory by domain (dependencies, degradation, limits included) is in [docs/features.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md); UI details are in [docs/ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md).
 
 ### Remote files
 
-**Full error semantics** — `read` / `write` / `edit` run entirely over SFTP, with `FS_STALE_VERSION`, `FS_NOT_OBSERVED`, `FS_AMBIGUOUS_EDIT`, `FS_NOT_TEXT`, `FS_TOO_LARGE`, `FS_NOT_FOUND`, and so on
+See [features.md → II. File reads and writes](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md#二文件读写)
 
-**Atomic writes** — A write first lands in a staging file in the same directory, then replaces the target. OpenSSH's `posix-rename@openssh.com` is preferred; when the server doesn't support it, the plugin degrades to "delete, then rename" (no longer atomic in that case)
-
-**Line-ending fidelity** — Editing a CRLF file won't rewrite it to LF
-
-**Binary and encoding** — Text reads reject NUL / invalid UTF-8; `readBytes` returns raw bytes
-
-**Write fence** — Remote writes may only land inside a mounted remote workspace; anything outside returns `FS_OUTSIDE_WORKSPACE`. **The `read-only` mode also blocks remote writes** (`FS_SANDBOX_DENIED`). Reads are unrestricted
-
-**Large files stream** — Previews and `read` stream remote files in 256 KiB chunks instead of loading the whole file into memory
-
-**Host-path passthrough** — Host-absolute paths — such as non-image chat attachments — keep their local meaning inside an `ssh://` session (`read` / `read_image` / `node:fs`). By default only `$DSH_HOME/attachments` and `$DSH_HOME/plugins` pass through; every other absolute path stays remote, and matching never probes existence. A Windows drive/UNC path the user names with `@` in a message also passes through, and an explicit `local:/abs/path` names this machine (the prefix name is configurable); a scheme you did not enable is refused rather than guessed at
-
-**Remote changes auto-refresh** — Remote `inotifywait` push events are preferred (immediate, not bound by mtime precision); without it the plugin falls back to polling — about every 2 seconds, backing off while idle (after 15 quiet rounds to 5 s, after 30 to 10 s) and snapping back to 2 s on any change. On the polling path SFTP metadata has no sub-second timestamps, so consecutive rewrites of equal size within the same second may not trigger a refresh; additions, removals, and renames always do
-
+- **Full error semantics** — `read` / `write` / `edit` run entirely over SFTP, with explicit codes for stale versions, type errors, out-of-root writes, and so on
+- **Atomic writes** — A staging file in the same directory is replaced in place; `posix-rename@openssh.com` is preferred, degrading to delete-then-rename where unsupported
+- **Line-ending fidelity** — Editing a CRLF file won't rewrite it to LF
+- **Binary and encoding** — Text reads reject NUL / invalid UTF-8; `readBytes` returns raw bytes
+- **Write fence** — Writes may only land inside a mounted remote workspace; read-only sessions block writes too, reads are unrestricted
+- **Large files stream** — Previews and `read` stream in 256 KiB chunks instead of loading the whole file
+- **Host-path passthrough** — Host-absolute paths such as chat attachments keep their local meaning in an `ssh://` session; other absolute paths stay remote and existence is never probed
+- **Remote changes auto-refresh** — inotifywait push events are preferred; without it polling runs about every 2 s and backs off while idle
 
 ### Remote execution
 
-**Shell commands follow the workspace** — With an `ssh://` session workspace, the `pwsh` / `bash` tools run on the remote host under POSIX shell semantics — one-shot commands, background jobs, timeouts, and cancellation all work through DSH's process contract; local `workdir` commands are unaffected
+See [features.md → III. Remote execution](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md#三远端执行)
 
-**glob / grep search the remote** — They invoke **ripgrep (`rg`) on the remote host** and return real remote results; when ripgrep isn't installed there, the command fails clearly with an install hint (exit code 127)
-
-**Change tracking goes remote** — The "Changes" (deliverables) panel uses **remote git** for per-turn snapshots and diffs — files changed by remote shell commands show up too (+N/−N, click through to the diff); when git isn't installed remotely this capability quietly turns itself off and nothing else is affected. **Per-file before/after text is unavailable for remote edits**: the Host's whole-file capture (`captureFile()` in `dsh-workspace-changes`) opens `ctx.fs.processPath(target)` with `node:fs`, and for a remote target that is the **remote** path — both captures read as `absent`, `sameCapture()` calls them equal, and the record is dropped. The capture never calls `ctx.fs`, so the plugin cannot substitute a read; instead it refuses to let the drop be silent and records one `degraded` entry in the status diagnostics ring on the first remote write (`ctx.logger` has no exporter in this deployment — see [development.md](docs/development.md)). The change **list** is unaffected
-
-**PTC / `run_code` works** — Programmatic-tool-calling presets such as `ops-ptc` run the program in a **host-side Node worker**. Its cwd would be the session's `ssh://` spelling: it cannot even start (the remote subprocess bridge only admits git / rg) and could never be `chdir`-ed into. The plugin swaps the PTC `spec.cwd` for the local substitute directory, so **the program runs while every tool call it makes still executes remotely**; the program's own `process.cwd()`, relative `import()` and direct `node:fs` resolve against a local scratch directory — pass paths to tools explicitly. See [troubleshooting.md](docs/troubleshooting.md)
-
+- **Shell commands follow the workspace** — `pwsh` / `bash` run on the remote host under POSIX semantics in an `ssh://` session
+- **glob / grep search the remote** — They invoke ripgrep on the remote host and fail clearly with an install hint when it is absent
+- **Change tracking goes remote** — Remote git provides snapshots and diffs, and turns itself off when git is not installed
+- **PTC / `run_code` works** — The program runs in a host-side worker while every tool call it makes still executes remotely
 
 ### UI integration
 
-**New sessions work** — The host's own `node:fs/promises` calls (the session controller's `mkdir`, the workspace registry's `realpath` / `stat`) also route `ssh://` paths over SFTP, and `node:path.isAbsolute` treats `ssh://` spellings as absolute — so you can create a session directly in a remote workspace
+See [features.md → VI. UI integration](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md#六界面集成) and [ui.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md)
 
-**Automatic remount after restart** — Registered `ssh://` workspaces are remounted from the persisted registry on next launch
-
-**Sidebar groups repaired in place** — After disable → restart → enable there is no second restart needed to see the sessions: the compensation rebuilds the Host's session index and re-announces workspace membership, and the browser half then pulls one fresh session baseline (cold sessions have no pushable event). See [troubleshooting.md](docs/troubleshooting.md)
-
-**The "Workspace Files" sidebar works** — The file tree lists the remote directory directly and text previews are read over SFTP; `fs.fileUrl` returns the canonical `file:` URI of the **remote execution world** per the `dsh-fs` contract
-
-**`@` file references work remotely** — The chat input's `@` completion draws candidates from the **remote** tree (recursive index + fuzzy ranking; queries containing `/` browse level by level; directory symlinks are never followed). A selection inserts `@relative/path`, and the model's `read` opens exactly that remote file
-
-**Drag or right-click a file onto the task** — Files and folders in the tree can be **dragged straight onto the chat input** (dashed highlight while hovering; releasing inserts the reference chip) or picked via **right-click → "Add to task"** — both produce exactly what an `@` completion selection would
-
-**Drop system files onto the tree** — Dragging files from the OS file manager onto a **remote** Files tree uploads them; the drop point decides the target directory (a directory row is itself, a file / `other` row means its parent, blank space inside an expanded directory belongs to that directory, while tree body and header / path label mean the root). Folders are refused with one notice and never walked; a local tree refuses explicitly, and a drop outside the tree keeps DSH's own attachment behavior. See [ui.md](docs/ui.md#从系统拖入文件上传)
-
-**"Add workspace" gets a remote entry** — DSH's "Add workspace" button becomes a two-step anchored menu: pick "New local workspace" or "New remote workspace", then follow that branch. The local branch renders the **installed browse panel itself** (same component, same locale and listing calls; deployments without an in-app browser fall back to `pickDirectory()`); the remote branch is choose a host → browse the remote directory level by level → confirm the mount (unwritable directories produce a warning and refuse creation)
-
-**Recent commit history under the change-request tab** — The official Forge panel gains a read-only recent-commit strip in its lower half (same tab, no extra tab): the plugin shadows that slot entry by the official tab key, keeps the official component on top and renders its own history block below; a read-only host route `GET /api/dsh-ssh-workspace/git-history` serves it, accepting only the session's own working directory and running a fixed-argv `git log`. **Clicking the title row folds the whole strip** down to just the "Recent commits" heading, and the fold state is remembered in the page's `localStorage` across tab switches, reloads and host restarts; the official panel's copy seat is bound from the official entry's own namespace (binding the package id used to paint the upper half in raw i18n keys). **The panel's own git measurement works on remote workspaces too**: under `workspace-write` / `read-only` the `ctx.sandbox.confine()` windows-acl wrapper is fronted by the desktop executable (not `node`), and the remote bridge now recognises it by identity with `process.execPath` and strips it, instead of failing the whole panel with `cannot run "…DeepSeek Harness.exe" with a remote cwd`. See [ui.md](docs/ui.md)
-
-**Remote workspaces wear a dedicated mark** — Workspaces created by this plugin show the plugin's remote mark instead of the plain folder icon in sidebar rows, the workspace picker, and the session page's workspace button
-
-**Host management panel** — Add / edit / delete hosts (key paths, auth method, notes, …); changes take effect immediately and drop that alias's old connection. `~/.ssh/config` hosts are shown read-only. "Test connection" only probes reachability (it releases the connection it opened, so a probe never doubles as "connect") and reports as a toast at the top that expires after 7 seconds (click / Esc closes early; hovering pauses the clock). An error can expand its diagnostic code and raw message, copy the whole report, and — because a probe is safe to replay — retry in place. Connection state is shown inline after the host name, and dropping a connection also tears down that host's port forwards
-
-**Directory browser dialog** — A host card's "Browse directory" walks the remote tree level by level and can "Mount this directory" in place; **browse and mount only** — no upload, download, or inline queue (transfers live in the tree row menu and the file panel header)
-
-**Editing a file in the browser** — A pencil button in the document preview header opens the editor in place, over the preview body rather than in a dialog; **remote and local paths take the same routes**. Saving sends two tokens — `version` and `revision` — so a file someone else changed answers 409 and is not overwritten by default ("Overwrite" asks once more and re-reads the tokens first); **there is no `force` parameter**. Line endings and BOM survive a save, and the footer selector can switch the ending to `auto / LF / CRLF` (an ending-only change still counts as unsaved), with a 2 MiB cap. See [ui.md](docs/ui.md#文件编辑)
-
-**Row menu: new folder / rename / delete** — DSH's tree row menu provides rename and delete: remote rows AND **local rows** can be renamed (rename only, never a move) and deleted (a directory goes with its subtree, after a confirmation); an existing target is refused; a failure leaves the row untouched; F2 / Delete invoke the same action. A **remote directory row** also offers "New folder", backed by `POST /mkdir` (parent path plus a single-segment name; out-of-root, read-only, detached and duplicate targets are refused before any write); success re-lists the directory and selects the new row. A local directory row does not: local creation goes through the blank-space menu below, so the two entries never overlap. The row menu is 220px, single-line, at most eight items and three rules (task | transfer/copy | download-to-machine | new-folder/rename/delete). Labels are fixed and carry no count: delete is always "Delete" and download is always "Download to this machine"; how many rows the action covers is decided by `resolveTargets`, and the count appears in the delete confirmation and the download destination dialog
-
-**Blank-space menu (local workspaces)** — Right-clicking empty space in a local workspace's Files tree opens a menu with exactly two items: "New folder" and "Copy path". The target is the directory that empty space belongs to — the expanded directory whose nested list contains it, otherwise the tree root — and it must be inside that root. Creating uses the same `POST /mkdir` local branch (a single-segment name; out-of-root, read-only and duplicate targets are refused before any write) and selects the new row afterwards; "Copy path" is always available, and a read-only session disables only creation. Remote workspaces keep their own blank-space menu.
-
-**Uploads / downloads from the file panel** — Uploading is offered only by the file tree's row menu ("Upload a file here", remote rows only). The "Workspace Files" panel header keeps a single tray-arrow icon entry that stays visible even with an empty queue — **only while the panel shows a remote `ssh://` workspace**; a local listing keeps DSH's own header — idle it is the bare mark, and while a transfer is queued or running it turns blue and wears an aggregate progress ring (the count lives in its accessible name), opening the progress popover (per-item progress, speed and a progress bar, cancel, clear finished; running items first, settled newest first). The host's own right-hand tree stays the host's component — the plugin does not touch its JSX, it only layers multi-select on top (see below)
-
+- **New sessions work** — The host's `node:fs/promises` routes `ssh://` paths over SFTP, so a session can be created directly in a remote workspace
+- **Automatic remount after restart** — Registered workspaces are restored from the persisted registry on next launch
+- **Sidebar groups repaired in place** — Disable → restart → enable needs no second restart to see the sessions
+- **The "Workspace Files" sidebar works** — The tree lists the remote directory directly and previews are read over SFTP
+- **Editing a file in the browser** — The preview header's pencil opens an in-place editor with two-token conflict protection, multiple tabs that keep drafts, and a 2 MiB cap
+- **`@` file references work remotely** — Completion candidates come from the remote tree and a selection inserts `@relative/path`
+- **Drag or right-click a file onto the task** — Tree rows can be dragged onto the chat input or added via right-click, equivalent to an `@` selection
+- **Drop system files onto the tree** — The drop point decides the target directory; folders and local trees are refused
+- **"Add workspace" gets a remote entry** — A two-step local/remote menu; the remote branch picks a host, browses directories, and mounts
+- **Recent commit history under the change-request tab** — A read-only history strip is appended to the official panel's lower half, collapsible by clicking the title with the state remembered
+- **Remote workspaces wear a dedicated mark** — Sidebar rows, the picker, and the session's workspace button show the remote mark
+- **Host management panel** — Add / edit / delete hosts, test connection with a 7-second toast, inline connection state, and forwards torn down on disconnect
+- **Directory browser dialog** — Walk the remote tree level by level and mount in place; browse and mount only
+- **Row menu: new folder / rename / delete** — Remote and local rows can be renamed or deleted; remote directory rows also offer "New folder"
+- **Blank-space menu (local workspaces)** — Exactly two items, "New folder" and "Copy path", targeting the directory the blank space belongs to
+- **Uploads / downloads from the file panel** — Upload lives in the remote row menu; the panel header's tray icon opens the progress popover
 
 ### Selection, rename and delete
 
-**Entry**: multi-select lives directly in the host's own "Files" tab — no dialog, no plugin tab. The plugin does not take over that tree (it is the host's DOM) — it only adds classes of its own and delegates clicks and keys at the document level, so highlight, Ctrl/Shift, arrow keys and right-click semantics work *in the host's tree*.
-
-| Gesture | Result |
-| --- | --- |
-| Click a directory | Enter it and clear the selection and anchor |
-| Click a file | **Select it AND open it** (navigation passes through; only a modified click swallows it) |
-| Ctrl/Cmd+click | Toggle the row; **a directory is selected, never entered** |
-| Shift+click | Range from the anchor to the row; **the first Shift seeds the anchor**, so two consecutive Shift+clicks select a range without a preceding ordinary click (which would open a file preview); **a directory is selected, never entered**; the anchor does not move |
-| Ctrl/Cmd+Shift+click | Append that range to the existing selection |
-| Right-click (outside the selection) | Collapse the selection to that row, then open the menu; never opens the file |
-| Right-click (inside the selection) | Keep the whole selection; the label stays the same, the scope is the batch |
-| Ctrl/Cmd+right-click | Toggle that row, then open the menu |
-| Shift+right-click | Extend the range from the anchor, then open the menu |
-| Click empty space / Esc | Clear the selection (Esc keeps the keyboard cursor) |
-| Ctrl/Cmd+A | Select all, directories included |
-| ↑/↓, Home/End | Move the cursor and select; Shift extends; Ctrl+↑/↓ moves the cursor only |
-| Enter | Enter the directory under the cursor |
-| F2 / Delete | Rename / delete the cursor row or the selected rows |
-
-Selected rows are painted with a background fill and the cursor row with an outline; **no row renders a checkbox and there is no "selection mode" switch, and no batch bar floats under the tree**. Right-clicking inside a multi-row selection keeps the batch, but the menu label does not change with the count — the scope follows the selection, and it reuses the one transfer queue instead of growing a second one. With more than one target the item first confirms (stating how many items will be downloaded) and then **asks for the destination directory once** before enqueuing the whole batch: the directory comes from the browser's directory handle, else the host's directory picker, else per-file save dialogs — cancelling the picker cancels the batch rather than degrading into N dialogs. The new "Rename" and "Delete" items work for remote rows AND **local workspace rows**: a rename happens **inline on the row** (the name becomes an input; Enter commits, Esc cancels, a refused name keeps the field open and marked invalid), never moves an entry and refuses an existing target; deleting a directory removes its subtree after a confirmation that names the count, the first few entries and the irreversibility; a failure is not optimistically rendered — the list keeps its old state and the reason is shown.
+Multi-select lives directly in the host's own "Files" tree — no extra dialog or tab. Selected rows get a background fill and cursor outline; there are no checkboxes, no "selection mode" switch and no batch bar, and menu labels stay fixed while their scope follows the selection. The full gesture set (click, Ctrl/Cmd, Shift, right-click, arrow keys, F2/Delete) and the `resolveTargets` rule are in [ui.md → interaction details](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/ui.md#交互细节) and [features.md → VI. UI integration](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md#六界面集成).
 
 ### Connection model
 
-One long-lived connection per alias — one always-open SFTP channel, with shell
-commands opening exec channels on the same connection; recycled after 30 minutes idle
-(never while an operation is in flight).
-
-The first connection records the server's host-key fingerprint (trust on first use);
-a later key that differs is **refused** with both fingerprints in the message — a guard
-against man-in-the-middle attacks. After a legitimate host reinstall, "Forget host key"
-in the panel re-trusts on next connect.
+One long-lived connection per alias — an always-open SFTP channel plus exec channels for shell commands — recycled after 30 minutes idle, never mid-operation. The first connection records the host-key fingerprint (TOFU); a later mismatch is refused, and a legitimate reinstall re-trusts via "Forget host key" in the panel. See [features.md → VII. Hosts and security](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/features.md#七主机与安全).
 
 ## Limitations
 
@@ -352,46 +304,14 @@ Explicitly **not supported**:
 
 ## Implementation notes
 
-<details>
-<summary><b>Expand: the six core implementation paths</b> (no second fs service, bridging host built-ins, taking over ctx.subprocess, localizing the sandbox root, localizing the PTC worker, workspace registration bypassing realpath)</summary>
+The six core paths in one line each; the full mechanics are in [docs/architecture.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/architecture.md).
 
-<br>
-
-- **No second `fs` service**: remote methods are installed directly onto the
-  deployment's already-mounted `ctx.fs` instance as own properties, and all other
-  methods forward unchanged to the original backend (bound to its original receiver).
-  Installation order doesn't matter.
-- **Bridging the host's built-in modules**: `node:fs/promises` `mkdir` / `stat` /
-  `lstat` / `realpath` / `readdir` and `node:path.isAbsolute` special-case `ssh://`
-  spellings (including `syncBuiltinESMExports`), so calls that happen before any agent
-  exists — creating sessions, registering workspaces — also go over SFTP. `node:path`
-  `resolve` / `join` / `relative` understand `ssh://` too (change tracking folds git's
-  repository paths with them), `copyFile` / `open` / `rm` serve snapshots and
-  captures, and `readdir` serves `@` completion's remote directory scans.
-- **Taking over `ctx.subprocess`**: subprocesses whose `cwd` is `ssh://` run on the
-  remote host — glob / grep's ripgrep and change tracking's git both take this route
-  (every other spawn forwards unchanged); the command whitelist, POSIX script
-  assembly, and handle contract (`done` / `collected` / `terminate` ladder) match the
-  local runtime.
-- **Localizing the sandbox root**: every host command path runs
-  `ctx.sandbox.confine()` first, and the `workspaceRoot` it receives is the session's
-  `ssh://` spelling — which the Windows ACL provider resolves as a HOST path, fails
-  with `ENOENT`, and closes the door, so no command ever starts. Taking over `confine`
-  swaps only the remote root for a real local directory (`mode` / `sessionId` carried
-  through untouched) and leaves `sandboxPolicy.resolve` alone — that spelling is what
-  the `workspace-write` session-scope fence compares against.
-- **Localizing the PTC worker**: programmatic tool calling (`run_code` / `ops-ptc`) does not call
-  tools directly — the host's own Node worker runs the program. That worker's cwd was the
-  session's `ssh://` spelling: the remote bridge refuses to spawn anything but git / rg, and
-  even if it did, the worker could never `chdir` into it. Taking over
-  `ctx.ptcRuntime.resolve` swaps only the spec's remote cwd for the substitute root, fixing
-  both the spawn and the pre-evaluation `chdir`; the tools the program calls still run
-  remotely.
-- **Workspace registration bypasses `realpath`**: it goes through
-  `createCanonical()`, preserving full persistence and ordered writes while bypassing
-  the host's `realpath` assertion.
-
-</details>
+- **No second `fs` service** — Remote methods are installed onto the already-mounted `ctx.fs`; everything else forwards unchanged
+- **Bridging the host's built-in modules** — `node:fs/promises` and `node:path` special-case `ssh://` so calls made before any agent exists also go over SFTP
+- **Taking over `ctx.subprocess`** — Subprocesses whose `cwd` is `ssh://` run remotely (ripgrep / git) with the same handle contract as local ones
+- **Localizing the sandbox root** — Only the remote root `confine` receives is swapped for a real local directory; the session-scope fence is untouched
+- **Localizing the PTC worker** — Only the cwd returned by `ptcRuntime.resolve` changes; the tools the program calls still run remotely
+- **Workspace registration bypasses `realpath`** — It goes through `createCanonical()`, preserving persistence and ordered writes
 
 ## Documentation index
 
