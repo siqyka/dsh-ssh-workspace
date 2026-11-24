@@ -102,7 +102,7 @@ DSH 的所有文件操作都走 `ctx.fs`（`@deepseek-ai/dsh-fs`）这一个服�
 2. **输入来源**：在插件管理界面的安装输入框中二选一，点击安装：
    - **npm 包**（走 npm 分发，支持锁定版本）：
      `@shiqyka/dsh-ssh-workspace`，或指定版本
-     `@shiqyka/dsh-ssh-workspace@0.2.8`
+     `@shiqyka/dsh-ssh-workspace@0.3.6`
      （[npm 页面](https://www.npmjs.com/package/@shiqyka/dsh-ssh-workspace)）；
    - **仓库地址**（从 Git 取最新代码）：
      `https://github.com/siqyka/dsh-ssh-workspace`
@@ -253,7 +253,8 @@ localPassthrough:
 | `ssh_workspace_shell` | 在**持久**远端 shell 里执行命令，状态跨调用保留 |
 | `ssh_workspace_transfer` | 本机 ↔ 远端传文件（SFTP，不经对话内容） |
 | `ssh_workspace_forward` | 把远端端口映射到本机，返回可打开的 URL |
-| `ssh_workspace_unforward` | 关闭端口映射并释放本地端口 |
+| `ssh_workspace_reverse_forward` | 让远端监听一个端口并转发回本机（`ssh -R`），远端浏览器或同事可访问你本机服务 |
+| `ssh_workspace_unforward` | 关闭端口映射并释放本地端口（含反向映射） |
 
 > 工具的参数、返回字段与错误语义详见 [docs/tools.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/tools.md)。
 

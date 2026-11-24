@@ -8,10 +8,10 @@
 
 | # | 工作流 | 落点 |
 | --- | --- | --- |
-| 01 | 裸检出上能跑远端读写（测试支撑） | `tests/support/fake-sftp.mjs`、`plugin-host.mjs`、`render.mjs`；03 的验收基线 |
+| 01 | 裸检出上能跑远端读写（测试支撑） | `tests/support/fake-sftp.mjs`、`tests/support/plugin-host.mjs`、`tests/support/render.mjs`；03 的验收基线 |
 | 02 | 权限语汇（默认关闭、主机白名单、写围栏、审计不写内容） | `lib/core/mode-gate.js`、`lib/fs/remote-fs.js`、`lib/engine/engine.js` 底部 |
 | 03 | 右侧文件树的文件编辑（读/写/改三条路由、`version` + `revision` 双校验、远端与本地同一条路由） | `docs/ui.md` 的「文件编辑」一节；`docs/features.md` 二之「在浏览器里编辑」 |
-| 04 | 代码拆分（去重、`statusTool` 三段分离、`routes` 按资源域拆模块、watch 集群独立、`client.js` 按懒渲染边界拆 chunk） | `CHANGELOG.md` 的 0.3.6「变更」一节；client chunk 的宿主能力（同步 `require` 不可、`require.async` 可用、命名 `client.<name>.js`、`load` 注册、按插件目录同名文件取）与拆分边界见下方「客户端 chunk 的宿主事实」 |
+| 04 | 代码拆分（去重、`statusTool` 三段分离、`routes` 按资源域拆模块、watch 集群独立、`client.js` 按懒渲染边界拆 chunk） | `CHANGELOG.md` 的 `[未发布]`「变更」一节（client.js 拆 chunk、`lib/` 按能力域重组）；client chunk 的宿主能力（同步 `require` 不可、`require.async` 可用、命名 `client.<name>.js`、`load` 注册、按插件目录同名文件取）与拆分边界见下方「客户端 chunk 的宿主事实」 |
 | 05 | 同功能模块合并（16 组，`lib/` 83 → 57 个模块） | `CHANGELOG.md` 的 0.3.6「变更」一节（含合并带出的两处真缺陷）；「搬家会让检查静默变松」的四处修正见未发布段的「修复」 |
 | 06 | 文件系统与编辑器的参照取舍（对照第三方 side-bar 实现：4 条必做缺陷、4 条纯优化、5 条明确不做） | `CHANGELOG.md` 的 `## [未发布]` 各条（冲突基线、watcher 上限、`beforeunload`、编码读写、文件内查找、确定性排序、单例折叠、只读分页）；`docs/ui.md` 的「文件编辑」一节 |
 | 07 | 右侧文件树的「新建文件」（远端目录行 + 远端空白处 + 本地空白处；`POST /create-file` 独占创建，0 字节，不自动打开） | `docs/features.md` 的「新建文件」一行、`docs/ui.md` 的行菜单与空白处菜单两节；`CHANGELOG.md` 的 `## [未发布]` 新增条；`tests/mutations-smoke.mjs` 与 `tests/tree-gestures-smoke.mjs` |

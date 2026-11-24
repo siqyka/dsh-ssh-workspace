@@ -18,7 +18,7 @@
   用 `ctx.inject(['fs', 'workspaceRegistry'], …)` 恢复重启前登记的远端工作区；
   用 `ctx.inject(['fs', 'webServer'], …)` 注册浏览器半边的 HTTP 路由。
   这些注入都可以晚于本插件出现，安装顺序无关。
-- **客户端半边**（`lib/client/client.js` 加十二个 chunk，七个启动期、五个按需）：由 DSH 客户端的模块加载器
+- **客户端半边**（`lib/client/client.js` 加 13 个手写 chunk：7 个启动期、6 个按需；另有 1 个构建产物 `client.editor-engine.js`）：由 DSH 客户端的模块加载器
   （`window.__ModuleLoader__.load({ id, factory })`）直接执行，通过 `slots`
   服务挂载「远程工作区」面板与「添加工作区」菜单，并做工作区标记的 DOM 装饰。
   文件树右键菜单是**模型 + 一个渲染器**：`rowMenuModel` / `blankMenuModel` 先产出一份
@@ -32,7 +32,7 @@
   策略答案按「会话 + 根」缓存 30 秒，同一个 key 的在途请求只发一次（缓存要等答案落地才写，否则连点两次就是两个请求），缓存上限 32 条。
   策略查询是 fire-and-forget：菜单先开，答案后到——让打开动作等一次往返，就是让「右键」在慢链路上卡一秒。
   `apply` 是 `async`，开头 `await loadBootChunks()` 拿回来再注册任何 slot——而且**分三批**：kernel 单独、图标单独、其余并发。分批不是洁癖：chunk 在**自己的 factory 执行期间**就会 destructure 借来的名字，所以「谁先到」是契约的一部分。
-  最先取回的是**无状态底层**（`lib/client/client.kernel.js`，十二个 chunk 里最大的一个）：
+  最先取回的是**无状态底层**（`lib/client/client.kernel.js`，手写 chunk 里最大的一个）：
   API 表、fetch、选择模型的接线、分块上传、选择器入口、菜单的 DOM 读取、forge 页的反射。
   它是按**层**切的——从每个声明出发遍历它引用到的一切，只要走到任何模块级 `let` 就留下，
   剩下的才搬走；拼缝只有一个方向，这份代码不从主包借任何名字。
@@ -106,9 +106,10 @@ Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔
 **直通的作用域只有 `ctx.fs`，这是有意为之的边界。** 判定点嵌在 `ctx.fs.resolve` / `lstat` 与
 `node:path` 的桥接里，因此它覆盖的是“经过 `ctx.fs` 的文件系统调用”；任何**绕过 `ctx.fs`、
 直接把路径交给子进程**的读取都碰不到它。典型例子是 dsh-ops：它把会话 cwd 原样作为
-`ctx.subprocess.spawn` 的 `cwd` 交给本机 worker（`lib/execution/files.js` 的
-`exchange(subprocess, { argv, cwd, … })`），而 `lib/patch/patch-subprocess.js:223` 的远端桥只放行
-`git` 与 `rg`，于是 worker 被拒并报 `EXECUTOR_UNAVAILABLE`。这不是本插件可以就地补掉的缺口：
+`ctx.subprocess.spawn` 的 `cwd` 交给本机 worker（dsh-ops 包内部 `lib/execution/files.js` 的
+`exchange(subprocess, { argv, cwd, … })`——那是宿主包的文件，不是本插件的），而
+`lib/patch/patch-subprocess.js:239` 的 `remoteCommandFor()`（按函数名找，行号会漂）的远端桥
+只放行 `git` 与 `rg`，于是 worker 被拒并报 `EXECUTOR_UNAVAILABLE`。这不是本插件可以就地补掉的缺口：
 worker 是本地 Windows 可执行文件，`Path::new(root).is_absolute()` + `canonicalize` 消化不了
 `ssh://` 拼写，且它只有本地文件系统访问——「本地进程 + 远端根」是结构性问题。插件因此不假装
 覆盖它，而是在系统提示里说明边界与替代入口（见 [features.md](./features.md) 的边界表）。
@@ -471,9 +472,11 @@ const directorySchema = z.string().min(1).refine(isAbsolute).nullable()
 ### 接缝接管的结果表（`seams`）
 
 `upstreamWorkarounds` 回答的是「宿主是否已经前进、我这条补丁能不能删」。它的镜像问题是
-「我这次接管到底有没有装上」，两者给出的启动画面**长得一模一样**：都没有输出。所以每个
-`patch-*.js` 的安装点在 `lib/index.js` 里统一走 `installSeam()`，把结果记进
-`engine.seams`，再由 status 工具、面板 status 路由与诊断报告三处同时提供：
+「我这次接管到底有没有装上」，两者给出的启动画面**长得一模一样**：都没有输出。所以各服务
+接缝在 `lib/index.js` 里统一走 `installSeam()`（其中 shell 发现的实现在 `lib/surface/shell.js`，
+不在 `lib/patch/`），把结果记进 `engine.seams`；唯一例外是外交补丁 `patch-projection.js`，它在
+`lib/index.js:570` 直接调用 `installProjectionRelaxation()`，走 `upstreamWorkarounds` 通道而不进
+`seams`。结果再由 status 工具、面板 status 路由与诊断报告三处同时提供：
 
 | 状态 | 含义 | 是否算问题 |
 | --- | --- | --- |
@@ -574,7 +577,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   in-flight promise。
 - **缓存没有 TTL，失效只由连接代次驱动**。键是
   `alias` + NUL + `engine.generationOf(alias).generation`，代次只在成功连接时加一
-  （`lib/engine/engine.js:873`），所以**重连就是唯一的自动刷新点**：新一代次重探一次，随后
+  （`lib/engine/engine.js:845`），所以**重连就是唯一的自动刷新点**：新一代次重探一次，随后
   `#retireOtherGenerations()` 把旧代次的条目清掉（否则每次重连都留一条，长时间跑下来
   会一直涨）。没有定时器、没有 `refresh` 开关，`ssh_workspace_status` 也不暴露它——
   半台主机的 shell 清单不值得为它扩大状态面。代价说清楚：**主机上装了新 shell 而连接
@@ -582,7 +585,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
   伴随重新登录），而反向的诱惑更容易出错：给 TTL 会把"一次探测"变成"每小时一次探测"，
   只换来"没断线时也能自愈"这一种情形。
   另一条边界同样有意：代次上升之前（连接已断、还没重连）**仍会答上一代次的答案**。
-  `generationOf` 里虽有 `connected` 字段（`lib/engine/engine.js:428-430`），但它随连接状态反复
+  `generationOf` 里虽有 `connected` 字段（`lib/engine/engine.js:425`），但它随连接状态反复
   抖动，放进键里会把一次网络闪断放大成一次额外往返；而缓存里的每一行都是那台主机**真的
   报告过**的，此时选中它只会在打开终端时撞上连接错误——错误落在"主机连不上"这一类，
   不是谎报。

@@ -38,7 +38,7 @@
 
 - 内存 SFTP / 宿主 / 引擎 / 渲染替身收敛，裸检出可跑远端读写成功路径；三条长期红清除，partial 逐个打印跳过段。
 - `text-encoding` 39 项与 10 个反向变异；`doc-numbers-smoke` 26 → 42；`dirs-listing` 改问同一 shell 的 `pwd -P`。
-- 套件合并 104 → 81（13 组、断言不减），裸检出 71 passed / 2 partial / 8 skipped / 0 failed（5438 断言），lint / check:docs / check:client-map 全绿。
+- 套件合并 104 → 81（13 组、断言不减），此后又新增表现层守卫等套件至 83；当前裸检出 73 passed / 3 partial / 7 skipped / 0 failed（5838 断言），lint / check:editor / check:docs / check:client-map 全绿。
 
 ## [0.3.6] - 2026-11-19
 
@@ -149,6 +149,8 @@
 - README / `ui.md` / `protocol.md` / `tools.md` / `development.md` 同步。
 
 ## [0.3.1] - 2026-11-08
+
+> **版本归属注**：`v0.3.0` tag（2026-11-06）发布时，本文件顶部仍是 `[Unreleased]`，其中已包含断点续传、目录下载、传输校验、状态来源、`ProxyJump` 建链、反向转发、`Include` / `Match`、命令确认策略、最近使用等条目；随后发 `0.3.1` 时整段被标成了 `0.3.1`，本文件因此没有单列 `0.3.0` 段。也就是说下面这些条目里有一部分实际在 `0.3.0` 就已交付。当时的原始记录见 `git show v0.3.0:CHANGELOG.md`。这里保留原段落结构、不拆分重写，是因为两版条目并非一一对应（多项在 0.3.1 时被重写或合并），硬拆反而会把 0.3.1 真正新增的条目（树多选、批量下载、行内重命名等）误归到 0.3.0。
 
 ### 新增
 

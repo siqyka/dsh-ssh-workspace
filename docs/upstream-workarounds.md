@@ -138,7 +138,9 @@ DSH_SSH_WORKSPACE_DISABLE_UPSTREAM_WORKAROUNDS=1   # 重启 DSH
 
 1. `lib/index.js`：删掉带 `UPSTREAM WORKAROUND #1` 框注的
    `ctx.inject(['sessionProjections'], …)` 块，以及顶部 `patch-projection.js` 的 import；
-2. 删 `lib/patch/patch-projection.js`；
+2. 删 `lib/patch/patch-projection.js`；并从 `lib/core/upstream-contract.js` 的 `CONTRACTS` 里
+   移除 `UPSTREAM-1-working-directory-isAbsolute` 条目——否则 `tests/upstream-contract-smoke.mjs`
+   仍会声明该模块存在而变红（该契约表是 grep id 能列出「删除时需触碰的全部位置」的前提）；
 3. 删 `tests/projection-relax-smoke.mjs`、`tests/projection-real-smoke.mjs`，
    并从 `tests/run.mjs` 的 `SUITES` 里去掉 `projection-relax`、`projection-real`；
 4. 删本页，并从 [docs/README.md](./README.md)、根 `README.md` / `README.en.md`

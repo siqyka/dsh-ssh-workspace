@@ -208,8 +208,9 @@ cannot read "ssh://myserver/Users/me/.dsh/attachments/v1/files/…": not found
 | dsh-ops 的 `inspect_local_file` / `read_files` / `glob` / `grep` | `EXECUTOR_UNAVAILABLE: … only git and ripgrep (rg) are supported over the remote subprocess bridge` |
 | 带 `workdir` 的 `ops_bash` | `invalid workdir: must be an existing directory` |
 
-**为什么**：dsh-ops 把会话 cwd 原样交给本机的 `dsh-ops-worker.exe`（`lib/execution/files.js`
-的 `exchange(subprocess, { argv, cwd, … })`），而 `lib/patch/patch-subprocess.js:223`
+**为什么**：dsh-ops 把会话 cwd 原样交给本机的 `dsh-ops-worker.exe`（dsh-ops 包内部的
+`lib/execution/files.js` 的 `exchange(subprocess, { argv, cwd, … })`，不是本插件的文件），而
+`lib/patch/patch-subprocess.js:245` 的 `remoteCommandFor()`（按函数名找，行号会漂）
 的远端桥只放行 `git` 与 `rg`。worker 是本地 Windows 可执行文件，它的
 `Path::new(root).is_absolute()` + `canonicalize` 也消化不了 `ssh://` 拼写——**这不是拼写
 问题，是「本地进程 + 远端根」的结构性错配**，且它不走 `ctx.fs`，所以直通管不到。

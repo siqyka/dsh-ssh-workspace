@@ -60,7 +60,7 @@
 以下行为是有意为之，报告前请先确认不属于这些：
 
 - **远端命令以远端登录用户的完整权限运行。** 本机沙箱无法限制远端进程，所以「仅可查看」会话下插件**拒绝执行**而不是「围栏执行」。这是设计取舍，见 [docs/architecture.md](./docs/architecture.md)。
-- **`~/.ssh/config` 里 `PasswordAuthentication` 之类的开关不被解析。** 插件只取主机名、端口、用户、`IdentityFile`、`ProxyJump`（不支持）等字段，其余交给 ssh2 的默认策略。
+- **`~/.ssh/config` 里 `PasswordAuthentication` 之类的开关不被解析。** 插件只取主机名、端口、用户、`IdentityFile`、`ProxyJump`（已支持：按 `ssh -J` 逐跳建链，最多 8 跳）等字段，其余交给 ssh2 的默认策略。`ProxyCommand` 不支持，会被明确拒绝。
 - **`known_hosts` 不被读取。** 本插件维护自己的指纹记录，与 OpenSSH 的 `known_hosts` 是两套。
 - **读取远端文件会经过本机内存。** 大文件按块流式传输，但内容仍在本机进程中解密拼接。
 

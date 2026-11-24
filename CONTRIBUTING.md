@@ -55,15 +55,15 @@ npm run check        # lint + 文档 + 测试 + tarball 校验，提交前跑这
 
 ## 代码约定
 
-- **无构建步骤。** 宿主半边是原生 ESM；浏览器半边是手写的主 bundle（`lib/client/client.js`）加十二个同目录 chunk（`lib/client/client.*.js`），由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载。不要引入打包器。
+- **手写代码无构建步骤**，唯一例外是编辑器引擎 chunk。宿主半边是原生 ESM；浏览器半边是手写的主 bundle（`lib/client/client.js`）加同目录 chunk（`lib/client/client.*.js`，数量以 `scripts/client-map.mjs` 的 `clientParts()` 为准），由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载。不要引入打包器——`client.editor-engine.js` 是 `npm run build:editor` 从 `editor-engine/` 生成的 CodeMirror 产物，`npm run check:editor` 防其漂移。
 - **注释总体说明这个函数/功能做什么**，只在关键处写「为什么」、在容易出事的地方多写，尽量精简。凡是绕过宿主行为、依赖时序、或看起来可以简化但要出事的地方，必须留注释说明原因。不要留迁移史（「以前在哪个文件」），那是 CHANGELOG 的事。
 - **`catch {}` 要么有注释，要么有日志。** 静默失败是这个插件最容易犯的错——远端与本机之间隔着网络，出错时不声不响会让人完全无法定位。
-- **新增诊断信息走 `lib/diagnostics.js`，不要用 `ctx.logger.debug()`。** 宿主没有 console exporter，`debug` 级别低于所有 exporter 的默认级别，写进去等于没写。真正能被用户看到的是 `ssh_workspace_status` 工具和面板的 status 路由。
+- **新增诊断信息走 `lib/core/diagnostics.js`，不要用 `ctx.logger.debug()`。** 宿主没有 console exporter，`debug` 级别低于所有 exporter 的默认级别，写进去等于没写。真正能被用户看到的是 `ssh_workspace_status` 工具和面板的 status 路由。
 - **新增上游 workaround 必须登记。** 见 [docs/upstream-workarounds.md](./docs/upstream-workarounds.md)：可 grep 的稳定 id、自动退役、测试信号，三样缺一不可。
 
 ## 改完之后
 
-1. `npm run check` 全绿。
+1. `npm run check` 全绿（lint、编辑器产物校验、文档、client-map、测试、tarball）。
 2. 改了 `lib/client/client.js`：重启 DSH 客户端，**在浏览器里实际点一遍**。客户端没有单元测试能覆盖渲染与手势。
 3. 改了围栏、模式判定、或远端写入路径：在真实主机上验一次，并且验**反向**——把修复改回去，确认测试真的会红。这个仓库的若干次回归都是「测试没红，但功能坏了」。
 4. 改了已发布行为：更新 [CHANGELOG](./CHANGELOG.md)，只写结论（原来坏在哪、现在怎么样），不写实现过程。

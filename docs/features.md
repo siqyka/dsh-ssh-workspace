@@ -16,9 +16,9 @@
 | --- | --- |
 | Agent 工具 | 11 个 `ssh_workspace_*` |
 | 浏览器 HTTP 路由 | 37 条（前缀 `/api/dsh-ssh-workspace/`，仅回环 + Host 头校验） |
-| 接管的服务 seam | 7 个：`ctx.fs`、`ctx.sandbox.confine`、`ctx.shell`、`ctx.subprocess`（`spawn` 与 `spawnTerminal` 两个方法）、`ctx.ptcRuntime.resolve`、`ctx.terminalController.shells`（远端 shell 发现）、客户端 `ctx.slots`（两个 UI 槽位，含注册表 projection 放宽） |
+| 接管的服务 seam | 7 个 `installSeam()`（`lib/index.js`）：`PATCH-fs` → `ctx.fs`、`PATCH-sandbox` → `ctx.sandbox.confine`、`PATCH-shell` → `ctx.shell`、`PATCH-subprocess` → `ctx.subprocess.spawn`、`PATCH-ptc` → `ctx.ptcRuntime.resolve`、`PATCH-terminal` → `spawnTerminal`、`PATCH-shell-discovery` → `ctx.terminalController.shells`（远端 shell 发现，实现在 `lib/surface/shell.js`）。另有 `ctx.slots` 上的两个 UI 槽位与 `projection` schema 放宽，它们不经 `installSeam`——前者是客户端注册、后者走 `upstreamWorkarounds` 通道 |
 | 桥接的宿主内建模块 | 2 个：`node:fs/promises`、`node:path` |
-| 冒烟测试套件 | 83 个（裸检出 73 个通过 / 3 个 partial / 7 个需真实主机、完整 DSH 树或 POSIX `sh` 则 SKIP；合计 5752 项断言，采样） |
+| 冒烟测试套件 | 83 个（裸检出 73 个通过 / 3 个 partial / 7 个需真实主机、完整 DSH 树或 POSIX `sh` 则 SKIP；合计 5838 项断言，采样） |
 
 设计前提：**不注册第二个 fs 服务**。远端方法装在部署已挂载的那一个 `ctx.fs` 实例上，
 `ssh://` 路径走 SFTP，其余路径原样转发给原后端——因此本地工作区的一切行为不受影响。
@@ -58,7 +58,7 @@
 | 元数据缓存 | 读路径元数据缓存 TTL **1.5 s**、上限 **1024** 条（刻意低于轮询间隔，避免把缓存快照当成新快照） |
 | 轮询的已知盲区 | SFTP 元数据无亚秒时间戳，同一秒内**等长**的连续改写可能不触发刷新；增、删、改名总能感知 |
 | 在浏览器里编辑 | 文档预览头部的铅笔按钮把编辑器**盖在预览正文那一块上**（不是弹窗），**远端 `ssh://` 与本地绝对路径走同一组路由**（`read-text` / `write-text` / `edit-text`），只有最内层的读写与围栏分两支；上限 **2 MiB**（超出改为只读分页，128 KiB 一页）；不能编辑时铅笔按钮**保留**，图标角上戴红点，悬停显示原因（编码限制 / 只读会话 / 二进制 / 超出上限 / 工作区外）。**≤64 KiB 的文件由 probe 连正文一起回传**，点开编辑直接用它起稿（令牌一同带回，保存仍会发现这期间被改过的文件），编辑器打开不再额外发一次读 |
-| 文件内查找 | `Ctrl/Cmd+F` 打开查找条，`Enter` / `Shift+Enter` 前后跳并在首尾回绕，`Aa` 切大小写，`Esc` **先关查找条再关编辑器**。匹配是字面量扫描（不编译正则），最多收集 **1000** 条、超出显示 `1000+`。选中即高亮——textarea 画不了区间，替代方案是覆盖层逐像素对齐或换 `contenteditable` 重写选区与撤销 |
+| 文件内查找 | `Ctrl/Cmd+F` 打开查找条，`Enter` / `Shift+Enter` 前后跳并在首尾回绕，`Aa` 切大小写，`Esc` **先关查找条再关编辑器**。匹配是字面量扫描（不编译正则），最多收集 **1000** 条、超出显示 `1000+`。选中即高亮——引擎路径由 CodeMirror 6 原生画选区与高亮；无引擎兜底的 `textarea` 画不了区间，用覆盖层逐像素对齐（不再考虑 `contenteditable` 重写选区与撤销） |
 | 编辑器内核 | 文件读出后 `require.async` 取 **CodeMirror 6**（独立 744 KiB chunk，`npm run build:editor` 生成，`check:editor` 防漂移）；chunk 未到或加载失败就继续用 `textarea`，失败被记住、不在每次 render 重试。语法高亮由解析器驱动：JavaScript / TypeScript / JSX、JSON、CSS、HTML/XML、Markdown、Python、Shell、YAML、SQL、Go、Rust、C 系、TOML/INI、Dockerfile、Makefile |
 | 多标签 | 同一会话打开过的文件进一条标签带，切换时**先认未保存草稿再看磁盘**；脏标签带圆点、关闭前询问、关闭当前标签取右邻（末尾取左邻、全关收起面板）；保存不再关闭面板 |
 | 语法高亮回退 | 引擎不可用时退回 `textarea` + **窗口化**颜色覆盖层：只画视口附近的行并按 `scrollTop` translate，缓存每行进入时的扫描状态；**换行模式、输入法组合期间、超过 512 KiB** 时不染色。颜色全走 CSS 变量，浅色主题有独立调色板 |

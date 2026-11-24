@@ -80,7 +80,7 @@
 | `lib/client/client.icons.js` | 浏览器半边的启动 chunk：十四个 SVG 图标工厂加 `TRAY_ARROW_PATHS`。侧栏行字形、文件树 DOM 菜单、工作区标记都要它，`apply` await |
 | `lib/client/client.selection.js` | 浏览器半边的启动 chunk：唯一的翻选模型（`SELECTION_EMPTY` / `selectReduce` / `selectionRange`）。纯函数、不碰 DOM、不读 `translate`，所以能整块搬；用它的文件树接线（按容器做 key 的 WeakMap、被吞掉的 click、键盘处理）留在主包——那部分知道的是「手势什么时候发生」，这块决定的是「手势是什么意思」 |
 | `lib/client/client.queue.js` | 浏览器半边的启动 chunk：转移队列的纯规则——两个并发上限、上传体积上限、`queueReduce` / `queueDrain` / `queueItemPercent` / `truncateTransferName` 等。**没有钟、没有 DOM、没有 `fetch`、不读 `translate`**，所以 `apply` await 它，而队列状态与真正搬字节的 worker 仍在主包 |
-| `lib/client/client.marks.js` | 浏览器半边的启动 chunk：整块远端工作区装饰（446 行）——活工作区的身份集合、可引用行标记、detached 行与按钮的 `inert`、以及重贴的 `MutationObserver`。是启动 chunk 而不是懒加载：`installRemoteWorkspaceMarks` 必须在首帧之前就在观察，晚一帧就是可见的闪烁。它借三个名字（`REMOTE_MARK_VIEWBOX`、`TREE_ROW_SELECTOR`、`rowReferenceKind`），因为合成器桥也在读它们 |
+| `lib/client/client.marks.js` | 浏览器半边的启动 chunk：整块远端工作区装饰（494 行）——活工作区的身份集合、可引用行标记、detached 行与按钮的 `inert`、以及重贴的 `MutationObserver`。是启动 chunk 而不是懒加载：`installRemoteWorkspaceMarks` 必须在首帧之前就在观察，晚一帧就是可见的闪烁。它借三个名字（`REMOTE_MARK_VIEWBOX`、`TREE_ROW_SELECTOR`、`rowReferenceKind`），因为合成器桥也在读它们 |
 | `lib/client/client.dialogs.js` | 浏览器半边的按需 chunk：主机编辑 / 目录选择 / 诊断报告三个对话框 |
 | `lib/client/client.panel.js` | 浏览器半边的按需 chunk：主面板（主机卡片、转发、挂载、自检、命令审计）**加 `HostCard`**——它只有面板一个读者，所以跟着面板走。它是插件唯一**常驻可见**的界面，但仍然不是启动所需——侧栏行和文件树桥才是 |
 | `lib/client/client.add-workspace.js` | 浏览器半边的按需 chunk：添加工作区流程（本地 / 远程选择器、远程目录选择、挂载）。宿主会无条件渲染 `directoryFlow` 空洞，所以主包留了个 `FlowSlot`：关闭时直接返回 `null`，只有 `open` 才去取 chunk |
@@ -142,7 +142,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 
 宿主半边与浏览器半边的手写部分都无编译步骤，"改完即所测"（唯一的构建产物是编辑器引擎 chunk，见「编辑器引擎 chunk」）：
 
-- **宿主半边**（`lib/*.js`，除 client）与浏览器半边的**样式/文案**：改动进入已安装位置后重启 DSH 生效。调试源码检出的宿主半边可用 DSH 自带的 Electron 运行时：以 `ELECTRON_RUN_AS_NODE=1` 运行宿主源码脚本，并设 `DSH_PEER_ROOT` 指向 DSH 安装目录的 `node_modules`（参考 [architecture.md](./architecture.md) 的「peer 解析」顺序）。
+- **宿主半边**（`lib/` 下除 client 外的模块，`lib/**/*.js`）与浏览器半边的**样式/文案**：改动进入已安装位置后重启 DSH 生效。调试源码检出的宿主半边可用 DSH 自带的 Electron 运行时：以 `ELECTRON_RUN_AS_NODE=1` 运行宿主源码脚本，并设 `DSH_PEER_ROOT` 指向 DSH 安装目录的 `node_modules`（参考 [architecture.md](./architecture.md) 的「peer 解析」顺序）。
 - **浏览器半边**：`client.js` 与它旁边按需加载的 chunk 由 DSH 前端加载，改动需重装进 profile 并重启 DSH，再重载页面；文件头注释里写明其加载协议，无独立构建管线（`client.editor-engine.js` 除外）。只改 chunk 不会自己生效——chunk 的 URL 带主入口的 revision，改完 chunk 还要碰一下 `lib/client/client.js` 或重启 DSH。启动 chunk 改了要重启；`apply` 里的 `Promise.all` 会让任何一块取不到都直接 reject，而不是画出半张面板。
 
 ### 编辑器引擎 chunk
@@ -205,7 +205,7 @@ profile 安装（`pnpm install`）会让第 1 步命中 profile 内的解析链�
 - `DSH_CORE_ROOT` 指向**真实装配树**时，`projection-real` / `lifecycle` / `tool-schemas` / `client-chunk`
   四个再跑起来；`boot` 从整体 SKIP 变成 `partial`（已跑 30 项，内部 remote-host 段仍跳过）。
   断言总数随之增加，但增量不是公式，换机器或换宿主版本就会变。
-- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，82 个套件全部运行、
+- 再设 `DSH_WS_TEST_ALIAS` 指向一台真实主机，`live` 与 `acceptance` 也跑起来，83 个套件全部运行、
   零 SKIP。**这一轮没有测**，所以这里不给数字，而不是把旧数字留着。
 
 **关于「装配树」这一环**：`DSH_CORE_ROOT` 必须是**含 `@deepseek-ai/dsh-fs` 等宿主包的
@@ -334,7 +334,7 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 `projection-real` / `client-chunk`，最后一个要 `@deepseek-ai/dsh-client-modules` 才敢断言
 chunk 真能按名字取回）、需要真实主机的两个（`live` / `acceptance`）以及需要 POSIX `sh` 的
 `dirs-listing` 仍 SKIP 并给出原因。
-这正是 CI 的形态：裸检出 72 个通过 / 2 个 partial / 8 个 SKIP，装配树下通过数与 partial 数随
+这正是 CI 的形态：裸检出 73 个通过 / 3 个 partial / 7 个 SKIP，装配树下通过数与 partial 数随
 宿主包增加，两种形态都是零失败。
 
 这些套件靠 `tests/support/peer-mode.mjs` 判断手上这棵树能不能证明它们要证明的事。

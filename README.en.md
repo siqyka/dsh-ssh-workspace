@@ -109,7 +109,7 @@ same error semantics.
    click Install:
    - **npm package** (distributed via npm, version pinning supported):
      `@shiqyka/dsh-ssh-workspace`, or pin a version
-     `@shiqyka/dsh-ssh-workspace@0.2.8`
+     `@shiqyka/dsh-ssh-workspace@0.3.6`
      ([npm page](https://www.npmjs.com/package/@shiqyka/dsh-ssh-workspace));
    - **repository address** (latest code from Git):
      `https://github.com/siqyka/dsh-ssh-workspace`
@@ -180,7 +180,7 @@ become inaccessible since the host no longer exists.
 | `engine.reconnect.maxAttempts` | `0` | Attempt limit; `0` means unlimited |
 | `engine.reconnect.jitter` | `0.2` | Downward-only jitter ratio, so several hosts do not reconnect in lockstep; never exceeds the ceiling |
 
-> All four `engine` entries are optional (invalid values fall back to the defaults) and rarely need tuning.
+> All `engine` entries are optional (invalid values fall back to the defaults) and rarely need tuning.
 
 ### Host-path passthrough (`localPassthrough`)
 
@@ -288,7 +288,8 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 | `ssh_workspace_shell` | Run a command in a **persistent** remote shell; state survives between calls |
 | `ssh_workspace_transfer` | Copy a file between this machine and the host (SFTP, bytes never enter the conversation) |
 | `ssh_workspace_forward` | Map a remote port to this machine and return an openable URL |
-| `ssh_workspace_unforward` | Close a port mapping and release the local port |
+| `ssh_workspace_reverse_forward` | Make the remote host listen on a port and forward connections back to this machine (`ssh -R`), so a remote browser or colleague can reach a local service |
+| `ssh_workspace_unforward` | Close a port mapping and release the local port (forward and reverse) |
 
 > For tool parameters, return fields, and error semantics, see [docs/tools.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/docs/tools.md).
 
@@ -334,7 +335,6 @@ See [SECURITY.md](https://github.com/siqyka/dsh-ssh-workspace/blob/main/SECURITY
 | Remote workspaces wear a dedicated mark | Workspaces created by this plugin show the plugin's remote mark instead of the plain folder icon in sidebar rows, the workspace picker, and the session page's workspace button |
 | Host management panel | Add / edit / delete hosts (key paths, auth method, notes, …); changes take effect immediately and drop that alias's old connection. `~/.ssh/config` hosts are shown read-only. "Test connection" only probes reachability (it releases the connection it opened, so a probe never doubles as "connect") and reports as a toast at the top that expires after 7 seconds (click / Esc closes early; hovering pauses the clock). An error can expand its diagnostic code and raw message, copy the whole report, and — because a probe is safe to replay — retry in place. Connection state is shown inline after the host name, and dropping a connection also tears down that host's port forwards |
 | Directory browser dialog | A host card's "Browse directory" walks the remote tree level by level and can "Mount this directory" in place; **browse and mount only** — no upload, download, or inline queue (transfers live in the tree row menu and the file panel header) |
-| The "Workspace files" sidebar | DSH's own file tree lists the remote directory; text previews are read over SFTP; `fs.fileUrl` returns a canonical `file:` URI in the remote execution world |
 | Editing a file in the browser | A pencil button in the document preview header opens the editor in place, over the preview body rather than in a dialog; **remote and local paths take the same routes**. Saving sends two tokens — `version` and `revision` — so a file someone else changed answers 409 and is not overwritten by default ("Overwrite" asks once more and re-reads the tokens first); **there is no `force` parameter**. Line endings and BOM survive a save, and the footer selector can switch the ending to `auto / LF / CRLF` (an ending-only change still counts as unsaved), with a 2 MiB cap. See [ui.md](docs/ui.md#文件编辑) |
 | Row menu: new folder / rename / delete | DSH's tree row menu provides rename and delete: remote rows AND **local rows** can be renamed (rename only, never a move) and deleted (a directory goes with its subtree, after a confirmation); an existing target is refused; a failure leaves the row untouched; F2 / Delete invoke the same action. A **remote directory row** also offers "New folder", backed by `POST /mkdir` (parent path plus a single-segment name; out-of-root, read-only, detached and duplicate targets are refused before any write); success re-lists the directory and selects the new row. A local directory row does not: local creation goes through the blank-space menu below, so the two entries never overlap. The row menu is 220px, single-line, at most eight items and three rules (task | transfer/copy | download-to-machine | new-folder/rename/delete). Labels are fixed and carry no count: delete is always "Delete" and download is always "Download to this machine"; how many rows the action covers is decided by `resolveTargets`, and the count appears in the delete confirmation and the download destination dialog |
 | Blank-space menu (local workspaces) | Right-clicking empty space in a local workspace's Files tree opens a menu with exactly two items: "New folder" and "Copy path". The target is the directory that empty space belongs to — the expanded directory whose nested list contains it, otherwise the tree root — and it must be inside that root. Creating uses the same `POST /mkdir` local branch (a single-segment name; out-of-root, read-only and duplicate targets are refused before any write) and selects the new row afterwards; "Copy path" is always available, and a read-only session disables only creation. Remote workspaces keep their own blank-space menu. |
