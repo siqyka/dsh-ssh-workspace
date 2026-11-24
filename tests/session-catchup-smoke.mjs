@@ -42,7 +42,6 @@
  * Run: node tests/session-catchup-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 

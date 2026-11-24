@@ -15,7 +15,6 @@
  * Run: node tests/tree-transfer-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clientSource as clientBundleSource } from './support/client-source.mjs'

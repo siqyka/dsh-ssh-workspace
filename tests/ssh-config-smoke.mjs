@@ -15,7 +15,7 @@
  * Run: node tests/ssh-config-smoke.mjs
  */
 
-import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path, { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'

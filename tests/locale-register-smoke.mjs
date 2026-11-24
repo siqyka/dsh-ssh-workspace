@@ -22,7 +22,6 @@
  * Run: node tests/locale-register-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clientSource } from './support/client-source.mjs'

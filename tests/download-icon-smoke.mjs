@@ -20,7 +20,6 @@
  * Run: node tests/download-icon-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clientPartSource, clientRegion, clientSource } from './support/client-source.mjs'

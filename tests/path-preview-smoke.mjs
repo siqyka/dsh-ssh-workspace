@@ -38,7 +38,6 @@
  * Run: node tests/path-preview-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { endOfBlock } from './support/toast-dom.mjs'

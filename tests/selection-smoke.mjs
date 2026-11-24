@@ -10,12 +10,10 @@
  * Run: node tests/selection-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clientPartSource, clientSource, clientRegion } from './support/client-source.mjs'
 import { makeTreeDom } from './support/tree-dom.mjs'
-import { endOfBlock } from './support/toast-dom.mjs'
 
 let totalPassed = 0
 let totalFailures = 0

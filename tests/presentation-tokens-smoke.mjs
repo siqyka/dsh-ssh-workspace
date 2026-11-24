@@ -29,7 +29,6 @@
  * Run: node tests/presentation-tokens-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'

@@ -11,7 +11,6 @@
  * Run: node tests/tree-gestures-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeTreeDom } from './support/tree-dom.mjs'

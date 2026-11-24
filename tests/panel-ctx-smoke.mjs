@@ -33,7 +33,6 @@
  * Run: node tests/panel-ctx-smoke.mjs
  */
 
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clientPartSource, clientSource } from './support/client-source.mjs'
