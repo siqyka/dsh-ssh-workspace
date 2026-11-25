@@ -75,7 +75,7 @@ const { SessionProjectionRegistry } = await import(pathToFileURL(requireFromCore
 const { WorkingDirectoryService } = await import(pathToFileURL(requireFromCore.resolve('@deepseek-ai/dsh-working-directory')).href)
 const { installProjectionRelaxation, uninstallProjectionRelaxation } = await import(pathToFileURL(path.join(pluginRoot, 'lib/patch/patch-projection.js')).href)
 
-const SSH_CWD = 'ssh://qiyk/home/qiyk/test'
+const SSH_CWD = 'ssh://dev/home/dev/test'
 const LOCAL_CWD = path.resolve(pluginRoot)
 
 /**

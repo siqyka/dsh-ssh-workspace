@@ -148,16 +148,18 @@ Then restart the client.
 
 ## Host management
 
-Host records live in `$DSH_HOME/dsh-ssh.json`; when that file is absent, the plugin
-falls back to concrete `Host` blocks in `~/.ssh/config`. So **hosts you have already
-configured need no re-entry**.
+Host records live in `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json` (older versions used
+`$DSH_HOME/dsh-ssh.json`, which is still read and migrated into the subdirectory on the
+first write); when that file is absent, the plugin falls back to concrete `Host` blocks
+in `~/.ssh/config`. So **hosts you have already configured need no re-entry**.
 
 The "Remote Workspaces" panel can **add / edit / delete** hosts directly, writing back
-to `$DSH_HOME/dsh-ssh.json` (atomic writes; fields the plugin doesn't recognize are
-preserved). Hosts from `~/.ssh/config` are a **read-only fallback** — the panel never
+to `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json` (atomic writes; fields the plugin doesn't
+recognize are preserved). Hosts from `~/.ssh/config` are a **read-only fallback** — the panel never
 modifies that file; when the same name exists in both, the store wins. Passwords / key
 passphrases are **encrypted** in that store's `secrets` section (AES-256-GCM, key in
-`$DSH_HOME/dsh-ssh.key`, owner-only) and are never sent back to the browser; leaving them
+`$DSH_HOME/dsh-ssh-workspace/dsh-ssh.key`, owner-only; the old key is still read) and are
+never sent back to the browser; leaving them
 blank while editing keeps the current value. Deleting a
 host does not automatically unmount its mounted workspaces, but those workspaces
 become inaccessible since the host no longer exists.

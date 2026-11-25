@@ -208,6 +208,44 @@ const failingCard = renderCard(retryRow('waiting', { lastError: 'authentication 
 check('a retry that carries an error prints it',
   [...elementsOf(failingCard)].some(node => node.props?.children === 'authentication failed'))
 
+// ---- connection intent (autoConnect switch + connecting/failed badges) ------
+
+// The checkbox reflects the persisted INTENT, not the socket: a host switched on
+// while its boot dial is still handshaking has no pool record, yet must stay
+// checked and still offer a way to turn it back off.
+const checkboxOf = (tree) => [...elementsOf(tree)].find(node => node.type === 'input' && node.props?.type === 'checkbox')
+check('every host card carries an auto-connect checkbox', checkboxOf(neverConnected) !== undefined)
+check('a host with no intent leaves the box unchecked', checkboxOf(neverConnected)?.props.checked === false)
+check('a live host checks the box', checkboxOf(connectedCard)?.props.checked === true)
+const intentOnly = renderCard({ alias: 'alpha', state: 'broken', inFlight: 0, autoConnect: true })
+check('a switched-on host with no socket still checks the box',
+  checkboxOf(intentOnly)?.props.checked === true)
+check('a switched-on host with no socket offers a way to switch off',
+  actionKeyed(intentOnly, 'disconnect') !== undefined)
+// The control is a checkbox inside a label, not a button: `actionsOf` collects
+// only buttons, so the ordinary action set must be unchanged by its presence.
+check('the auto-connect checkbox is not counted as an action button',
+  ['test', 'browse', 'edit', 'delete', 'forget'].every(key => actionKeyed(neverConnected, key) !== undefined) &&
+  [...elementsOf(neverConnected)].filter(node => node.type === 'button' && node.props?.role === 'switch').length === 0)
+
+// "connecting" is the boot dial: the switch is already on, only the handshake
+// is outstanding. It must not render as the neutral "disconnected".
+const connectingCard = renderCard({ alias: 'alpha', state: 'broken', inFlight: 0, autoConnect: true, connecting: true })
+check('a connecting host is labelled connecting, not disconnected',
+  hasText(connectingCard, 'connections.connecting') && !hasText(connectingCard, 'connections.broken'))
+check('a connecting host paints the warning dot',
+  [...elementsOf(connectingCard)].some(node => node.props?.className === 'sshwsp-dot sshwsp-dot-warn'))
+
+// A fatal failure arms no retry row; `conn.failure` is the only channel that
+// can say "connection failed" instead of the neutral "disconnected".
+const failedConnect = renderCard({ alias: 'alpha', state: 'broken', inFlight: 0, failure: 'handshake failed' })
+check('a failed connect is labelled connection failed',
+  hasText(failedConnect, 'connections.failed') && !hasText(failedConnect, 'connections.broken'))
+check('a failed connect paints the error dot',
+  [...elementsOf(failedConnect)].some(node => node.props?.className === 'sshwsp-dot sshwsp-dot-err'))
+check('a failed connect prints the reason even with no retry row',
+  [...elementsOf(failedConnect)].some(node => node.props?.children === 'handshake failed'))
+
 // ---- edges the status map can produce ---------------------------------------
 
 // The panel synthesises this row for a reconnector entry whose host is not in
@@ -254,6 +292,23 @@ function metaTexts (conn, overrides) {
   const meta = metaOf(renderCard(conn, overrides))
   if (meta === undefined) throw new Error('the card no longer renders a meta row')
   return [...elementsOf(meta)].filter(node => node.type === 'span').map(node => node.props?.children)
+}
+
+// Readiness leads the meta row. A missing key is the one fact there that can
+// stop a connection from working, and it used to sit in the middle — after the
+// auth method, before the source — so a card whose key is absent opened with
+// "密钥" and pushed the warning into the reader's peripheral vision.
+{
+  const ready = metaTexts(undefined, { host: { keyReady: true, source: 'store' } })
+  check('the meta row leads with the readiness pill', ready[0] === 'hosts.keyReady', JSON.stringify(ready))
+  const missingKey = metaTexts(undefined, { host: { keyReady: false, source: 'store' } })
+  check('...a missing key leads with the warning instead',
+    missingKey[0] === 'hosts.keyMissing', JSON.stringify(missingKey))
+  check('...and the pill still carries a status class',
+    [...elementsOf(renderCard(undefined))].some(node =>
+      node.props?.className === 'sshwsp-status sshwsp-status-ok' && node.props?.children === 'hosts.keyReady'))
+  check('...with the auth method and the source after it',
+    ready[2] === 'hosts.auth.key' && ready[4] === 'hosts.source.store', JSON.stringify(ready))
 }
 
 for (const kind of ['key', 'password', 'agent']) {

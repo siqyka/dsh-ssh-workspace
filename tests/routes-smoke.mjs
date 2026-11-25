@@ -2014,6 +2014,69 @@ async function postChunk (route, body, chunks = []) {
       }
     }
 
+    // The host form's 「测试」 posts the UNSAVED form: it must answer about what
+    // is on screen, and nothing may be written. A probe that saved first would
+    // make "test" a destructive verb, so the route hands the form straight to
+    // the descriptor builder and never touches the store.
+    {
+      const seen = []
+      const probeEngine = {
+        ...contractEngine,
+        store: {
+          ...contractEngine.store,
+          descriptorForForm: (form) => {
+            seen.push(form)
+            return { alias: form.alias === '' ? '(unsaved host)' : form.alias, host: form.host, port: form.port, user: form.user, auth: form.auth }
+          },
+        },
+        probeDescriptor: async () => ({ durationMs: 12 }),
+      }
+      const probeRoutes = makeRoutes({
+        engine: probeEngine,
+        router: { assertEnabled () {}, roots: new Set(['ssh://a/srv']) },
+        forwards: { list: () => [], open: async () => { throw new Error('cannot bind') }, close: () => false },
+        shells,
+        ctx: { get: () => undefined },
+      })
+      const probeRoute = probeRoutes.find(route => route.path === ROUTES.test)
+      const form = { alias: '', host: '10.0.0.9', port: 2222, user: 'dev', auth: { kind: 'agent' } }
+      const { res, state } = fakeRes()
+      await probeRoute.handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { form },
+      }), res)
+      const body = JSON.parse(state.body)
+      check('testing an unsaved form answers 200 with ok', state.status === 200 && body.ok === true, `${state.status} ${state.body}`)
+      check('...and reports the handshake time', body.durationMs === 12, state.body)
+      check('...and says the connection was released, not kept', body.released === true, state.body)
+      check('...and the descriptor came from the FORM, not from an alias', seen.length === 1 && seen[0].host === '10.0.0.9',
+        JSON.stringify(seen))
+
+      const failing = {
+        ...probeEngine,
+        probeDescriptor: async () => { throw new Error('All configured authentication methods failed') },
+      }
+      const failingRoutes = makeRoutes({
+        engine: failing,
+        router: { assertEnabled () {}, roots: new Set(['ssh://a/srv']) },
+        forwards: { list: () => [], open: async () => { throw new Error('cannot bind') }, close: () => false },
+        shells,
+        ctx: { get: () => undefined },
+      })
+      const { res: failRes, state: failState } = fakeRes()
+      await failingRoutes.find(route => route.path === ROUTES.test).handler(fakeReq({
+        method: 'POST',
+        headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+        body: { form },
+      }), failRes)
+      const failBody = JSON.parse(failState.body)
+      check('a form that cannot be dialed answers ok:false, not an error status',
+        failState.status === 200 && failBody.ok === false, `${failState.status} ${failState.body}`)
+      check('...with the transport\'s own message',
+        /All configured authentication/u.test(failBody.error ?? ''), failState.body)
+    }
+
     // A transport failure is not the caller's fault: 502.
     {
       const { res, state } = fakeRes()

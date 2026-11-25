@@ -1,0 +1,328 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Generate the three direction prototypes for the Remote Workspaces panel.
+Shared markup + structural CSS, three distinct theme/density sheets.
+"""
+from pathlib import Path
+
+HERE = Path(__file__).parent
+
+MARKUP = r'''<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程工作区面板美化 · __DIRNAME__</title>
+<style>
+/* ---------- shared structure ---------- */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--stage);color:var(--text);font-family:var(--font);font-size:var(--body);line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.stage{min-height:100%;display:flex;align-items:flex-start;justify-content:center;padding:28px 20px 60px}
+.demo-bar{position:fixed;top:0;left:0;right:0;height:34px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;background:var(--stage);border-bottom:1px solid var(--border);font-size:12px;color:var(--faint);z-index:50}
+.demo-label{letter-spacing:.04em}
+.demo-ctrl{display:flex;gap:4px}
+.demo-ctrl button{border:1px solid var(--border);background:transparent;border-radius:var(--radius);padding:3px 9px;font-size:12px;cursor:pointer;color:var(--muted)}
+.demo-ctrl button.active{background:var(--surface-3);color:var(--text);border-color:var(--border-strong)}
+.frame{margin-top:34px;width:400px;transition:width .28s ease}
+.frame.wide{width:980px}
+.panel{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow:hidden}
+.inner{padding:var(--pad-top) var(--pad-x) var(--pad-bottom)}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.head h2{margin:0;font-size:var(--h2);font-weight:650;letter-spacing:-.02em;line-height:1.25}
+.head .sub{margin:var(--sub-gap) 0 0;color:var(--muted);font-size:var(--label)}
+.icon-btn{border:1px solid var(--border);background:var(--surface);border-radius:var(--radius);width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);flex:none}
+.icon-btn:hover{background:var(--surface-2);color:var(--text)}
+.ico{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.tabs{display:flex;gap:var(--tab-gap);margin:var(--tab-mt) 0 var(--tab-mb);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{position:relative;flex:none;border:0;background:none;padding:var(--tab-py) var(--tab-px);font-size:var(--body);color:var(--muted);cursor:pointer;white-space:nowrap;border-radius:var(--radius) var(--radius) 0 0}
+.tab:hover{color:var(--text)}
+.tab[aria-selected="true"]{color:var(--text);font-weight:650}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:var(--tab-px);right:var(--tab-px);bottom:-1px;height:var(--underline);background:var(--accent);border-radius:var(--underline)}
+.tab:focus-visible,.btn:focus-visible,.icon-btn:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pane[hidden]{display:none!important}
+.pane{animation:none}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:var(--section-mt) 0 var(--section-mb)}
+.section-head h3{margin:0;font-size:var(--label);font-weight:650;letter-spacing:var(--tracking);color:var(--muted);text-transform:var(--upper)}
+.provenance{margin:0 0 var(--section-mb);font-size:var(--label);color:var(--faint)}
+.btn{border:1px solid var(--border-strong);background:var(--surface);border-radius:var(--radius);padding:var(--btn-py) var(--btn-px);font-size:var(--label);cursor:pointer;white-space:nowrap;transition:background .12s,transform .1s}
+.btn:hover{background:var(--surface-2)}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-danger{color:var(--danger);border-color:var(--danger-line)}
+.btn-quiet{background:transparent;border-color:transparent;color:var(--muted)}
+.btn-quiet:hover{background:var(--surface-2)}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:var(--radius-md);padding:var(--card-py) var(--card-px);margin-bottom:var(--card-gap)}
+.host{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.host-main{min-width:0;flex:1 1 240px}
+.host-alias{display:flex;align-items:center;gap:8px;font-size:var(--body);font-weight:600}
+.addr{margin-top:3px;font-family:var(--mono);font-size:var(--label);color:var(--muted)}
+.meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:var(--meta-gap);font-size:var(--label);color:var(--faint)}
+.chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:var(--radius);padding:1px 7px;font-size:var(--label);line-height:1.6;background:var(--surface)}
+.chip.ready{color:var(--success);border-color:var(--success-line);background:var(--success-soft)}
+.chip.missing{color:var(--danger);border-color:var(--danger-line);background:var(--danger-soft)}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:var(--radius-pill);padding:1px 8px;font-size:var(--label);font-weight:600}
+.pill.ok{color:var(--success);background:var(--success-soft)}
+.pill.warn{color:var(--warn);background:var(--warn-soft)}
+.pill.err{color:var(--danger);background:var(--danger-soft)}
+.dot{width:var(--dot);height:var(--dot);border-radius:var(--radius-pill);flex:none;background:var(--faint)}
+.dot.ok{background:var(--success)}
+.dot.warn{background:var(--warn)}
+.dot.err{background:var(--danger)}
+.last{margin-top:var(--meta-gap);font-size:var(--label);color:var(--faint)}
+.note{margin-top:var(--meta-gap);font-size:var(--label);color:var(--muted);line-height:1.55}
+.note.warn{color:var(--warn)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto}
+.mount{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--card-line);border-radius:var(--radius-md);background:var(--card);padding:var(--card-py) var(--card-px);margin-bottom:var(--card-gap)}
+.mount.off{opacity:.7}
+.mount-path{flex:1;min-width:0;font-family:var(--mono);font-size:var(--label);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mount.off .mount-path{color:var(--faint)}
+.mount-title{font-size:var(--body);font-weight:600;display:flex;align-items:center;gap:7px}
+.mark{width:15px;height:15px;border-radius:3px;border:1.5px solid var(--accent);display:inline-flex;align-items:center;justify-content:center;color:var(--accent);font-family:var(--mono);font-size:9px;font-weight:700;flex:none}
+.badge{font-size:var(--label);color:var(--faint);border:1px solid var(--border);border-radius:var(--radius);padding:1px 7px}
+.hostgone{width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--danger-soft);border:1px solid var(--danger);color:var(--danger);font-size:11px;font-weight:700;flex:none}
+.forward-new{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:var(--card-gap)}
+input,select{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);color:var(--text);padding:var(--input-py) var(--input-px);font-size:var(--label);font-family:inherit;min-width:0}
+input.scheme{width:170px}
+select{width:150px;cursor:pointer}
+input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;margin:0;cursor:pointer}
+input[type=number]{width:90px}
+.checkrow{display:flex;align-items:flex-start;gap:9px;font-size:var(--label);color:var(--muted);cursor:pointer;margin-bottom:var(--card-gap);line-height:1.5}
+.checkrow input{margin-top:2px}
+.fwd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--card-line);border-radius:var(--radius-md);background:var(--card);padding:var(--card-py) var(--card-px);margin-bottom:var(--card-gap)}
+.fwd.off .mount-path{color:var(--faint)}
+.fwd-err{flex-basis:100%;font-size:var(--label);color:var(--danger)}
+.hint{margin:0 0 var(--card-gap);font-size:var(--label);color:var(--faint);line-height:1.55}
+.field-label{display:block;font-size:var(--label);color:var(--muted);margin-bottom:5px}
+.field-hint{font-size:var(--label);color:var(--faint);line-height:1.6;margin:6px 0 0}
+.subhead{font-size:var(--label);color:var(--faint);font-weight:500;margin:var(--subhead-mt) 0 10px;letter-spacing:.02em}
+.report-title{display:inline-flex;align-items:center;gap:8px}
+.findings{display:flex;flex-direction:column;gap:6px;margin:0 0 var(--card-gap)}
+.finding{display:flex;gap:8px;align-items:baseline;font-size:var(--label);line-height:1.5}
+.finding .tag{font-size:var(--label);font-weight:700;color:var(--warn);flex:none}
+.finding .tag.bad{color:var(--danger)}
+.finding .tag.unknown{color:var(--faint)}
+details.notes{font-size:var(--label);color:var(--muted);margin-bottom:var(--card-gap)}
+details.notes summary{cursor:pointer;color:var(--faint)}
+details.notes div{margin-top:6px;padding-left:12px;line-height:1.6}
+.session{font-size:var(--label);color:var(--muted);padding:5px 0;font-family:var(--mono)}
+.session b{color:var(--text);font-weight:600}
+.toast{position:fixed;left:50%;top:48px;transform:translateX(-50%);z-index:80;background:var(--toast-bg);border:1px solid var(--border-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:10px 16px;font-size:var(--label);color:var(--text);max-width:min(420px,90vw);animation:toast-in .18s ease-out;display:none;white-space:nowrap}
+.toast.show{display:block}
+.toast.ok{color:var(--success)}
+@keyframes toast-in{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
+.foot{margin-top:var(--section-mt);font-size:var(--label);color:var(--faint);line-height:1.6}
+/* responsive: the demo frame narrows like a real sidebar */
+@media(max-width:520px){.frame{width:100%!important}.demo-ctrl{display:none}}
+/* ---------- direction themes ---------- */
+__THEME__
+</style>
+</head>
+<body>
+<div class="demo-bar"><span class="demo-label">远程工作区 · 面板美化 · __DIRNAME__</span><span class="demo-ctrl"><button data-w="narrow" class="active">侧栏 400px</button><button data-w="wide">细节 980px</button></span></div>
+<div class="stage"><div class="frame narrow"><div class="panel"><div class="inner">
+
+<header class="head">
+  <div><h2>远程工作区</h2><p class="sub">管理 SSH 主机、挂载目录与端口转发</p></div>
+  <button class="icon-btn" title="刷新" aria-label="刷新"><svg class="ico" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg></button>
+</header>
+
+<div class="tabs" role="tablist" aria-label="面板分区">
+  <button class="tab" id="t-hosts" role="tab" aria-selected="true" aria-controls="p-hosts" tabindex="0">主机</button>
+  <button class="tab" id="t-work" role="tab" aria-selected="false" aria-controls="p-work" tabindex="-1">工作区</button>
+  <button class="tab" id="t-set" role="tab" aria-selected="false" aria-controls="p-set" tabindex="-1">设置</button>
+</div>
+
+<div class="pane" id="p-hosts" role="tabpanel" aria-labelledby="t-hosts">
+  <div class="section-head"><h3>SSH 主机</h3><button class="btn btn-primary">添加主机</button></div>
+  <p class="provenance">来自配置与 ~/.ssh/config · 共 4 台</p>
+
+  <article class="card host">
+    <div class="host-main">
+      <div class="host-alias"><span class="dot ok"></span><span>qiyk</span><span class="pill ok">已连接</span></div>
+      <div class="addr">qiyk@10.0.0.12:22</div>
+      <div class="meta"><span class="chip ready">密钥就绪</span><span>密钥</span><span>配置</span></div>
+      <div class="last">最近使用 · 2 分钟前</div>
+    </div>
+    <div class="actions"><button class="btn" data-test>测试连接</button><button class="btn">浏览目录</button><button class="btn">断开</button><button class="btn">编辑</button></div>
+  </article>
+
+  <article class="card host">
+    <div class="host-main">
+      <div class="host-alias"><span class="dot warn"></span><span>macmini</span><span class="pill warn">重连中（第 3 次，18 秒后）</span></div>
+      <div class="addr">chris@192.168.1.40:22</div>
+      <div class="meta"><span class="chip ready">密钥就绪</span><span>Agent</span><span>~/.ssh/config</span></div>
+      <div class="note warn">~/.ssh/config 里有同名 Host 块：编辑和删除都在那个文件里做</div>
+    </div>
+    <div class="actions"><button class="btn" data-test>测试连接</button><button class="btn btn-primary">立即重连</button></div>
+  </article>
+
+  <article class="card host">
+    <div class="host-main">
+      <div class="host-alias"><span class="dot"></span><span>nas-old</span></div>
+      <div class="addr">backup@10.0.0.9:22</div>
+      <div class="meta"><span class="chip missing">密钥缺失</span><span>密码</span><span>配置</span></div>
+      <div class="last">最近使用 · 3 天前</div>
+    </div>
+    <div class="actions"><button class="btn" data-test>测试连接</button><button class="btn">编辑</button><button class="btn btn-danger">删除</button><button class="btn btn-quiet">忘记主机密钥</button></div>
+  </article>
+
+  <article class="card host">
+    <div class="host-main">
+      <div class="host-alias"><span class="dot ok"></span><span>cloud-prod</span><span class="pill ok">已连接</span></div>
+      <div class="addr">deploy@47.98.21.10:22</div>
+      <div class="meta"><span class="chip ready">密钥就绪</span><span>密钥</span><span>配置</span></div>
+      <div class="last">最近使用 · 5 小时前</div>
+    </div>
+    <div class="actions"><button class="btn" data-test>测试连接</button><button class="btn">浏览目录</button><button class="btn">断开</button><button class="btn">编辑</button></div>
+  </article>
+</div>
+
+<div class="pane" id="p-work" role="tabpanel" aria-labelledby="t-work" hidden>
+  <div class="section-head"><h3>已挂载的工作区</h3><button class="btn btn-primary">添加工作区</button></div>
+  <div class="mount">
+    <span class="mark">S</span>
+    <div style="min-width:0"><div class="mount-title">dsh-ssh-workspace</div><div class="mount-path">ssh://qiyk@/home/qiyk/dsh-ssh-workspace</div></div>
+    <div class="actions"><button class="btn">卸载</button><button class="btn btn-danger">删除</button></div>
+  </div>
+  <div class="mount">
+    <span class="hostgone" title="主机 old-server 已不在主机列表里：这个工作区连不上，先重新添加该主机">!</span>
+    <div style="min-width:0"><div class="mount-title">legacy-notes</div><div class="mount-path">ssh://old-server@/srv/notes</div></div>
+    <div class="actions"><button class="btn">卸载</button><button class="btn btn-danger">删除</button></div>
+  </div>
+
+  <div class="section-head"><h3>已停用的工作区</h3><span class="badge">SSH 连接仍保留</span></div>
+  <p class="hint">这些工作区已卸载：文件读写与命令执行不可用；SSH 连接仍保留。</p>
+  <div class="mount off">
+    <span class="mark">S</span>
+    <div style="min-width:0"><div class="mount-title">projects <span class="badge">已停用</span></div><div class="mount-path">ssh://nas-old@/volume1/projects</div></div>
+    <div class="actions"><button class="btn btn-primary">启用</button><button class="btn btn-danger">删除</button></div>
+  </div>
+</div>
+
+<div class="pane" id="p-set" role="tabpanel" aria-labelledby="t-set" hidden>
+  <div class="section-head"><h3>端口转发</h3><button class="btn btn-quiet">启动时自动开启隧道 <input type="checkbox" checked></button></div>
+  <div class="forward-new">
+    <select aria-label="主机"><option>qiyk</option><option>cloud-prod</option><option>nas-old</option></select>
+    <input type="number" value="5432" aria-label="远端端口">
+    <input type="number" placeholder="默认同远端" aria-label="本地端口">
+    <button class="btn btn-primary">保存并转发</button>
+  </div>
+  <div class="fwd">
+    <span class="dot ok"></span><span style="font-family:var(--mono);font-size:var(--label)">qiyk&nbsp; 5432 → 15432</span>
+    <span class="pill ok">开启</span><span style="font-size:var(--label);color:var(--faint)">活跃连接: 2</span>
+    <div class="actions" style="margin-left:auto"><button class="btn">关闭</button><button class="btn">记住</button><button class="btn btn-danger">删除</button></div>
+  </div>
+  <div class="fwd off">
+    <span class="dot"></span><span style="font-family:var(--mono);font-size:var(--label)">cloud-prod&nbsp; 8080 → 8080</span>
+    <span class="pill">已断开</span>
+    <div class="actions" style="margin-left:auto"><button class="btn">开启</button><button class="btn btn-danger">删除</button></div>
+  </div>
+  <div class="fwd">
+    <span class="dot err"></span><span style="font-family:var(--mono);font-size:var(--label)">nas-old&nbsp; 9000 → 9000</span>
+    <span class="pill err">已断开</span>
+    <div class="fwd-err">连接已断开 · 保留开启意图，可一键恢复</div>
+    <div class="actions" style="margin-left:auto"><button class="btn">开启</button><button class="btn btn-danger">删除</button></div>
+  </div>
+
+  <div class="section-head"><h3>持久远端会话</h3></div>
+  <div class="session"><b>qiyk</b> [dev] · 存活</div>
+  <div class="session"><b>qiyk</b> [review] · 已结束</div>
+
+  <div class="section-head"><h3>文件引用设置</h3></div>
+  <h4 class="subhead">显式文件引用 scheme</h4>
+  <label class="field-label" for="scheme">本机路径前缀</label>
+  <div class="forward-new"><input id="scheme" class="scheme" value="local" spellcheck="false"><button class="btn btn-primary">保存</button></div>
+  <p class="field-hint">在 ssh:// 会话里用这个名字明确表示「这是本机路径」，例如 local:/Volumes/SSD/a.md。同一时间只能配置一个前缀。</p>
+  <label class="checkrow"><input type="checkbox" checked><span>远端不存在时回退本机同名文件</span></label>
+  <p class="field-hint">只对你在消息里用 @ 点名的路径生效，且只在远端确实报不存在之后才试一次。</p>
+
+  <div class="section-head"><h3>诊断报告 <span class="report-title"><span class="dot warn"></span></span></h3><button class="btn" id="open-report">打开诊断报告</button></div>
+  <div class="findings">
+    <div class="finding"><span class="tag bad">WARN</span><span>主机 macmini 的密钥尚未固定</span></div>
+    <div class="finding"><span class="tag">WARN</span><span>重连已放弃：nas-old（第 5 次后停止）</span></div>
+    <div class="finding"><span class="tag unknown">未知</span><span>主机 nas-old 不可达，无法判断工具安装情况</span></div>
+  </div>
+  <details class="notes"><summary>附带说明（不计入判定）· 2 项</summary><div>nas-old：未安装 ripgrep（rg），glob / grep 会以退出码 127 失败。<br>nas-old：未安装 inotifywait，文件树自动刷新使用轮询。</div></details>
+  <p class="foot">版本、补丁状态、主机配置、自检、最近命令与事件，路径与凭据已脱敏。</p>
+</div>
+
+</div></div></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(function(){
+  var tabs=[].slice.call(document.querySelectorAll('[role=tab]'));
+  var panes=tabs.map(function(t){return document.getElementById(t.getAttribute('aria-controls'))});
+  function select(i,focus){
+    tabs.forEach(function(t,j){t.setAttribute('aria-selected',j===i?'true':'false');t.tabIndex=j===i?0:-1});
+    panes.forEach(function(p,j){p.hidden=j!==i});
+    if(focus)tabs[i].focus();
+    document.querySelector('.inner').scrollTop=0;
+  }
+  tabs.forEach(function(t,i){
+    t.addEventListener('click',function(){select(i,false)});
+    t.addEventListener('keydown',function(e){
+      var k=e.key,n=tabs.length,next=-1;
+      if(k==='ArrowRight')next=(i+1)%n;else if(k==='ArrowLeft')next=(i-1+n)%n;
+      else if(k==='Home')next=0;else if(k==='End')next=n-1;else return;
+      e.preventDefault();select(next,true);
+    });
+  });
+  var bar=document.querySelectorAll('.demo-ctrl button'),frame=document.querySelector('.frame');
+  bar.forEach(function(b){b.addEventListener('click',function(){bar.forEach(function(x){x.classList.remove('active')});b.classList.add('active');frame.classList.toggle('wide',b.dataset.w==='wide')})});
+  var toast=document.getElementById('toast'),timer=null;
+  function notify(msg,ok){toast.textContent=msg;toast.className='toast show'+(ok?' ok':'');clearTimeout(timer);timer=setTimeout(function(){toast.className='toast'},7000)}
+  document.querySelectorAll('[data-test]').forEach(function(b){b.addEventListener('click',function(){notify('连接成功 (42ms)',true)})});
+  var rep=document.getElementById('open-report');if(rep)rep.addEventListener('click',function(){notify('已打开诊断报告',true)});
+  // deep links: #hosts / #work / #set, add -wide for the detail view (e.g. #set-wide)
+  var raw=(location.hash||'').replace('#',''),wide=/-wide$/.test(raw),h=raw.replace(/-wide$/,'');
+  var map={hosts:0,work:1,set:2};
+  if(map[h]!==undefined)select(map[h],false);
+  if(wide){frame.classList.add('wide');bar[1].classList.add('active');bar[0].classList.remove('active')}
+})();
+</script>
+</body>
+</html>
+'''
+
+THEME_1 = r'''
+/* 方向 1 · Rams 克制系统：浅中性灰、发丝线、单一蓝强调、紧凑精密 */
+body{--stage:#e9eae7;--bg:#f7f7f5;--surface:#ffffff;--surface-2:#f0f1ee;--surface-3:#e8e9e5;--card:#ffffff;--card-line:#d3d5d0;--border:#d8dad5;--border-strong:#c2c5bf;--text:#191b1c;--muted:#595e61;--faint:#868b8d;--accent:#1a5fb4;--accent-hover:#164e93;--on-accent:#fff;--success:#0b6e46;--success-line:#a9cdb9;--success-soft:#eaf4ee;--warn:#8a5a00;--warn-line:#d9bd85;--warn-soft:#fbf3e2;--danger:#a52a20;--danger-line:#d7a8a3;--danger-soft:#fbecea;--toast-bg:#fff;--shadow:0 1px 2px rgba(20,22,20,.08),0 12px 32px rgba(20,22,20,.06);--shadow-lg:0 8px 30px rgba(20,22,20,.18);--font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;--mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;--body:14px;--label:12px;--h2:20px;--radius:4px;--radius-md:5px;--radius-lg:7px;--radius-pill:99px;--pad-top:26px;--pad-x:20px;--pad-bottom:26px;--sub-gap:4px;--tab-gap:0;--tab-mt:18px;--tab-mb:16px;--tab-py:9px;--tab-px:12px;--underline:2px;--section-mt:22px;--section-mb:10px;--card-py:11px;--card-px:12px;--card-gap:7px;--meta-gap:5px;--btn-py:5px;--btn-px:9px;--input-py:5px;--input-px:8px;--subhead-mt:20px;--dot:7px;--tracking:.03em;--upper:none}
+.tab[aria-selected="true"]::after{background:var(--accent)}
+.pill{border-radius:3px;font-weight:600}
+.card,.mount,.fwd{box-shadow:none}
+.host-alias{letter-spacing:-.01em}
+.mark{border-radius:2px}
+'''
+
+THEME_2 = r'''
+/* 方向 2 · Linear 暗色层叠：低对比层叠表面、细边框、紧凑卡片、蓝色点缀 */
+body{--stage:#08090b;--bg:#0f1013;--surface:#17191d;--surface-2:#1e2126;--surface-3:#252931;--card:#16181c;--card-line:#262a31;--border:#24282f;--border-strong:#323741;--text:#e7e9ec;--muted:#9ca2ab;--faint:#6e757f;--accent:#5b8cff;--accent-hover:#74a0ff;--on-accent:#fff;--success:#4ac98a;--success-line:#2f6b4d;--success-soft:#173027;--warn:#e3b341;--warn-line:#6a5527;--warn-soft:#2d2617;--danger:#ff6b6b;--danger-line:#6b3333;--danger-soft:#2e1b1d;--toast-bg:#1c2027;--shadow:0 12px 40px rgba(0,0,0,.45);--shadow-lg:0 16px 48px rgba(0,0,0,.6);--font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;--mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;--body:14px;--label:12px;--h2:20px;--radius:6px;--radius-md:9px;--radius-lg:12px;--radius-pill:99px;--pad-top:26px;--pad-x:20px;--pad-bottom:26px;--sub-gap:5px;--tab-gap:2px;--tab-mt:18px;--tab-mb:16px;--tab-py:8px;--tab-px:12px;--underline:2px;--section-mt:22px;--section-mb:11px;--card-py:12px;--card-px:13px;--card-gap:8px;--meta-gap:6px;--btn-py:5px;--btn-px:10px;--input-py:6px;--input-px:9px;--subhead-mt:20px;--dot:7px;--tracking:.02em;--upper:none}
+.panel{border-color:#23262c;box-shadow:0 20px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.02) inset}
+.head h2{background:linear-gradient(180deg,#fff,#b9bec6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.card,.mount,.fwd{background:linear-gradient(180deg,rgba(255,255,255,.018),transparent),var(--card);box-shadow:0 1px 0 rgba(255,255,255,.025) inset}
+.card:hover,.mount:hover,.fwd:hover{border-color:#343a44}
+.pill{border-radius:99px}
+.mark{border-radius:4px}
+'''
+
+THEME_3 = r'''
+/* 方向 3 · 留白白盒：近全白、发丝淡灰分隔、大留白、内容至上 */
+body{--stage:#ecece8;--bg:#fafaf8;--surface:#ffffff;--surface-2:#f6f6f3;--surface-3:#efefeb;--card:transparent;--card-line:#e8e8e3;--border:#e6e6e1;--border-strong:#d2d2cb;--text:#141513;--muted:#60625e;--faint:#959790;--accent:#141513;--accent-hover:#33352f;--on-accent:#fff;--success:#2c6b4f;--success-line:#b9cfc1;--success-soft:#eef4ef;--warn:#8b6a1f;--warn-line:#ded0a9;--warn-soft:#f7f2e5;--danger:#a5392f;--danger-line:#dcb4ae;--danger-soft:#f8eeec;--toast-bg:#fff;--shadow:0 1px 0 rgba(0,0,0,.02),0 14px 44px rgba(30,30,26,.05);--shadow-lg:0 10px 36px rgba(30,30,26,.14);--font:"Helvetica Neue",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;--mono:ui-monospace,"SFMono-Regular",Consolas,monospace;--body:14px;--label:12px;--h2:21px;--radius:2px;--radius-md:2px;--radius-lg:3px;--radius-pill:99px;--pad-top:38px;--pad-x:26px;--pad-bottom:38px;--sub-gap:8px;--tab-gap:6px;--tab-mt:30px;--tab-mb:30px;--tab-py:10px;--tab-px:14px;--underline:1px;--section-mt:40px;--section-mb:18px;--card-py:17px;--card-px:14px;--card-gap:0px;--meta-gap:9px;--btn-py:7px;--btn-px:12px;--input-py:8px;--input-px:10px;--subhead-mt:32px;--dot:6px;--tracking:.1em;--upper:uppercase}
+.panel{border-color:#e2e2dd;box-shadow:0 20px 70px rgba(30,30,26,.06)}
+.card,.mount,.fwd{border:0;border-bottom:1px solid var(--card-line);border-radius:0;padding-left:0;padding-right:0}
+.mount:last-child,.fwd:last-child{border-bottom:1px solid var(--card-line)}
+.host-alias{font-weight:500;letter-spacing:.01em}
+.head h2{font-weight:500;letter-spacing:-.02em}
+.tab{color:var(--faint)}
+.section-head h3{letter-spacing:.14em}
+.mark{border-radius:1px}
+'''
+
+for name, theme in [('dir-1-rams', THEME_1), ('dir-2-linear', THEME_2), ('dir-3-white-gallery', THEME_3)]:
+    html = MARKUP.replace('__THEME__', theme).replace('__DIRNAME__', name)
+    (HERE / (name + '.html')).write_text(html, encoding='utf-8')
+    print('wrote', name + '.html')

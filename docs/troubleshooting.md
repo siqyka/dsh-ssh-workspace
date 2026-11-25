@@ -27,7 +27,7 @@
 
 ```
 sandbox-local: windows-acl workspace and temp directory resolution failed: Error: ENOENT:
-no such file or directory, realpath 'C:\Users\…\ssh:\qiyk\home\qiyk\test\dsh-ssh-workspace'.
+no such file or directory, realpath 'C:\Users\…\ssh:\dev\home\dev\test\dsh-ssh-workspace'.
 The command did not run; check that the current user can change permissions on the workspace and
 temp directories, or run with danger-full-access.
 ```
@@ -281,7 +281,7 @@ Node worker 执行。worker 是**本机进程**（打包版里它就是 `DeepSee
 1. `ctx.subprocess.spawn` 的远端桥按白名单只放行 `git` / `rg`，宿主可执行文件被拒绝——工具结果
    里看到的就是这句 `cannot run "…DeepSeek Harness.exe" with a remote cwd`；
 2. **即便放行也跑不成**：每次求值宿主都会把 `spec.cwd` 经控制通道发给子进程并
-   `process.chdir(cwd)`；Windows 把 `ssh://qiyk/…` 当相对路径（`<cwd>\ssh:\qiyk\…`），而文件名
+   `process.chdir(cwd)`；Windows 把 `ssh://dev/…` 当相对路径（`<cwd>\ssh:\dev\…`），而文件名
    里不允许 `:`，程序会以 chdir 的 ENOENT 结束。
 
 修复点是 `ctx.ptcRuntime.resolve()` 返回的 `spec.cwd`：`lib/patch/patch-ptc.js` 把它换成本机替身目录
@@ -401,8 +401,8 @@ exporter，`debug` 又被默认级别丢弃），见 [development.md](./developm
 按以下顺序排查：
 
 1. **面板「测试连接」**：先在「远程工作区」面板对目标主机实测一次，成功/失败会以顶部 toast 明示，是成本最低的定位手段。
-2. **unknown SSH host**：别名既不在 `$DSH_HOME/dsh-ssh.json` 存储中，也没有对应的具体 `Host` 块——检查拼写。`~/.ssh/config` 的 `Include` 会被跟随、`Match` 会被求值，**通配符 `Host` 块**不贡献身份字段；请显式写出具体 `Host` 别名，或在面板中添加主机（见 [hosts.md](./hosts.md)）。
-3. **认证失败**：key 认证先看主机行的「密钥未就绪」（`check-key`）标识——`keyPath` 在本机不存在或不可读；密码认证确认存储中的密码；agent 认证确认 `SSH_AUTH_SOCK`（或 `agentPath`）可用。密码与口令便于排查时可以临时改用本地 `ssh` 对照验证连通性。存储中的密码/口令是加密的，若报 `cannot read the stored secret for host …`，说明 `$DSH_HOME/dsh-ssh.key` 缺失或被更换——在面板重新保存该主机（见 [hosts.md](./hosts.md)）。
+2. **unknown SSH host**：别名既不在 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json` 存储中（旧版在 `$DSH_HOME/dsh-ssh.json`，仍可读并自动迁移），也没有对应的具体 `Host` 块——检查拼写。`~/.ssh/config` 的 `Include` 会被跟随、`Match` 会被求值，**通配符 `Host` 块**不贡献身份字段；请显式写出具体 `Host` 别名，或在面板中添加主机（见 [hosts.md](./hosts.md)）。
+3. **认证失败**：key 认证先看主机行的「密钥未就绪」（`check-key`）标识——`keyPath` 在本机不存在或不可读；密码认证确认存储中的密码；agent 认证确认 `SSH_AUTH_SOCK`（或 `agentPath`）可用。密码与口令便于排查时可以临时改用本地 `ssh` 对照验证连通性。存储中的密码/口令是加密的，若报 `cannot read the stored secret for host …`，说明 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.key`（旧版在 `$DSH_HOME/dsh-ssh.key`）缺失或被更换——在面板重新保存该主机（见 [hosts.md](./hosts.md)）。
 4. **主机密钥不匹配**：连接被拒，错误信息为「the server presented a different host key than the one recorded on first connect」并列出 `recorded` / `presented` 两个指纹。含义：该主机本次出示的密钥与首次连接时记录的（`dsh-ssh.json` 的 `knownHosts` 段）不一致——可能是主机重装系统或合法轮换了密钥，也可能是中间人。**先与管理员核对新指纹**；确认可信后，在「远程工作区」面板对该主机执行「忘记主机密钥」，再重连（重新 TOFU 记录）。若没有预期的密钥变更，不要继续连接。
 5. **`ProxyJump` 链建不起来**：`ProxyJump` 是**支持**的，报错会点名是哪一跳、哪条链（`ProxyJump hop "bastion" (via bastion → target): …`）。常见原因：跳板机别名本身没解析出来（见第 2 条）、某一跳的凭据或主机密钥不匹配（见第 3、4 条）、跳板机拒绝 `direct-tcpip` 转发（sshd 的 `AllowTcpForwarding`）、链里出现自引用或重复跳（解析期就拒绝）。`ProxyCommand` 仍然被拒——它是任意本地命令执行，改用 `ProxyJump` 或去掉该项。
 6. **端口 / 网络**：确认 `host` 与 `port` 可达；本地 `ssh -p <port> user@host` 能连通的话，插件侧再查凭据与配置来源（store 覆盖 `~/.ssh/config`，同别名以 store 为准）。

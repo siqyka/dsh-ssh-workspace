@@ -400,7 +400,7 @@ try {
 // The shape is copied from `dsh-client-ui-sidebar-files`, not invented: a
 // `[data-files-body]` div inside a `[data-files-state="tree"]` carrying
 // `data-files-root`, a `ul`, and `li` rows that each hold one `button`.
-function buildTree (dom, entries, root = 'ssh://qiyk/home/qiyk/test') {
+function buildTree (dom, entries, root = 'ssh://dev/home/dev/test') {
   const tree = dom.make({ tag: 'div', attrs: { 'data-files-state': 'tree', 'data-files-root': root } })
   const body = dom.make({ tag: 'div', attrs: { 'data-files-body': '' } })
   const list = dom.make({ tag: 'ul' })
@@ -473,11 +473,11 @@ function setup (entries) {
 }
 
 const FILE_TREE = [
-  { kind: 'directory', path: 'ssh://qiyk/home/u/proj/a-dir' },
-  { kind: 'file', path: 'ssh://qiyk/home/u/proj/b.txt' },
-  { kind: 'file', path: 'ssh://qiyk/home/u/proj/c.txt' },
-  { kind: 'directory', path: 'ssh://qiyk/home/u/proj/d-dir' },
-  { kind: 'file', path: 'ssh://qiyk/home/u/proj/e.txt' },
+  { kind: 'directory', path: 'ssh://dev/home/u/proj/a-dir' },
+  { kind: 'file', path: 'ssh://dev/home/u/proj/b.txt' },
+  { kind: 'file', path: 'ssh://dev/home/u/proj/c.txt' },
+  { kind: 'directory', path: 'ssh://dev/home/u/proj/d-dir' },
+  { kind: 'file', path: 'ssh://dev/home/u/proj/e.txt' },
 ]
 
 // ---- plain clicks ---------------------------------------------------------
@@ -717,7 +717,7 @@ const FILE_TREE = [
   // The preview tab took the pane: the body is gone.
   tree.tree.remove()
   // The user clicks back: a new body renders, with no rows yet.
-  const tree2 = buildTree(dom, [], 'ssh://qiyk/home/qiyk/test')
+  const tree2 = buildTree(dom, [], 'ssh://dev/home/dev/test')
   dom.notifyMutation({ target: tree2.list, addedNodes: [] })
   dom.raf()
 
@@ -750,7 +750,7 @@ const FILE_TREE = [
 
   clickOn(dom, tree.rows[1].button)
   tree.tree.remove()
-  const tree2 = buildTree(dom, [], 'ssh://qiyk/home/qiyk/test')
+  const tree2 = buildTree(dom, [], 'ssh://dev/home/dev/test')
   dom.notifyMutation({ target: tree2.list, addedNodes: [] })
   dom.raf()
 
@@ -767,7 +767,7 @@ const FILE_TREE = [
   const { dom, tree } = setup(FILE_TREE)
   clickOn(dom, tree.rows[1].button)
   check('a row is selected', selected(tree.rows).length === 1)
-  tree.tree.setAttribute('data-files-root', 'ssh://qiyk/home/u/other')
+  tree.tree.setAttribute('data-files-root', 'ssh://dev/home/u/other')
   dom.notifyMutation({ target: tree.list, addedNodes: [] })
   dom.raf()
   check('switching the panel to another root drops the old selection',

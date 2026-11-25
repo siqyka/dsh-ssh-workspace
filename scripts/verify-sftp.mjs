@@ -23,7 +23,13 @@ if (alias === undefined) {
 }
 const remoteDir = (process.argv[3] ?? '/tmp').replace(/\/+$/u, '')
 const dshHome = process.env.DSH_HOME ?? path.join(homedir(), '.dsh')
-const store = JSON.parse(readFileSync(path.join(dshHome, 'dsh-ssh.json'), 'utf8'))
+// The editable store moved into a plugin-private subdirectory; older installs
+// still keep it at the $DSH_HOME root. Read the new path first, fall back to the
+// legacy one so this script keeps working across the migration.
+const newStorePath = path.join(dshHome, 'dsh-ssh-workspace', 'dsh-ssh.json')
+const legacyStorePath = path.join(dshHome, 'dsh-ssh.json')
+const storePath = existsSync(newStorePath) ? newStorePath : legacyStorePath
+const store = JSON.parse(readFileSync(storePath, 'utf8'))
 const hosts = Array.isArray(store.hosts) ? store.hosts : Object.values(store.hosts ?? {})
 const host = hosts.find(h => h.alias === alias)
 if (host === undefined) {

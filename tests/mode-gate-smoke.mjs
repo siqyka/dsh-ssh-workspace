@@ -6,7 +6,7 @@
  * `ssh_workspace_transfer` resolves the policy itself. Command execution is a
  * different family entirely and was ungated: a `read-only` session ran
  *
- *     ssh_workspace_exec { command: "rm /home/qiyk/test/test.py" }
+ *     ssh_workspace_exec { command: "rm /home/dev/test/test.py" }
  *
  * and got `[exit code: 0]`. The file tool would have refused the same deletion.
  *
@@ -207,7 +207,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // `workspace-write` names ONE root, locally enforced by `writableRoots(policy)`
 // whose first entry is `policy.workspaceRoot`. The remote half used to answer a
 // weaker question — "inside ANY mounted root?" — and the mounted set is
-// deployment-wide, so a session rooted at `ssh://qiyk/home/dev/proj` could write
+// deployment-wide, so a session rooted at `ssh://dev/home/dev/proj` could write
 // a sibling root, or a root on a DIFFERENT host, which no local session may do.
 //
 // The justification in the docs for the weaker rule was factually wrong: it said
@@ -216,59 +216,59 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
 // session, the `ssh://` spelling, which is directly comparable.
 {
   const { workspaceWriteScopeRefusal, writeScopeRootOf } = gate
-  const target = (spelling) => ({ alias: 'qiyk', remotePath: spelling, displayPath: `ssh://qiyk${spelling}` })
+  const target = (spelling) => ({ alias: 'dev', remotePath: spelling, displayPath: `ssh://dev${spelling}` })
 
   // The root is only usable for comparison when it is a REMOTE spelling. An
   // agentless call resolves the deployment's local root, and comparing that
   // against a remote target would refuse every write on every host.
   check('a remote workspace root is usable as a scope',
-    writeScopeRootOf({ workspaceRoot: 'ssh://qiyk/home/dev/proj' }) === 'ssh://qiyk/home/dev/proj')
+    writeScopeRootOf({ workspaceRoot: 'ssh://dev/home/dev/proj' }) === 'ssh://dev/home/dev/proj')
   check('a local workspace root is not a remote scope',
     writeScopeRootOf({ workspaceRoot: 'F:\\GitHub\\proj' }) === undefined)
 
   check('workspace-write allows the session workspace itself',
-    workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', target('/home/dev/proj')) === undefined)
+    workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', target('/home/dev/proj')) === undefined)
   check('workspace-write allows a path inside the session workspace',
-    workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', target('/home/dev/proj/src/a.js')) === undefined)
+    workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', target('/home/dev/proj/src/a.js')) === undefined)
 
-  const sibling = workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', target('/home/dev/other/a.js'))
+  const sibling = workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', target('/home/dev/other/a.js'))
   check('workspace-write refuses a sibling directory on the same host', sibling !== undefined)
   check('the scope refusal names the workspace it is confined to',
-    /ssh:\/\/qiyk\/home\/dev\/proj/u.test(sibling ?? ''), String(sibling))
+    /ssh:\/\/dev\/home\/dev\/proj/u.test(sibling ?? ''), String(sibling))
   check('the scope refusal names the way out', /danger-full-access/u.test(sibling ?? ''), String(sibling))
 
-  const otherHost = workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', {
+  const otherHost = workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', {
     alias: 'other', remotePath: '/srv/app', displayPath: 'ssh://other/srv/app',
   })
   check('workspace-write refuses a mounted root on a DIFFERENT host', otherHost !== undefined)
   check('the cross-host refusal names both hosts',
-    /"qiyk"/u.test(otherHost ?? '') && /"other"/u.test(otherHost ?? ''), String(otherHost))
+    /"dev"/u.test(otherHost ?? '') && /"other"/u.test(otherHost ?? ''), String(otherHost))
 
   // `..` must not spell its way out of the workspace.
   check('a traversal spelling is compared after normalisation',
-    workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', {
-      alias: 'qiyk', remotePath: '/home/dev/proj/../other/a.js', displayPath: 'ssh://qiyk/home/dev/proj/../other/a.js',
+    workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', {
+      alias: 'dev', remotePath: '/home/dev/proj/../other/a.js', displayPath: 'ssh://dev/home/dev/proj/../other/a.js',
     }) !== undefined)
 
   // The mode is what decides whether the scope question is even asked: a
   // full-access session may write wherever it likes (subject to the mount fence).
   check('danger-full-access is not scope-checked',
-    workspaceWriteScopeRefusal('danger-full-access', 'ssh://qiyk/home/dev/proj', target('/srv/x')) === undefined)
+    workspaceWriteScopeRefusal('danger-full-access', 'ssh://dev/home/dev/proj', target('/srv/x')) === undefined)
   check('an unconfined deployment is not scope-checked',
-    workspaceWriteScopeRefusal(undefined, 'ssh://qiyk/home/dev/proj', target('/srv/x')) === undefined)
+    workspaceWriteScopeRefusal(undefined, 'ssh://dev/home/dev/proj', target('/srv/x')) === undefined)
   check('a local root leaves the scope unchecked',
     workspaceWriteScopeRefusal('workspace-write', 'F:\\GitHub\\proj', target('/srv/x')) === undefined)
 
   // The temp area mirrors `writableRoots`' constant `/tmp`: in scope on the
   // session's OWN host, and still bound by the host comparison above.
   check('workspace-write keeps the host temp area in scope',
-    workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', target('/tmp/build.o')) === undefined)
+    workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', target('/tmp/build.o')) === undefined)
   check('the temp allowance does not extend to another host',
-    workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', {
+    workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', {
       alias: 'other', remotePath: '/tmp/build.o', displayPath: 'ssh://other/tmp/build.o',
     }) !== undefined)
   check('a path that only looks like the temp area is still scope-checked',
-    workspaceWriteScopeRefusal('workspace-write', 'ssh://qiyk/home/dev/proj', target('/tmpish/build.o')) !== undefined)
+    workspaceWriteScopeRefusal('workspace-write', 'ssh://dev/home/dev/proj', target('/tmpish/build.o')) !== undefined)
 }
 
 // ---------------------------------------------------------------------------
@@ -368,13 +368,13 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const router = new RemoteFileSystem({ engine })
     // Two roots mounted on the session's host, plus one on another host: the
     // mounted set is deliberately wider than the session workspace.
-    router.addRoot('qiyk', '/home/dev/proj')
-    router.addRoot('qiyk', '/home/dev/sibling')
+    router.addRoot('dev', '/home/dev/proj')
+    router.addRoot('dev', '/home/dev/sibling')
     router.addRoot('other', '/srv/app')
     return { router, reached }
   }
 
-  const policy = { mode: 'workspace-write', workspaceRoot: 'ssh://qiyk/home/dev/proj' }
+  const policy = { mode: 'workspace-write', workspaceRoot: 'ssh://dev/home/dev/proj' }
   const call = async (spelling) => {
     const { router, reached } = makeRouter()
     let code
@@ -386,11 +386,11 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     return { code, reached: reached.count }
   }
 
-  const inside = await call('ssh://qiyk/home/dev/proj/src/a.js')
+  const inside = await call('ssh://dev/home/dev/proj/src/a.js')
   check('workspace-write reaches SFTP for a target inside the session workspace',
     inside.reached === 1, `withSftp=${inside.reached} code=${String(inside.code)}`)
 
-  const sibling = await call('ssh://qiyk/home/dev/sibling/a.js')
+  const sibling = await call('ssh://dev/home/dev/sibling/a.js')
   check('workspace-write refuses a sibling MOUNTED root', sibling.code === 'FS_SANDBOX_DENIED', String(sibling.code))
   check('the refused sibling never reached SFTP', sibling.reached === 0, `withSftp=${sibling.reached}`)
 
@@ -405,7 +405,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { router, reached } = makeRouter()
     let code
     try {
-      await router.writeText({ targetKey: 'ssh://qiyk/home/dev/sibling/a.js', displayPath: 'ssh://qiyk/home/dev/sibling/a.js' },
+      await router.writeText({ targetKey: 'ssh://dev/home/dev/sibling/a.js', displayPath: 'ssh://dev/home/dev/sibling/a.js' },
         'x', undefined, undefined, { mode: 'workspace-write', workspaceRoot: 'F:\\GitHub\\proj' })
     } catch (error) {
       code = error?.code
@@ -422,8 +422,8 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { router, reached } = makeRouter()
     let code
     try {
-      await router.writeText({ targetKey: 'ssh://qiyk/srv/x.txt', displayPath: 'ssh://qiyk/srv/x.txt' },
-        'x', undefined, undefined, { mode: 'danger-full-access', workspaceRoot: 'ssh://qiyk/home/dev/proj' })
+      await router.writeText({ targetKey: 'ssh://dev/srv/x.txt', displayPath: 'ssh://dev/srv/x.txt' },
+        'x', undefined, undefined, { mode: 'danger-full-access', workspaceRoot: 'ssh://dev/home/dev/proj' })
     } catch (error) {
       code = error?.code
     }
@@ -439,7 +439,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { router, reached } = makeRouter()
     let code
     try {
-      await router.writeText({ targetKey: 'ssh://qiyk/tmp/stage.o', displayPath: 'ssh://qiyk/tmp/stage.o' },
+      await router.writeText({ targetKey: 'ssh://dev/tmp/stage.o', displayPath: 'ssh://dev/tmp/stage.o' },
         'x', undefined, undefined, policy)
     } catch (error) {
       code = error?.code
@@ -462,8 +462,8 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { router, reached } = makeRouter()
     let code
     try {
-      await router.writeText({ targetKey: 'ssh://qiyk/tmp/stage.o', displayPath: 'ssh://qiyk/tmp/stage.o' },
-        'x', undefined, undefined, { mode: 'danger-full-access', workspaceRoot: 'ssh://qiyk/home/dev/proj' })
+      await router.writeText({ targetKey: 'ssh://dev/tmp/stage.o', displayPath: 'ssh://dev/tmp/stage.o' },
+        'x', undefined, undefined, { mode: 'danger-full-access', workspaceRoot: 'ssh://dev/home/dev/proj' })
     } catch (error) {
       code = error?.code
     }
@@ -478,8 +478,8 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { router, reached } = makeRouter()
     let code
     try {
-      await router.writeText({ targetKey: 'ssh://qiyk/home/dev/proj/x.txt', displayPath: 'ssh://qiyk/home/dev/proj/x.txt' },
-        'x', undefined, undefined, { mode: 'future-mode', workspaceRoot: 'ssh://qiyk/home/dev/proj' })
+      await router.writeText({ targetKey: 'ssh://dev/home/dev/proj/x.txt', displayPath: 'ssh://dev/home/dev/proj/x.txt' },
+        'x', undefined, undefined, { mode: 'future-mode', workspaceRoot: 'ssh://dev/home/dev/proj' })
     } catch (error) {
       code = error?.code
     }
@@ -514,7 +514,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
   {
     const { engine, reached } = makeEngine()
     const result = await toolOf(policyCtx, engine).execute(
-      { alias: 'qiyk', command: 'rm /home/qiyk/test/test.py' },
+      { alias: 'dev', command: 'rm /home/dev/test/test.py' },
       { agent: { session: { id: 's1' } } },
     )
     // The exact regression: this used to return success with exit 0.
@@ -530,7 +530,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     modeOf.current = 'workspace-write'
     engine.assertNotDisabled = () => { throw new Error('the remote workspace is detached') }
     const result = await toolOf(policyCtx, engine).execute(
-      { alias: 'qiyk', command: 'ls', cwd: '/home/qiyk/test' },
+      { alias: 'dev', command: 'ls', cwd: '/home/dev/test' },
       { agent: { session: { id: 's1' } } },
     )
     check('the detached fence still reports itself', /detached/u.test(result.error ?? ''), String(result.error))
@@ -543,7 +543,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { engine, reached } = makeEngine()
     modeOf.current = 'future-mode'
     const result = await toolOf(policyCtx, engine).execute(
-      { alias: 'qiyk', command: 'rm -rf /home/qiyk/test' },
+      { alias: 'dev', command: 'rm -rf /home/dev/test' },
       { agent: { session: { id: 's1' } } },
     )
     check('an unrecognised mode cannot run a remote command', result.success === false, JSON.stringify(result))
@@ -560,7 +560,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { engine, reached } = makeEngine()
     modeOf.current = mode
     const result = await toolOf(policyCtx, engine).execute(
-      { alias: 'qiyk', command: 'uname -a' },
+      { alias: 'dev', command: 'uname -a' },
       { agent: { session: { id: 's1' } } },
     )
     check(`${mode} still runs a remote command`, result.success === true, JSON.stringify(result))
@@ -571,7 +571,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
   {
     const { engine, reached } = makeEngine()
     const result = await toolOf({ get: () => undefined }, engine).execute(
-      { alias: 'qiyk', command: 'uname -a' }, {},
+      { alias: 'dev', command: 'uname -a' }, {},
     )
     check('an unconfined deployment still runs commands', result.success === true, JSON.stringify(result))
     check('an unconfined deployment reached the host', reached.count === 1, `reached=${reached.count}`)
@@ -583,7 +583,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     const { engine, reached } = makeEngine()
     modeOf.current = 'read-only'
     const result = await toolOf(policyCtx, engine).execute(
-      { alias: 'qiyk', command: 'rm -rf /home/qiyk/test', run_in_background: true },
+      { alias: 'dev', command: 'rm -rf /home/dev/test', run_in_background: true },
       { agent: { session: { id: 's1' } } },
     )
     check('a read-only session cannot queue a background remote command', result.success === false, JSON.stringify(result))
@@ -608,14 +608,14 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     .find(entry => entry.name === 'ssh_workspace_shell')
   check('the persistent shell tool is registered when a manager exists', tool !== undefined)
 
-  const refused = await tool.execute({ alias: 'qiyk', command: 'rm -rf /home/qiyk/test' }, { agent: { session: { id: 's1' } } })
+  const refused = await tool.execute({ alias: 'dev', command: 'rm -rf /home/dev/test' }, { agent: { session: { id: 's1' } } })
   check('a read-only session cannot run a persistent remote command', refused.ok === false, JSON.stringify(refused))
   check('the persistent refusal names the mode', /read-only/u.test(refused.error ?? ''), String(refused.error))
 
   // Closing a session mutates nothing on the host, so it must stay available:
   // otherwise "view only" would also mean "cannot end the shell you already
   // have open", which is a resource leak with no way out.
-  const closed = await tool.execute({ alias: 'qiyk', close: true }, { agent: { session: { id: 's1' } } })
+  const closed = await tool.execute({ alias: 'dev', close: true }, { agent: { session: { id: 's1' } } })
   check('read-only can still CLOSE a remote shell', closed.ok === true, JSON.stringify(closed))
 
   modeOf.current = 'danger-full-access'
@@ -625,7 +625,7 @@ const { sessionModeOf, specModeOf, assertRemoteCommandAllowed, remoteReadOnlyMes
     close: () => 0,
     list: () => [],
   }).find(entry => entry.name === 'ssh_workspace_shell')
-  const allowed = await allowedTool.execute({ alias: 'qiyk', command: 'uname -a' }, { agent: { session: { id: 's1' } } })
+  const allowed = await allowedTool.execute({ alias: 'dev', command: 'uname -a' }, { agent: { session: { id: 's1' } } })
   check('danger-full-access still runs a persistent command', allowed.ok === true, JSON.stringify(allowed))
   check('the allowed persistent command reached the manager', reachedShell)
 }

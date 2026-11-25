@@ -245,12 +245,12 @@ function makeApi (document, overrides = {}) {
 
 console.log('[the target directory, including nested host rows]')
 {
-  const folded = makeDirectory(null, 'ssh://qiyk/home/qiyk/project')
-  const tree = makeTree('ssh://qiyk/home/qiyk', [folded.li])
+  const folded = makeDirectory(null, 'ssh://dev/home/dev/project')
+  const tree = makeTree('ssh://dev/home/dev', [folded.li])
   const { api } = makeApi(tree.document)
   const plan = api.osDropPlan(folded.button)
   check('a folded directory row is its own destination',
-    plan?.alias === 'qiyk' && plan?.dir === '/home/qiyk/project',
+    plan?.alias === 'dev' && plan?.dir === '/home/dev/project',
     planText(plan))
   check('...and its row button is the highlight',
     plan?.highlight === folded.button,
@@ -258,12 +258,12 @@ console.log('[the target directory, including nested host rows]')
 }
 
 {
-  const expanded = makeDirectory(null, 'ssh://qiyk/home/qiyk/dir', { expanded: true })
-  const tree = makeTree('ssh://qiyk/home/qiyk', [expanded.li])
+  const expanded = makeDirectory(null, 'ssh://dev/home/dev/dir', { expanded: true })
+  const tree = makeTree('ssh://dev/home/dev', [expanded.li])
   const { api } = makeApi(tree.document)
   const plan = api.osDropPlan(expanded.ul)
   check('blank space under an expanded directory belongs to that directory, not the root',
-    plan?.dir === '/home/qiyk/dir',
+    plan?.dir === '/home/dev/dir',
     planText(plan))
   check('...and the outline is the owning row button, not the whole li',
     plan?.highlight === expanded.button,
@@ -271,13 +271,13 @@ console.log('[the target directory, including nested host rows]')
 }
 
 {
-  const childFile = makeFileLike(null, 'file', 'ssh://qiyk/home/qiyk/dir/a.txt')
-  const expanded = makeDirectory(null, 'ssh://qiyk/home/qiyk/dir', { children: [childFile] })
-  const tree = makeTree('ssh://qiyk/home/qiyk', [expanded.li])
+  const childFile = makeFileLike(null, 'file', 'ssh://dev/home/dev/dir/a.txt')
+  const expanded = makeDirectory(null, 'ssh://dev/home/dev/dir', { children: [childFile] })
+  const tree = makeTree('ssh://dev/home/dev', [expanded.li])
   const { api } = makeApi(tree.document)
   const plan = api.osDropPlan(childFile.button)
   check('a child file row uploads beside that file (its parent directory)',
-    plan?.dir === '/home/qiyk/dir',
+    plan?.dir === '/home/dev/dir',
     planText(plan))
   check('...and highlights the parent directory row',
     plan?.highlight === expanded.button,
@@ -285,13 +285,13 @@ console.log('[the target directory, including nested host rows]')
 }
 
 {
-  const childDir = makeDirectory(null, 'ssh://qiyk/home/qiyk/dir/sub', { expanded: true })
-  const expanded = makeDirectory(null, 'ssh://qiyk/home/qiyk/dir', { children: [childDir] })
-  const tree = makeTree('ssh://qiyk/home/qiyk', [expanded.li])
+  const childDir = makeDirectory(null, 'ssh://dev/home/dev/dir/sub', { expanded: true })
+  const expanded = makeDirectory(null, 'ssh://dev/home/dev/dir', { children: [childDir] })
+  const tree = makeTree('ssh://dev/home/dev', [expanded.li])
   const { api } = makeApi(tree.document)
   const plan = api.osDropPlan(childDir.button)
   check('a nested directory row uploads into that directory',
-    plan?.dir === '/home/qiyk/dir/sub',
+    plan?.dir === '/home/dev/dir/sub',
     planText(plan))
   check('...and highlights its own button',
     plan?.highlight === childDir.button,
@@ -299,22 +299,22 @@ console.log('[the target directory, including nested host rows]')
 }
 
 {
-  const other = makeFileLike(null, 'other', 'ssh://qiyk/home/qiyk/dir/socket')
-  const expanded = makeDirectory(null, 'ssh://qiyk/home/qiyk/dir', { children: [other] })
-  const tree = makeTree('ssh://qiyk/home/qiyk', [expanded.li])
+  const other = makeFileLike(null, 'other', 'ssh://dev/home/dev/dir/socket')
+  const expanded = makeDirectory(null, 'ssh://dev/home/dev/dir', { children: [other] })
+  const tree = makeTree('ssh://dev/home/dev', [expanded.li])
   const { api } = makeApi(tree.document)
   const plan = api.osDropPlan(other.button)
   check('the non-interactive `other` row means its parent directory',
-    plan?.dir === '/home/qiyk/dir',
+    plan?.dir === '/home/dev/dir',
     planText(plan))
 }
 
 {
-  const tree = makeTree('ssh://qiyk/home/qiyk')
+  const tree = makeTree('ssh://dev/home/dev')
   const { api } = makeApi(tree.document)
   const plan = api.osDropPlan(tree.body)
   check('the tree body itself is the workspace root',
-    plan?.dir === '/home/qiyk' && plan?.highlight === tree.body,
+    plan?.dir === '/home/dev' && plan?.highlight === tree.body,
     planText(plan))
 }
 
@@ -322,25 +322,25 @@ console.log('[the target directory, including nested host rows]')
   // The path label and the toolbar sit in the page header, OUTSIDE the tree
   // body. A drop there still belongs to this panel, so it goes to the tree root
   // rather than falling through to the composer attachment handler.
-  const tree = makeTree('ssh://qiyk/home/qiyk')
+  const tree = makeTree('ssh://dev/home/dev')
   const { api } = makeApi(tree.document)
   const plan = api.osDropPlan(tree.label)
   check('the panel header is the tree root, not the composer',
-    plan?.dir === '/home/qiyk' && plan?.alias === 'qiyk',
+    plan?.dir === '/home/dev' && plan?.alias === 'dev',
     planText(plan))
   check('...and outlines the tree body, which is what it targets',
     plan?.highlight === tree.body,
     String(plan?.highlight?.tagName))
   const loose = api.osDropPlan(tree.header)
   check('the whole header band resolves the same way',
-    loose?.dir === '/home/qiyk',
+    loose?.dir === '/home/dev',
     planText(loose))
 }
 
 {
   // A dialog can be portalled anywhere; a drop aimed at it must keep the
   // host's behaviour instead of being swallowed by this panel.
-  const tree = makeTree('ssh://qiyk/home/qiyk')
+  const tree = makeTree('ssh://dev/home/dev')
   const { api } = makeApi(tree.document)
   const dialog = new FakeElement('div', { role: 'dialog' })
   const inner = new FakeElement('div')
@@ -351,7 +351,7 @@ console.log('[the target directory, including nested host rows]')
 }
 
 {
-  const tree = makeTree('ssh://qiyk/home/qiyk')
+  const tree = makeTree('ssh://dev/home/dev')
   const { api } = makeApi(tree.document)
   const outside = new FakeElement('div')
   tree.document.body.append(outside)
@@ -450,12 +450,12 @@ console.log('\n[queueing and the oversize refusal]')
   const { api, calls } = makeApi(document)
   const fileA = { name: 'a.txt' }
   const fileB = { name: 'b.txt' }
-  const split = api.queueTreeUploads('qiyk', '/home/qiyk/dir', [fileA, fileB])
+  const split = api.queueTreeUploads('dev', '/home/dev/dir', [fileA, fileB])
   check('one call queues the whole batch', split.accepted.length === 2)
   check('...with the exact host, directory and files',
     calls.enqueues.length === 1 &&
-    calls.enqueues[0].alias === 'qiyk' &&
-    calls.enqueues[0].dir === '/home/qiyk/dir' &&
+    calls.enqueues[0].alias === 'dev' &&
+    calls.enqueues[0].dir === '/home/dev/dir' &&
     calls.enqueues[0].files.length === 2,
     JSON.stringify(calls.enqueues))
 }
@@ -470,7 +470,7 @@ console.log('\n[queueing and the oversize refusal]')
       return { accepted, rejected }
     },
   })
-  api.queueTreeUploads('qiyk', '/home/qiyk/dir', [accepted[0], rejected[0]])
+  api.queueTreeUploads('dev', '/home/dev/dir', [accepted[0], rejected[0]])
   check('the enqueue is called once', calls.enqueues.length === 1)
   check('...and a rejected file produces one oversize notice',
     calls.notices.length === 1 && calls.notices[0].text.startsWith('oversize:too-big.bin'),
@@ -489,7 +489,7 @@ console.log('\n[the refusal rides on the batch toast, never beside it]')
   })
   const folder = { name: 'album' }
   const fileA = { name: 'a.txt' }
-  api.queueTreeUploads('qiyk', '/home/qiyk/dir', [fileA], [folder])
+  api.queueTreeUploads('dev', '/home/dev/dir', [fileA], [folder])
   check('the refused folder is handed to the ONE enqueue as a note',
     notes.length === 1 && typeof notes[0].note === 'string' && notes[0].note.includes('album'),
     JSON.stringify(notes))
@@ -510,7 +510,7 @@ console.log('\n[the refusal rides on the batch toast, never beside it]')
       return { accepted: files, rejected: [] }
     },
   })
-  api.queueTreeUploads('qiyk', '/home/qiyk/dir', [{ name: 'a.txt' }])
+  api.queueTreeUploads('dev', '/home/dev/dir', [{ name: 'a.txt' }])
   check('a drop without folders carries no note at all',
     notes.length === 1 && notes[0] === '',
     JSON.stringify(notes))
@@ -642,9 +642,9 @@ console.log('\n[one implementation of the folder test]')
 
 console.log('\n[highlight ownership]')
 {
-  const folder = makeDirectory(null, 'ssh://qiyk/home/qiyk/one', { expanded: true })
-  const other = makeDirectory(null, 'ssh://qiyk/home/qiyk/two', { expanded: true })
-  const tree = makeTree('ssh://qiyk/home/qiyk', [folder.li, other.li])
+  const folder = makeDirectory(null, 'ssh://dev/home/dev/one', { expanded: true })
+  const other = makeDirectory(null, 'ssh://dev/home/dev/two', { expanded: true })
+  const tree = makeTree('ssh://dev/home/dev', [folder.li, other.li])
   const { api } = makeApi(tree.document)
   const first = api.osDropPlan(folder.button)
   const second = api.osDropPlan(other.button)

@@ -184,7 +184,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 **工作区内的修改算不算数？** 算。`workspace-write` 要求目标落在**会话自己的**工作区之内，
 与本地同一条规则（本地是 `writableRoots(policy)`，第一项为 `policy.workspaceRoot`）。
 这个 root 不是「本机上的路径」——实测 `SandboxPolicyService.resolve({ session })` 返回的是
-`session.header.cwd` 原样，远端会话拿到的就是 `ssh://qiyk/home/dev/proj` 这种拼写，可以直接
+`session.header.cwd` 原样，远端会话拿到的就是 `ssh://dev/home/dev/proj` 这种拼写，可以直接
 比较。此前文档说「不比较，因为那是本机路径」，是**错的**；不比较的后果是一个会话能写同一
 主机上的兄弟根、甚至另一台主机上的已挂载根，而本地会话做不到这些。
 
@@ -221,7 +221,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 `workspace root must be an absolute execution-world path`，于是**每个远端会话**的策略解析
 都失败。插件对这种失败的做法是 fail-closed（拒绝），但拒绝文案会明确说这是**接线问题**、
 切换模式无用，并引述底层错误——不会谎称你选了「仅可查看」。这条依赖的脆弱性已实测确认：
-裸 `node:path` 下 `isAbsolute('ssh://qiyk/home/qiyk/test')` 为 `false`，打上补丁后为 `true`。
+裸 `node:path` 下 `isAbsolute('ssh://dev/home/dev/test')` 为 `false`，打上补丁后为 `true`。
 
 `node:fs` 桥接（`fs-shim.js`）**不看模式**，这是刻意的：它服务的是宿主自己的记账调用
 （新建会话 cwd 的 `mkdir`、注册表的 `stat`/`realpath`、变更追踪的快照拷贝），本地同一批调用同样不受
@@ -269,7 +269,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 **不动 `sandboxPolicy.resolve`**——上表中「会话工作区」那一列的收窄正是拿那个拼写做比较的。
 
 这不是预防性设计：曾有一个 `read-only` 会话执行
-`ssh_workspace_exec { command: "rm /home/qiyk/test/test.py" }` 并拿到 `[exit code: 0]`，而同会话的
+`ssh_workspace_exec { command: "rm /home/dev/test/test.py" }` 并拿到 `[exit code: 0]`，而同会话的
 `write` 是会被拒的。
 
 **为什么是「拒绝」而不是「过滤」**：本机沙箱回答「这条命令能不能写」的方式，是把**进程**用内核边界
@@ -434,7 +434,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 | 功能 | 说明 |
 | --- | --- |
 | 「远程工作区」面板 | 注册在 `sidebar.panellist`，标题「远程工作区」，服务器图标；面板是一页，按功能分**三个 tab**（主机 / 工作区 / 设置；转发与会话、文件引用、诊断都是「设置」页里的分区），**只有选中的 pane 渲染**，选中项记在模块级（面板被宿主卸载重挂后仍停在原 tab），键盘按 APG 的 tablist（方向键环绕、Home/End、焦点跟随、切 tab 把新 pane 滚回顶部）；正文在限宽 **980px 的居中列**里（两侧留白，窄页面仍有 24px 边距，标题离顶边 72px） |
-| 主机增删改 | 面板内添加 / 编辑 / 删除主机，写回 `$DSH_HOME/dsh-ssh.json`（原子写入，保留不认识的字段），改动立即生效并丢弃该别名旧连接 |
+| 主机增删改 | 面板内添加 / 编辑 / 删除主机，写回 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json`（原子写入，保留不认识的字段；旧根路径可读并在首次写盘时迁移），改动立即生效并丢弃该别名旧连接 |
 | 测试连接 | 实连一次**然后释放**——「测试」回答的是「是否可达」，不是「替我连上」；结果以顶部 toast 呈现（附往返毫秒数），**7 s** 后自动消失（失败与成功同一条规则）、点击 / Esc 可提前关闭；指针停在提示上时计时暂停，移开后重新计满 7 s。错误提示可展开诊断码与原始错误、复制整段诊断；测试连接是可安全重放的动作，所以在原节点提供「重试」 |
 | 顶部提示（错误可诊断） | 面板、文件树与传输共用同一个 7 秒 DOM toast：错误就地提供「详情 / 复制 / 重试」——详情展开诊断码与原始错误，复制整段诊断，剪贴板被拒时自动展开并真实选中文本供 Ctrl+C；重试只对可安全重放的动作渲染（测试 / 重连 / 断开 / 启用 / 自检 / 诊断报告），不可重放时**不画灰色按钮**。所有反馈（复制结果、详情展开、重试进行 / 成功 / 再次失败、在途→结果）都改写同一节点，不新增第二条、不重置计时。出现不抢焦点；用户进入后关闭才把焦点还给来源。传输批次失败带诊断码与逐项原始错误，但整批重试留在队列行，不在 toast 上 |
 | 连接指示 | 「已连接」状态内联在主机名之后；连接上有操作在飞时「断开」按钮禁用并给出提示；「断开」只在状态为 `connected` 时出现，`broken` 与重连中不出现（改给「立即重连」） |
@@ -461,10 +461,11 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 
 | 功能 | 说明 |
 | --- | --- |
-| 主机来源 | `$DSH_HOME/dsh-ssh.json` 优先，缺失时回退读取 `~/.ssh/config` 的具体 `Host` 块；已配好的主机无需重复配置 |
+| 主机来源 | `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json` 优先（旧根路径可读并迁移），缺失时回退读取 `~/.ssh/config` 的具体 `Host` 块；已配好的主机无需重复配置 |
 | `~/.ssh/config` 只读 | 面板不改写 `~/.ssh/config`；与存储同名的主机以存储为准，但**编辑与删除都拒绝**（`configAlias` 标记，面板不给按钮、路由 409：删掉存储条目只会露出那个 `Host` 块，改它会让本机其它 ssh 客户端解析到的东西悄悄变样），要改就去那个文件里改；`Include` 跟随、`Match` 求值；带 `ProxyCommand` 的主机在解析时**明确拒绝**并说明原因（`ProxyJump` 已支持） |
 | 认证方式 | `key`（含 `keyPath` 与口令）/ `password` / `agent`（含 `agentPath`） |
-| 凭据加密 | 密码与私钥口令存进 `dsh-ssh.json` 的 `secrets` 段，AES-256-GCM，密钥为 `$DSH_HOME/dsh-ssh.key`（仅本用户可读）；**从不回传浏览器**，编辑时留空表示保留原值 |
+| 表单内测试连接 | 主机表单底栏的「测试」在**保存之前**真拨一次：`POST /test` 的 `form` 分支按屏幕上的字段构造描述符（`store.descriptorForForm`，空口令沿用已存凭据）并 `engine.probeDescriptor` 连上即断——**不写存储**（主机条目与 `knownHosts` 都不动，主机密钥只比对不 pin）、不池化连接、不启动重连；成功显示耗时、失败显示服务端原话，字段一改结果立即失效 |
+| 凭据加密 | 密码与私钥口令存进 `dsh-ssh.json` 的 `secrets` 段，AES-256-GCM，密钥为 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.key`（仅本用户可读；旧根路径密钥仍被读取）；**从不回传浏览器**，编辑时留空表示保留原值 |
 | 明文迁移 | 老版本留在共享存储里的明文凭据在启动时一次性搬进加密段，best-effort——读不懂的存储原样放过而不是覆盖 |
 | 主机密钥 TOFU | 首连记录服务器主机密钥 SHA256 指纹；之后指纹变更**拒绝连接**并提示新旧指纹，防中间人；主机重装后在面板「忘记主机密钥」重新信任 |
 | 文件权限 | 存储文件 0600、目录 0700（POSIX）；旧文件补一次 `chmod`（best-effort，win32 上 mode 语义有限，不能因此阻断） |

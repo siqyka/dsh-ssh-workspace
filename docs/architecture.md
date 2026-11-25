@@ -92,7 +92,7 @@ Cordis 拒绝在同一作用域第二次 `provide('fs')`（实现按服务的隔
 
 **显式 scheme 是第三类输入，而回退是唯一的存在性判定。** `<scheme>:<abs>` 在 `resolve` /
 `lstat` 里先被 `parseLocalScheme` 剥成裸绝对路径，再走同一套前缀与引用表判定——它不新增
-分类器，只是把“这条拼写属于本机”从推断变成声明。前缀名与回退开关的唯一真相在 `dsh-ssh.json`
+分类器，只是把“这条拼写属于本机”从推断变成声明。前缀名与回退开关的唯一真相在 `dsh-ssh-workspace/dsh-ssh.json`
 的 `passthrough.<field>`，`lib/fs/passthrough.js` 底部的 `PassthroughSettings` 是唯一写入者，`lib/index.js` 在装缝之前
 `activate()` 一次把它 `configure` 进 live matcher，之后面板改动直接写穿、无需重启。
 
@@ -223,7 +223,7 @@ ctx.sandbox.confine(argv, policy, signal) →  包一层 runner argv
 ctx.subprocess.spawn / spawnTerminal      →  这里才是本插件接管的那一层
 ```
 
-`resolve()` 把远端会话的 cwd **原样**返回（`ssh://qiyk/home/qiyk/test/dsh-ssh-workspace`），
+`resolve()` 把远端会话的 cwd **原样**返回（`ssh://dev/home/dev/test/dsh-ssh-workspace`），
 而 `confine()` 把它当**主机路径**处理。Windows 的 ACL 提供方在
 `materializeAclGrant` 里先做 `isTempRootInsideWorkspace(root, tmpdir())`，实现是
 `relative(realpathSync.native(root), realpathSync.native(tmpdir()))`——对
@@ -232,7 +232,7 @@ ctx.subprocess.spawn / spawnTerminal      →  这里才是本插件接管的那
 
 ```
 sandbox-local: windows-acl workspace and temp directory resolution failed: Error: ENOENT:
-no such file or directory, realpath 'C:\Users\…\ssh:\qiyk\home\qiyk\test\dsh-ssh-workspace'.
+no such file or directory, realpath 'C:\Users\…\ssh:\dev\home\dev\test\dsh-ssh-workspace'.
 The command did not run; … or run with danger-full-access.
 ```
 
@@ -727,7 +727,7 @@ rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之�
 | 空闲回收 | 30 分钟（sweeper 每 60s 扫一遍，有请求在飞不回收） | `engine.idleTimeoutMs` / `engine.sweepIntervalMs` |
 | 主机变更 | `forget(alias)` 丢弃旧连接，下次操作按新配置重连 | — |
 | 主动断开 | `hosts/disconnect` 先 `savedForwards.closeAlias(alias)`（逐条走 `closeById`，与端口行「断开」同一条路径）再 `forget(alias)`，响应 `closedForwards` 报告拆了几条隧道 | — |
-| 测试连接 | `test` 连一次即 `forget(alias)` 释放（被转发的 `holds` 钉住时不释放） | — |
+| 测试连接 | `test` 连一次即 `forget(alias)` 释放（被转发的 `holds` 钉住时不释放）；请求带 `form` 时走**探针**分支：`store.descriptorForForm(form)` 构造描述符（空口令沿用已存凭据），`engine.probeDescriptor` 拨通即 `destroy()` —— 不写存储、不入连接池、不触发重连；主机密钥只**比对**不 pin（TOFU 由真正的连接完成，探针留下的别名可能只是「(unsaved host)」） | — |
 | 后台重连 | 1s 起指数退避、60s 封顶、默认不限次数 | `engine.reconnect.baseDelayMs` / `maxDelayMs` / `maxAttempts` / `jitter`（`false` 关闭） |
 
 ### 后台重连（`lib/engine/reconnect.js`）

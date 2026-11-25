@@ -142,5 +142,49 @@ try {
   rmSync(home, { recursive: true, force: true })
 }
 
+// -- migration from the legacy root paths ----------------------------------
+//
+// Older releases kept dsh-ssh.json / dsh-ssh.key directly under $DSH_HOME.
+// The default store must read them there and write the document to the new
+// private subdirectory on the first save, without losing hosts or secrets.
+{
+  const legacyHome = mkdtempSync(path.join(tmpdir(), 'dsh-migrate-'))
+  process.env.DSH_HOME = legacyHome
+  const legacyJson = path.join(legacyHome, 'dsh-ssh.json')
+  const legacyKey = path.join(legacyHome, 'dsh-ssh.key')
+  const newDir = path.join(legacyHome, 'dsh-ssh-workspace')
+  const newJson = path.join(newDir, 'dsh-ssh.json')
+  const newKey = path.join(newDir, 'dsh-ssh.key')
+  const migratedEntry = { alias: 'legacy-host', host: 'legacy.example.com', port: 22, user: 'root', auth: { kind: 'password' } }
+  // A real key so the ciphertext in the legacy document is decryptable.
+  const codec = new SecretCodec({ path: legacyKey })
+  const cipher = codec.encrypt('legacy-secret')
+  writeFileSync(legacyJson, `${JSON.stringify({
+    version: 1,
+    hosts: [migratedEntry],
+    secrets: { 'legacy-host': { password: cipher } },
+    knownHosts: { 'legacy-host': { fingerprint: 'SHA256:x' } },
+  }, null, 2)}\n`, 'utf8')
+  // Ensure the legacy key exists (encrypt created it lazily).
+
+  const store = new HostConfigStore()
+  check('default store reads hosts from the legacy root path', store.find('legacy-host')?.host === 'legacy.example.com')
+  check('default store decrypts a secret with the legacy key', store.secretFor('legacy-host')?.password === 'legacy-secret')
+  check('default store creates no new file before a write', !existsSync(newJson))
+
+  // A write must migrate the whole document into the private subdirectory.
+  store.create({ alias: 'fresh', host: 'fresh.example.com', port: 22, user: 'root', auth: { kind: 'password', password: 'fresh-pass' } })
+  check('first write creates the private subdirectory', existsSync(newDir))
+  check('first write migrates the document to the new path', existsSync(newJson))
+  check('migrated document keeps the legacy host', new HostConfigStore(newJson).find('legacy-host') !== undefined)
+  check('migrated document keeps the new host', new HostConfigStore(newJson).find('fresh') !== undefined)
+  check('migrated document keeps unknown sections', JSON.parse(readFileSync(newJson, 'utf8')).knownHosts?.['legacy-host']?.fingerprint === 'SHA256:x')
+  check('migrated document keeps the legacy secret', store.secretFor('legacy-host')?.password === 'legacy-secret')
+  // The legacy key stays the source of truth; no duplicate is generated.
+  check('no duplicate key is generated during migration', !existsSync(newKey))
+
+  rmSync(legacyHome, { recursive: true, force: true })
+}
+
 console.log(`\n=== ${passes} passed, ${failures} failed ===`)
 process.exit(failures === 0 ? 0 : 1)

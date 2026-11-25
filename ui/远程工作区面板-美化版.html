@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远程工作区 · 面板美化（DSH 白色主题）</title>
+<style>
+/* ============================================================
+   远程工作区面板美化 · DSH 浅色（白色）主题
+   配色取自 DSH 宿主浅色 token（client.styles.js 的 --dsw-* 别名）：
+   bg-base #fff / layer-1 #fff / label-primary #0f1115 / label-secondary #61666b /
+   border-l2 #0000001a / info-fill #4176e6（DeepSeek 蓝）。整体保持白色。
+   含 6 个界面：主面板 / 浏览目录 / 新建工作区 / 传输队列 / 文件行菜单 / 文件编辑器
+   ============================================================ */
+:root{
+  --stage:#f9fafb; --bg:#ffffff; --surface:#ffffff; --surface-2:rgba(15,17,21,.04); --surface-3:rgba(15,17,21,.06);
+  --card:#ffffff; --card-line:#0000001a; --border:#0000001a; --border-strong:#0000001f;
+  --text:#0f1115; --muted:#61666b; --faint:#81858c;
+  --accent:#4176e6; --accent-hover:#2f5fc9; --on-accent:#fff;
+  --success:#16a34a; --success-line:#86efac; --success-soft:#f0fdf4;
+  --warn:#b45309; --warn-line:#fcd34d; --warn-soft:#fffbeb;
+  --danger:#dc2626; --danger-line:#fca5a5; --danger-soft:#fef2f2;
+  --toast-bg:#fff;
+  --shadow:0 1px 2px rgba(31,35,40,.06),0 8px 28px rgba(31,35,40,.16);
+  --shadow-lg:0 16px 48px rgba(31,35,40,.2);
+  --font:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  --r:6px; --r-md:8px; --r-lg:12px; --r-pill:99px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--stage);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---- demo chrome ---- */
+.topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)}
+.topbar h1{font-size:14px;margin:0;font-weight:650;letter-spacing:-.01em}
+.topbar h1 span{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+.sw{display:flex;gap:4px;flex-wrap:wrap}
+.sw button{border:1px solid var(--border);background:var(--surface);border-radius:var(--r);padding:5px 11px;font-size:12px;color:var(--muted)}
+.sw button.active{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.stage{padding:0;display:flex;align-items:flex-start;min-width:0;min-height:calc(100vh - 52px)}
+/* 真实面板模型：滚动视口铺满侧栏，正文是 margin:0 auto 的限宽居中列
+   （client.styles.js .sshwsp / .sshwsp-panel-inner：width:100%; max-width:980px;
+   margin:0 auto; padding:72px 24px 40px）。#s-panel 模拟那个侧栏视口，自身不限宽，
+   宽度交给 .dw（可拖动右下角改宽度）。 */
+#s-panel{width:100%;min-width:0;display:none}
+#s-panel.active{display:block}
+.dw{width:100%;box-sizing:border-box;resize:horizontal;overflow:auto;min-width:280px;max-width:100%;background:var(--bg);border:1px solid var(--border-strong);border-right-width:6px;box-shadow:none;container-type:inline-size;container-name:dw}
+.dw .panel-inner{box-sizing:border-box;width:100%;max-width:980px;margin:0 auto;padding:72px 24px 40px}
+/* 与真实面板一致的窄栏回落（client.styles.js @container sshwsp-panel <420px / <320px） */
+@container dw (width < 420px){
+  .dw .host{flex-wrap:wrap}
+  .dw .host-alias{padding-right:0}
+  .dw .host .actions{justify-content:flex-start;width:100%}
+  .dw .settings-block > .block-head{flex-wrap:wrap;gap:6px}
+  .dw .row-form select,.dw .row-form input{flex:1 1 120px}
+  .dw .fwd .fpath{flex:1 1 100%;min-width:0}
+  .dw .fwd .actions{width:100%;justify-content:flex-start}
+}
+@container dw (width < 320px){
+  .dw .panel-inner{padding:44px 14px 30px}
+  .dw .card{padding:9px 10px}
+}
+.surface{width:980px;max-width:100%;display:none}
+.surface.active{display:block;animation:sfade .18s ease-out}
+@keyframes sfade{from{opacity:0}to{opacity:1}}
+.cap{align-items:center;gap:10px;margin:0 0 14px;font-size:12px;color:var(--muted)}
+.cap b{color:var(--text);font-weight:650;font-size:13px}
+.cap .tag{font-size:11px;border:1px solid var(--border);border-radius:var(--r);padding:1px 7px;color:var(--faint)}
+
+/* ---- shared bits ---- */
+.panel{background:var(--bg);border:1px solid var(--border-strong);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.inner{padding:26px 24px}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.head h2{margin:0;font-size:20px;font-weight:650;letter-spacing:-.02em;line-height:1.25}
+.head .sub{margin:4px 0 0;color:var(--muted);font-size:12px}
+.icon-btn{border:1px solid var(--border);background:var(--surface);border-radius:var(--r);width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);flex:none}
+.icon-btn:hover{background:var(--surface-2);color:var(--text)}
+.ico{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.tabs{display:flex;gap:0;margin:18px 0 16px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{position:relative;flex:none;border:0;background:none;padding:9px 12px;font-size:14px;color:var(--muted);white-space:nowrap;border-radius:var(--r) var(--r) 0 0}
+.tab:hover{color:var(--text)}
+.tab[aria-selected="true"]{color:var(--text);font-weight:650}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;background:var(--accent);border-radius:var(--r-pill)}
+.pane[hidden]{display:none!important}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 0 10px}
+.section-head h3{margin:0;font-size:12px;font-weight:650;letter-spacing:.03em;color:var(--muted)}
+.provenance{margin:0 0 10px;font-size:12px;color:var(--faint)}
+.btn{border:1px solid var(--border-strong);background:var(--surface);border-radius:var(--r);padding:5px 10px;font-size:12px;white-space:nowrap;transition:background .12s}
+.btn:hover{background:var(--surface-2)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-danger{color:var(--danger);border-color:var(--danger-line)}
+.btn-quiet{background:transparent;border-color:transparent;color:var(--muted)}
+.btn-sm{padding:3px 8px;font-size:11px}
+/* 开机自动连接：勾选开关（对应真实项目的 role=switch 按钮） */
+.auto-toggle{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--border-strong);background:var(--surface);border-radius:var(--r);font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;user-select:none}
+.auto-toggle:hover{background:var(--surface-2)}
+.auto-toggle .box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid var(--border-strong);border-radius:3px;background:var(--card);flex:none}
+.auto-toggle .box svg{width:10px;height:10px;opacity:0}
+.auto-toggle[aria-checked="true"]{color:var(--text)}
+.auto-toggle[aria-checked="true"] .box{background:var(--accent);border-color:var(--accent)}
+.auto-toggle[aria-checked="true"] .box svg{opacity:1;color:var(--on-accent)}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r-md);padding:11px 13px;margin-bottom:7px}
+/* 主机卡片：信息与按钮同一行；按钮靠右，底边与「最近使用」那一行对齐 */
+.card.host{position:relative;display:flex;align-items:flex-end;gap:12px}
+.host-main{min-width:0;flex:1 1 auto}
+.host .actions{align-self:flex-end;justify-content:flex-end}
+.host-alias{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;padding-right:124px}
+/* 开机自动连接：绝对定位到卡片右上角 */
+.auto-toggle{position:absolute;top:10px;right:13px;margin-left:0}
+.addr{margin-top:3px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;font-size:12px;color:var(--faint)}
+.chip{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:var(--r);padding:0 7px;font-size:12px;background:var(--surface)}
+.chip.ready{color:var(--success);border-color:var(--success-line);background:var(--success-soft)}
+.chip.missing{color:var(--danger);border-color:var(--danger-line);background:var(--danger-soft)}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:3px;padding:1px 8px;font-size:12px;font-weight:600}
+.pill.ok{color:var(--success);background:var(--success-soft)}
+.pill.warn{color:var(--warn);background:var(--warn-soft)}
+.pill.err{color:var(--danger);background:var(--danger-soft)}
+.dot{width:7px;height:7px;border-radius:var(--r-pill);flex:none;background:var(--faint)}
+.dot.ok{background:var(--success)}.dot.warn{background:var(--warn)}.dot.err{background:var(--danger)}
+.last{margin-top:5px;font-size:12px;color:var(--faint)}
+.note{margin-top:5px;font-size:12px;color:var(--muted);line-height:1.55}
+.note.warn{color:var(--warn)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto}
+/* 工作区卡片：信息块在左，按钮组居中靠右（垂直居中、水平偏右） */
+.mount{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--card-line);border-radius:var(--r-md);background:var(--card);padding:10px 13px;margin-bottom:6px}
+.mount .mount-info{flex:1 1 auto;min-width:0}
+.mount .actions{flex:0 0 auto;margin-left:auto;justify-content:center}
+.mount.off{opacity:.7}
+.mount-path{flex:1;min-width:0;font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mount.off .mount-path{color:var(--faint)}
+.mount-titlerow{display:flex;align-items:center;gap:10px}
+.mount-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px}
+.mark{width:15px;height:15px;border-radius:2px;border:1.5px solid var(--accent);display:inline-flex;align-items:center;justify-content:center;color:var(--accent);font-family:var(--mono);font-size:9px;font-weight:700;flex:none}
+.badge{font-size:12px;color:var(--faint);border:1px solid var(--border);border-radius:var(--r);padding:1px 7px}
+.hostgone{width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--danger-soft);border:1px solid var(--danger);color:var(--danger);font-size:11px;font-weight:700;flex:none}
+.hint{margin:0 0 10px;font-size:12px;color:var(--faint);line-height:1.55}
+
+/* ---- settings: functional blocks, same card language as workspace ----
+   每个功能块用与工作区卡片一致的描边+圆角+内边距，块间距加大到 24px，
+   靠留白而不是换一套标题样式来区分（标题栏保持与工作区同款的简洁排版）。 */
+.settings-block{border:1px solid var(--card-line);border-radius:var(--r-md);margin-bottom:24px;background:var(--card);padding:12px 14px}
+.settings-block > .block-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 0 10px;border-bottom:1px solid var(--card-line)}
+.settings-block > .block-head h4{margin:0;font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
+.settings-block > .block-head h4 .num{font-family:var(--mono);font-size:11px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px;font-weight:700}
+.settings-block > .block-body{padding:12px 0 0}
+.row-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+input,select{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r);color:var(--text);padding:5px 9px;font-size:12px;font-family:inherit;min-width:0}
+input[type=number]{width:88px}
+select{width:140px;cursor:pointer}
+input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;margin:0;cursor:pointer}
+.checkrow{display:flex;align-items:flex-start;gap:9px;font-size:12px;color:var(--muted);cursor:pointer;margin:8px 0;line-height:1.55}
+.checkrow input{margin-top:2px}
+.fwd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--card-line);border-radius:var(--r);padding:9px 11px;margin-bottom:7px;background:var(--surface)}
+.fwd.off .fpath{color:var(--faint)}
+.fpath{flex:1;font-family:var(--mono);font-size:12px;min-width:160px}
+/* 红灯悬停/聚焦提示：默认只显示红灯，鼠标放上去（或键盘聚焦）才弹出原因 */
+.dot-hint{position:relative;display:inline-flex;flex:none}
+.dot-hint .dot{cursor:help}
+.dot-tip{position:absolute;left:-4px;bottom:calc(100% + 8px);transform:translateY(4px);width:max-content;max-width:260px;box-sizing:border-box;background:var(--text);color:var(--bg);font-size:12px;line-height:1.5;padding:6px 9px;border-radius:var(--r);box-shadow:var(--shadow-lg);opacity:0;visibility:hidden;transition:opacity .12s,transform .12s;pointer-events:none;z-index:5;font-family:var(--font)}
+.dot-tip::after{content:"";position:absolute;left:8px;top:100%;border:5px solid transparent;border-top-color:var(--text)}
+.dot-hint:hover .dot-tip,.dot-hint:focus-within .dot-tip{opacity:1;visibility:visible;transform:translateY(0)}
+/* 文字标签的悬停/聚焦提示：一个小的 ? 标记，鼠标放上去或 Tab 聚焦才展开说明 */
+.hint-mark{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--faint);color:var(--faint);font-size:10px;font-weight:700;cursor:help;flex:none;vertical-align:middle;margin-left:5px;font-family:var(--mono);line-height:1}
+.hint-mark:hover,.hint-mark:focus-visible{color:var(--accent);border-color:var(--accent)}
+.hint-tip{position:absolute;left:-6px;top:calc(100% + 8px);transform:translateY(-4px);width:max-content;max-width:300px;box-sizing:border-box;background:var(--text);color:var(--bg);font-size:12px;line-height:1.55;padding:7px 10px;border-radius:var(--r);box-shadow:var(--shadow-lg);opacity:0;visibility:hidden;transition:opacity .12s,transform .12s;pointer-events:none;z-index:20;font-family:var(--font);font-weight:400;white-space:normal}
+.hint-tip::after{content:"";position:absolute;left:10px;bottom:100%;border:5px solid transparent;border-bottom-color:var(--text)}
+.hint-mark:hover .hint-tip,.hint-mark:focus .hint-tip,.hint-mark:focus-within .hint-tip{opacity:1;visibility:visible;transform:translateY(0)}
+.session{font-size:12px;color:var(--muted);padding:4px 0;font-family:var(--mono)}
+.session b{color:var(--text);font-weight:600}
+.subhead{font-size:12px;color:var(--faint);font-weight:500;margin:0 0 10px;letter-spacing:.02em}
+.field-label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.field-hint{font-size:12px;color:var(--faint);line-height:1.6;margin:6px 0 0}
+input.scheme{width:170px}
+.findings{display:flex;flex-direction:column;gap:6px}
+.finding{display:flex;gap:8px;align-items:baseline;font-size:12px;line-height:1.5}
+.finding .tag{font-size:12px;font-weight:700;color:var(--warn);flex:none}
+.finding .tag.bad{color:var(--danger)}
+.finding .tag.unknown{color:var(--faint)}
+details.notes{font-size:12px;color:var(--muted);margin-top:10px}
+details.notes summary{cursor:pointer;color:var(--faint)}
+details.notes div{margin-top:6px;padding-left:12px;line-height:1.6}
+.report-title{display:inline-flex;align-items:center;gap:7px}
+
+/* ---- dialogs ---- */
+.backdrop{position:fixed;inset:0;background:rgba(20,22,20,.42);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
+.dialog{background:var(--bg);border:1px solid var(--border-strong);border-radius:var(--r-lg);width:620px;max-width:100%;height:min(86vh,720px);display:flex;flex-direction:column;box-shadow:var(--shadow-lg)}
+.dialog.narrow{width:480px}
+.dlg-head{display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid var(--border-strong)}
+.dlg-head h2{flex:1;margin:0;font-size:16px;font-weight:650}
+.dlg-body{padding:0;overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column}
+.dlg-form{flex:0 0 auto;padding:14px 18px;display:flex;flex-direction:column;gap:11px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field > label{font-size:12px;color:var(--muted)}
+.field > input,.field > select{width:100%}
+.browser{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;border-top:1px solid var(--card-line);border-bottom:1px solid var(--card-line)}
+.browser-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:9px 16px;background:var(--surface-2);border-bottom:1px solid var(--border)}
+.browser-head .path{flex:1;font-family:var(--mono);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.browser-hint{flex:0 0 auto;font-size:11px;color:var(--faint);padding:6px 16px}
+.browser-list{flex:1 1 auto;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.entry{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;padding:8px 16px;border:0;border-bottom:1px solid var(--border);background:none;font-size:13px;text-align:left}
+.entry:hover{background:var(--surface-2)}
+.entry.picked{background:var(--surface-3);box-shadow:inset 2px 0 0 var(--accent)}
+.entry .ico{color:var(--muted)}
+.entry .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.entry .mt{font-size:11px;color:var(--faint);font-family:var(--mono)}
+.picked-line{flex:0 0 auto;padding:8px 18px;font-size:12px;color:var(--muted);background:var(--surface-2)}
+.picked-line b{color:var(--text);font-family:var(--mono)}
+.dlg-foot{flex:0 0 auto;padding:12px 18px;border-top:1px solid var(--border-strong);display:flex;justify-content:flex-end;gap:8px}
+.warnline{margin:0;padding:9px 12px;font-size:12px;color:var(--danger);background:var(--danger-soft);border:1px solid var(--danger-line);border-radius:var(--r);line-height:1.55}
+
+/* ---- transfer queue ---- */
+.queue{width:400px;max-width:calc(100vw - 32px);background:var(--bg);border:1px solid var(--border-strong);border-radius:var(--r-md);box-shadow:var(--shadow-lg);overflow:hidden}
+.queue-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border)}
+.queue-head h3{margin:0;font-size:13px;font-weight:650}
+.qrow{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)}
+.qrow:last-child{border-bottom:0}
+.qrow .qico{width:18px;height:18px;color:var(--accent);flex:none;align-self:center}
+.qbody{flex:1;min-width:0}
+.qrow-top{display:flex;align-items:center;gap:8px}
+.qrow .qname{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .qstat{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.qrow .qmeta{font-size:11px;color:var(--faint);margin:3px 0 0}
+.qbar{height:3px;background:var(--surface-3);border-radius:2px;margin:7px 0 0;overflow:hidden}
+.qbar > i{display:block;height:100%;background:var(--accent);border-radius:2px}
+.qbar.scan > i{width:30%;animation:scan 1.4s ease-in-out infinite}
+@keyframes scan{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+.qbar.grey > i{background:var(--faint)}
+.queue-foot{padding:10px 14px;background:var(--surface-2);border-top:1px solid var(--border);font-size:11px;color:var(--faint);display:flex;align-items:center;justify-content:space-between;gap:8px}
+
+/* ---- file tree + row menu ---- */
+.tree{background:var(--bg);border:1px solid var(--border-strong);border-radius:var(--r-lg);box-shadow:var(--shadow);width:560px;max-width:100%;overflow:visible;position:relative}
+.tree-head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--border)}
+.tree-head .tp{flex:1;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.tree-head .tray{position:relative;width:28px;height:28px;border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--accent);background:var(--surface)}
+.trow{display:flex;align-items:center;gap:9px;padding:7px 14px;border-bottom:1px solid var(--border);font-size:13px;position:relative}
+.trow.selected{background:color-mix(in srgb,var(--accent) 12%,transparent);box-shadow:inset 2px 0 0 var(--accent)}
+.trow .ico{color:var(--muted)}
+.trow .tn{flex:1}
+.trow .ts{font-size:11px;color:var(--faint);font-family:var(--mono)}
+/* 与项目当前行菜单一致（client.styles.js .sshwsp-flowmenu / .sshwsp-menuitem）：
+   内容定宽 144–360px、圆角 16px、内边距 4px；每项单行、14px 图标 + 13px 标题、
+   最小行高 34px、圆角 12px；原因放 title 悬停提示，不再是第二行说明。 */
+.menu{width:max-content;min-width:144px;max-width:360px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:4px;position:absolute;z-index:10;top:52px;left:300px}
+.menu button{display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box;min-height:34px;padding:6px 8px;border:0;border-radius:12px;background:none;color:var(--text);font-size:13px;line-height:20px;text-align:left;cursor:pointer;white-space:nowrap}
+.menu button:hover{background:var(--surface-2)}
+.menu button .mi{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;color:var(--muted);flex:none}
+.menu button .mi svg{width:14px;height:14px}
+.menu button .mt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu .sep{height:1px;background:var(--border);margin:4px 8px}
+.menu button.danger{color:var(--danger)}
+
+/* ---- file editor ---- */
+.editor{width:680px;max-width:100%;background:var(--bg);border:1px solid var(--border-strong);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.editor-head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--border)}
+.editor-head .ep{flex:1;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.editor-body{display:flex;background:var(--surface);font-family:var(--mono);font-size:12px;line-height:1.75}
+.lines{padding:12px 10px;text-align:right;color:var(--faint);border-right:1px solid var(--border);user-select:none;min-width:42px}
+.code{padding:12px 14px;white-space:pre;overflow:auto;flex:1;min-height:220px}
+.code .k{color:var(--accent)}
+.editor-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+.editor-foot select{padding:3px 6px;font-size:12px;width:auto}
+.toast{position:fixed;left:50%;top:60px;transform:translateX(-50%);z-index:300;background:var(--toast-bg);border:1px solid var(--border-strong);border-radius:var(--r-md);box-shadow:var(--shadow-lg);padding:9px 15px;font-size:12px;color:var(--success);display:none;max-width:90vw}
+.toast.show{display:block}
+.legend{margin:12px 0 0;font-size:11px;color:var(--faint)}
+@media(max-width:560px){.menu{left:20px}.topbar{padding:10px 12px}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>远程工作区 · 面板美化 <span>DSH 白色主题 · 全界面</span></h1>
+  <div class="sw" id="switcher">
+    <button data-s="panel" class="active">主面板</button>
+    <button data-s="browser">浏览目录</button>
+    <button data-s="newworkspace">新建工作区</button>
+    <button data-s="queue">传输队列</button>
+    <button data-s="menu">文件行菜单</button>
+    <button data-s="editor">文件编辑器</button>
+  </div>
+</div>
+
+<div class="stage">
+
+<!-- ============ 1. 主面板 ============ -->
+<section id="s-panel" class="active">
+  <div class="cap" style="padding:10px 20px"><b>主面板</b> · 拖动视口右下角可改宽度，正文按真实模型居中限宽 980px<span class="tag" id="dw-label">当前视口 100%</span></div>
+  <div class="dw" id="dw"><div class="panel-inner">
+    <header class="head">
+      <div><h2>远程工作区</h2><p class="sub">管理 SSH 主机、挂载目录与端口转发</p></div>
+      <button class="icon-btn" title="刷新" aria-label="刷新"><svg class="ico" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg></button>
+    </header>
+    <div class="tabs" role="tablist" aria-label="面板分区">
+      <button class="tab" role="tab" id="t-hosts" aria-selected="true" aria-controls="p-hosts" tabindex="0">主机</button>
+      <button class="tab" role="tab" id="t-work" aria-selected="false" aria-controls="p-work" tabindex="-1">工作区</button>
+      <button class="tab" role="tab" id="t-set" aria-selected="false" aria-controls="p-set" tabindex="-1">设置</button>
+    </div>
+
+    <!-- 主机 -->
+    <div class="pane" id="p-hosts" role="tabpanel" aria-labelledby="t-hosts">
+      <div class="section-head"><h3>SSH 主机</h3><button class="btn btn-primary">添加主机</button></div>
+      <p class="provenance">来自配置与 ~/.ssh/config · 共 4 台</p>
+      <article class="card host"><div class="host-main">
+        <div class="host-alias"><span class="dot ok"></span><span>qiyk</span><span class="pill ok">已连接</span><button class="btn auto-toggle" role="switch" aria-checked="false" aria-label="开机自动连接" title="已关闭自动连接"><span class="box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg></span>开机自动连接</button></div>
+        <div class="addr">qiyk@10.0.0.12:22</div>
+        <div class="meta"><span class="chip ready">密钥就绪</span><span>密钥</span><span>配置</span></div>
+        <div class="last">最近使用 · 2 分钟前</div></div>
+        <div class="actions"><button class="btn">测试连接</button><button class="btn" data-go="browser">浏览目录</button><button class="btn">断开</button><button class="btn">编辑</button></div>
+      </article>
+      <article class="card host"><div class="host-main">
+        <div class="host-alias"><span class="dot warn"></span><span>macmini</span><span class="pill warn">重连中（第 3 次，18 秒后）</span><button class="btn auto-toggle" role="switch" aria-checked="true" aria-label="开机自动连接" title="已开启自动连接"><span class="box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg></span>开机自动连接</button></div>
+        <div class="addr">chris@192.168.1.40:22</div>
+        <div class="meta"><span class="chip ready">密钥就绪</span><span>Agent</span><span>~/.ssh/config</span></div>
+        <div class="note warn">~/.ssh/config 里有同名 Host 块：编辑和删除都在那个文件里做</div></div>
+        <div class="actions"><button class="btn">测试连接</button><button class="btn btn-primary">立即重连</button></div>
+      </article>
+      <article class="card host"><div class="host-main">
+        <div class="host-alias"><span class="dot"></span><span>nas-old</span><button class="btn auto-toggle" role="switch" aria-checked="false" aria-label="开机自动连接" title="已关闭自动连接"><span class="box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg></span>开机自动连接</button></div>
+        <div class="addr">backup@10.0.0.9:22</div>
+        <div class="meta"><span class="chip missing">密钥缺失</span><span>密码</span><span>配置</span></div>
+        <div class="last">最近使用 · 3 天前</div></div>
+        <div class="actions"><button class="btn">测试连接</button><button class="btn">编辑</button><button class="btn btn-danger">删除</button><button class="btn">忘记主机密钥</button></div>
+      </article>
+      <article class="card host"><div class="host-main">
+        <div class="host-alias"><span class="dot ok"></span><span>cloud-prod</span><span class="pill ok">已连接</span><button class="btn auto-toggle" role="switch" aria-checked="true" aria-label="开机自动连接" title="已开启自动连接"><span class="box"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg></span>开机自动连接</button></div>
+        <div class="addr">deploy@47.98.21.10:22</div>
+        <div class="meta"><span class="chip ready">密钥就绪</span><span>密钥</span><span>配置</span></div>
+        <div class="last">最近使用 · 5 小时前</div></div>
+        <div class="actions"><button class="btn">测试连接</button><button class="btn" data-go="browser">浏览目录</button><button class="btn">断开</button><button class="btn">编辑</button></div>
+      </article>
+    </div>
+
+    <!-- 工作区 -->
+    <div class="pane" id="p-work" role="tabpanel" aria-labelledby="t-work" hidden>
+      <div class="section-head"><h3>已挂载的工作区</h3><button class="btn btn-primary" data-go="newworkspace">添加工作区</button></div>
+      <div class="mount"><div class="mount-info"><div class="mount-titlerow"><span class="mark">S</span><span class="mount-title">dsh-ssh-workspace</span></div><div class="mount-path">ssh://qiyk@/home/qiyk/dsh-ssh-workspace</div></div><div class="actions"><button class="btn">卸载</button><button class="btn btn-danger">删除</button></div></div>
+      <div class="mount"><div class="mount-info"><div class="mount-titlerow"><span class="hostgone" title="主机 old-server 已不在主机列表里：这个工作区连不上，先重新添加该主机">!</span><span class="mount-title">legacy-notes</span></div><div class="mount-path">ssh://old-server@/srv/notes</div></div><div class="actions"><button class="btn">卸载</button><button class="btn btn-danger">删除</button></div></div>
+      <div class="section-head"><h3>已停用的工作区<span class="hint-mark" tabindex="0" role="img" aria-label="这些工作区已卸载：文件读写与命令执行不可用；SSH 连接仍保留。">?<span class="hint-tip">这些工作区已卸载：文件读写与命令执行不可用；SSH 连接仍保留。</span></span></h3><span class="badge">SSH 连接仍保留</span></div>
+      <div class="mount off"><div class="mount-info"><div class="mount-titlerow"><span class="mark">S</span><span class="mount-title">projects <span class="badge">已停用</span></span></div><div class="mount-path">ssh://nas-old@/volume1/projects</div></div><div class="actions"><button class="btn btn-primary">启用</button><button class="btn btn-danger">删除</button></div></div>
+    </div>
+
+    <!-- 设置：与工作区同款 section-head + 独立卡片，不用外框包起来 -->
+    <div class="pane" id="p-set" role="tabpanel" aria-labelledby="t-set" hidden>
+
+      <div class="section-head"><h3>端口转发</h3><label class="checkrow" style="margin:0"><input type="checkbox" checked><span>启动时自动开启隧道</span></label></div>
+      <div class="row-form"><select aria-label="主机"><option>qiyk</option><option>cloud-prod</option><option>nas-old</option></select><input type="number" value="5432" aria-label="远端端口"><input type="number" placeholder="默认同远端" aria-label="本地端口"><button class="btn btn-primary">保存并转发</button></div>
+      <div class="fwd"><span class="dot ok"></span><span class="fpath">qiyk&nbsp; 5432 → 15432</span><span class="pill ok">开启</span><span style="font-size:12px;color:var(--faint)">活跃连接: 2</span><div class="actions" style="margin-left:auto"><button class="btn btn-sm">关闭</button><button class="btn btn-sm">记住</button><button class="btn btn-sm btn-danger">删除</button></div></div>
+      <div class="fwd off"><span class="dot"></span><span class="fpath">cloud-prod&nbsp; 8080 → 8080</span><span class="pill">已断开</span><div class="actions" style="margin-left:auto"><button class="btn btn-sm">开启</button><button class="btn btn-sm btn-danger">删除</button></div></div>
+      <div class="fwd"><span class="dot-hint" tabindex="0" role="img" aria-label="连接已断开，保留开启意图，可一键恢复"><span class="dot err"></span><span class="dot-tip">连接已断开 · 保留开启意图，可一键恢复</span></span><span class="fpath">nas-old&nbsp; 9000 → 9000</span><span class="pill err">已断开</span><div class="actions" style="margin-left:auto"><button class="btn btn-sm">开启</button><button class="btn btn-sm btn-danger">删除</button></div></div>
+
+      <div class="section-head"><h3>持久远端会话</h3><span class="badge">只读</span></div>
+      <div class="session"><b>qiyk</b> [dev] · 存活</div>
+      <div class="session"><b>qiyk</b> [review] · 已结束</div>
+
+      <div class="section-head"><h3>文件引用设置</h3></div>
+      <label class="field-label" for="scheme">显式文件引用 scheme · 本机路径前缀<span class="hint-mark" tabindex="0" role="img" aria-label="在 ssh:// 会话里用这个名字明确表示这是本机路径，例如 local:/Volumes/SSD/a.md。同一时间只能配置一个前缀。">?<span class="hint-tip">在 ssh:// 会话里用这个名字明确表示「这是本机路径」，例如 local:/Volumes/SSD/a.md。同一时间只能配置一个前缀。</span></span></label>
+      <div class="row-form"><input id="scheme" class="scheme" value="local" spellcheck="false"><button class="btn btn-primary">保存</button></div>
+      <label class="checkrow"><input type="checkbox" checked><span>远端不存在时回退本机同名文件<span class="hint-mark" tabindex="0" role="img" aria-label="只对你在消息里用 @ 点名的路径生效，且只在远端确实报不存在之后才试一次。">?<span class="hint-tip">只对你在消息里用 @ 点名的路径生效，且只在远端确实报不存在之后才试一次。</span></span></span></label>
+
+      <div class="section-head"><h3>诊断报告 <span class="dot warn" style="display:inline-block;vertical-align:middle"></span></h3><button class="btn btn-sm">打开诊断报告</button></div>
+      <div class="findings">
+        <div class="finding"><span class="tag bad">WARN</span><span>主机 macmini 的密钥尚未固定</span></div>
+        <div class="finding"><span class="tag">WARN</span><span>重连已放弃：nas-old（第 5 次后停止）</span></div>
+        <div class="finding"><span class="tag unknown">未知</span><span>主机 nas-old 不可达，无法判断工具安装情况</span></div>
+      </div>
+      <details class="notes"><summary>附带说明（不计入判定）· 2 项</summary><div>nas-old：未安装 ripgrep（rg），glob / grep 会以退出码 127 失败。<br>nas-old：未安装 inotifywait，文件树自动刷新使用轮询。</div></details>
+      <p class="field-hint" style="margin-top:10px">版本、补丁状态、主机配置、自检、最近命令与事件，路径与凭据已脱敏。</p>
+
+    </div>
+  </div></div>
+</section>
+
+<!-- ============ 2. 浏览目录 ============ -->
+<section class="surface" id="s-browser">
+  <div class="cap"><b>浏览目录对话框</b> · <span class="tag">左键单击选中 · 双击进入 · 底部按选中行挂载</span></div>
+  <div class="backdrop" style="position:relative;height:700px;padding:0;background:transparent">
+    <div class="dialog">
+      <div class="dlg-head"><h2>浏览 qiyk</h2><button class="icon-btn" title="关闭" aria-label="关闭"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="dlg-body">
+        <div class="browser">
+          <div class="browser-head"><button class="btn btn-sm">← 返回上级</button><span class="path">/home/qiyk/</span></div>
+          <div class="browser-hint">输入即筛选；单击选中，双击进入下一级</div>
+          <div class="browser-list">
+            <button class="entry"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">projects</span><span class="mt">drwxr-xr-x</span></button>
+            <button class="entry picked"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">dsh-ssh-workspace</span><span class="mt">drwxr-xr-x</span></button>
+            <button class="entry"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">notes</span><span class="mt">drwxr-xr-x</span></button>
+            <button class="entry"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">.config</span><span class="mt">drwxr-xr-x</span></button>
+            <button class="entry"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">Downloads</span><span class="mt">drwxr-xr-x</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="picked-line">将挂载：<b>/home/qiyk/dsh-ssh-workspace</b></div>
+      <div class="dlg-foot"><button class="btn">取消</button><button class="btn btn-primary" data-toast="已挂载为 /home/qiyk/dsh-ssh-workspace">挂载此目录</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. 新建远程工作区 ============ -->
+<section class="surface" id="s-newworkspace">
+  <div class="cap"><b>新建远程工作区对话框</b> · <span class="tag">选主机 → 选目录 → 命名 → 挂载；不可写目录禁止创建</span></div>
+  <div class="backdrop" style="position:relative;height:700px;padding:0;background:transparent">
+    <div class="dialog">
+      <div class="dlg-head"><h2>新建远程工作区</h2><button class="icon-btn" title="关闭" aria-label="关闭"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="dlg-body">
+        <div class="dlg-form">
+          <div class="field"><label>工作区名称</label><input value="dsh-ssh-workspace" placeholder="输入工作区名称"></div>
+          <div class="field"><label>远程主机</label><select><option>qiyk</option><option>cloud-prod</option></select></div>
+          <p class="field-hint" style="margin:0">工作目录路径：输入绝对路径，下方列表随即跟随</p>
+        </div>
+        <div class="browser">
+          <div class="browser-head"><button class="btn btn-sm">← 返回上级</button><span class="path">/home/qiyk/</span></div>
+          <div class="browser-hint">输入即筛选；单击选中，双击进入下一级</div>
+          <div class="browser-list">
+            <button class="entry"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">projects</span><span class="mt">可写</span></button>
+            <button class="entry picked"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">dsh-ssh-workspace</span><span class="mt">可写</span></button>
+            <button class="entry"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm">readonly-share</span><span class="mt" style="color:var(--danger)">不可写</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="picked-line">将创建：<b>/home/qiyk/dsh-ssh-workspace</b></div>
+      <div class="dlg-foot"><button class="btn">取消</button><button class="btn btn-primary" data-toast="已创建并挂载 dsh-ssh-workspace">创建工作区</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. 传输队列 ============ -->
+<section class="surface" id="s-queue">
+  <div class="cap"><b>传输队列浮层</b> · <span class="tag">文件面板头部托盘箭头入口 · 400px 宽 · 进度按字节加权</span></div>
+  <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);display:inline-block">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--muted)">
+      <button class="tray" style="width:28px;height:28px;border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--accent);background:var(--surface)" title="查看传输进度（4 项）">
+        <svg class="ico" viewBox="0 0 24 24" style="color:var(--accent)"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+      </button>
+      文件面板头部入口（进行中变蓝戴环）· 下方为点开的浮层
+    </div>
+    <div class="queue">
+      <div class="queue-head"><h3>传输进度</h3><button class="btn btn-sm btn-quiet" title="关闭" aria-label="关闭">×</button></div>
+      <div class="qrow">
+        <svg class="qico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 21V9M7 14l5-5 5 5M4 4h16"/></svg>
+        <div class="qbody">
+          <div class="qrow-top"><span class="qname">dataset/part-01.parquet</span><span class="qstat">45% · 1.2 MB/s · 23.4 MB</span></div>
+          <div class="qbar"><i style="width:45%"></i></div>
+        </div>
+      </div>
+      <div class="qrow">
+        <svg class="qico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 21V9M7 14l5-5 5 5M4 4h16"/></svg>
+        <div class="qbody">
+          <div class="qrow-top"><span class="qname">logs/（目录归档）</span><span class="qstat">8.2 MB 已传</span></div>
+          <div class="qbar scan"><i></i></div>
+          <div class="qmeta">目录归档无总量，只报已传字节，不画百分比</div>
+        </div>
+      </div>
+      <div class="qrow">
+        <svg class="qico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+        <div class="qbody">
+          <div class="qrow-top"><span class="qname">report-final.docx</span><span class="qstat">等待中</span></div>
+          <div class="qbar"></div>
+        </div>
+      </div>
+      <div class="qrow">
+        <svg class="qico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+        <div class="qbody">
+          <div class="qrow-top"><span class="qname">old-assets.zip</span><span class="qstat" style="color:var(--danger)">失败</span></div>
+          <div class="qmeta" style="color:var(--danger)">SSHWSP-E-TRANSFER-UPLOAD · 远端磁盘空间不足</div>
+          <div class="qbar grey"><i style="width:62%"></i></div>
+        </div>
+      </div>
+      <div class="queue-foot"><span>刷新或关闭页面会中断传输</span><button class="btn btn-sm">清除已完成</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. 文件行菜单 ============ -->
+<section class="surface" id="s-menu">
+  <div class="cap"><b>文件树行右键菜单</b> · <span class="tag">远端行含下载 / 上传；本地行只有「添加到任务」</span></div>
+  <div class="tree">
+    <div class="tree-head"><span class="tp">ssh://qiyk@/home/qiyk/projects</span><button class="tray" title="查看传输进度"><svg class="ico" viewBox="0 0 24 24" style="color:var(--accent)"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg></button></div>
+    <div class="trow"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="tn">src</span><span class="ts">drwxr-xr-x</span></div>
+    <div class="trow"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="tn">docs</span><span class="ts">drwxr-xr-x</span></div>
+    <div class="trow selected"><svg class="ico" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg><span class="tn">report.pdf</span><span class="ts">2.4 MB</span></div>
+    <div class="trow"><svg class="ico" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg><span class="tn">notes.md</span><span class="ts">12 KB</span></div>
+    <div class="menu">
+      <button title="添加到 @projects/report.pdf"><span class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3.5 2.5h9a1 1 0 011 1v7a1 1 0 01-1 1H8.5l-2.5 2v-2H3.5a1 1 0 01-1-1v-7a1 1 0 011-1z"/><path d="M8 4.5v4.5M5.75 6.75h4.5"/></svg></span><span class="mt">添加到任务</span></button>
+      <button title="下载到本机"><span class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 2.6v6.7M5.4 6.6L8 9.3l2.6-2.7M2.5 11.5v1.5h11v-1.5"/></svg></span><span class="mt">下载到本机</span></button>
+      <button title="/home/qiyk/projects · 同名覆盖"><span class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M8 12.6V5.9M5.4 8.6L8 5.9l2.6 2.7M2.5 11.5v1.5h11v-1.5"/></svg></span><span class="mt">上传文件到此目录</span></button>
+      <button title="/home/qiyk/projects/report.pdf"><span class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M10.5 4.5V4a1.5 1.5 0 00-1.5-1.5H4A1.5 1.5 0 002.5 4v5A1.5 1.5 0 004 10.5h.5"/><path d="M5.5 5.5h7a1 1 0 011 1v6a1 1 0 01-1 1h-7a1 1 0 01-1-1v-6a1 1 0 011-1z"/></svg></span><span class="mt">复制路径</span></button>
+      <div class="sep"></div>
+      <button title="重命名 report.pdf"><span class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M11.3 2.7l2 2L5.5 12.5 2.8 13.2l.7-2.7L11.3 2.7zM10 4l2 2"/></svg></span><span class="mt">重命名</span></button>
+      <button class="danger" title="删除（不可恢复）"><span class="mi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 4.5h10M6.2 4.5V3.4a.9.9 0 01.9-.9h1.8a.9.9 0 01.9.9v1.1M4.3 4.5l.5 8.4a1.4 1.4 0 001.4 1.3h3.6a1.4 1.4 0 001.4-1.3l.5-8.4M6.5 7.4v4.2M9.5 7.4v4.2"/></svg></span><span class="mt">删除</span></button>
+    </div>
+  </div>
+  <p class="legend">注：这是与项目当前实现一致的行菜单——单行、每项独立图标、原因放在 title 悬停提示里；本地工作区的行只有「添加到任务」一项。</p>
+</section>
+
+<!-- ============ 6. 文件编辑器 ============ -->
+<section class="surface" id="s-editor">
+  <div class="cap"><b>文件编辑器</b> · <span class="tag">盖在预览正文上，不是全屏对话框 · 头部铅笔按钮仍露出作退出入口</span></div>
+  <div class="editor">
+    <div class="editor-head"><span class="ep">ssh://qiyk@/home/qiyk/notes.md</span><button class="icon-btn" title="关闭编辑器" aria-label="关闭编辑器"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="editor-body">
+      <div class="lines">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8</div>
+      <div class="code"><span class="k"># 发布检查清单</span>
+
+- [x] 构建产物校验
+- [ ] 远端 SSH 连通性复测
+- [ ] 端口转发 5432 → 15432 保留
+
+备注：同一秒内等长改写靠 revision（内容哈希）识别，version 看不见。</div>
+    </div>
+    <div class="editor-foot">
+      <span>8 行</span>
+      <label>行尾 <select><option>自动（LF/CRLF）</option><option>LF</option><option>CRLF</option></select></label>
+      <label><input type="checkbox"> BOM</label>
+      <button class="btn btn-sm btn-primary" style="margin-left:auto">保存</button>
+      <button class="btn btn-sm">取消</button>
+    </div>
+  </div>
+  <p class="legend">保存时回传 version（ino:size:mtime）与 revision（内容 sha256）双令牌，两者都对上才写；冲突默认「重新加载」。</p>
+</section>
+
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  // surface switcher
+  var sw=document.getElementById('switcher'),btns=[].slice.call(sw.querySelectorAll('button')),
+      surfaces=[document.getElementById('s-panel')].concat([].slice.call(document.querySelectorAll('.surface')));
+  function show(id){btns.forEach(function(b){b.classList.toggle('active',b.dataset.s===id)});surfaces.forEach(function(s){s.classList.toggle('active',s.id==='s-'+id)})}
+  btns.forEach(function(b){b.addEventListener('click',function(){show(b.dataset.s)})});
+  document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){show(b.dataset.go)})});
+
+  // panel tabs
+  var tabs=[].slice.call(document.querySelectorAll('[role=tab]')),
+      panes=tabs.map(function(t){return document.getElementById(t.getAttribute('aria-controls'))});
+  function select(i,focus){tabs.forEach(function(t,j){t.setAttribute('aria-selected',j===i?'true':'false');t.tabIndex=j===i?0:-1});panes.forEach(function(p,j){p.hidden=j!==i});if(focus)tabs[i].focus()}
+  tabs.forEach(function(t,i){t.addEventListener('click',function(){select(i,false)});t.addEventListener('keydown',function(e){var k=e.key,n=tabs.length,x=-1;if(k==='ArrowRight')x=(i+1)%n;else if(k==='ArrowLeft')x=(i-1+n)%n;else if(k==='Home')x=0;else if(k==='End')x=n-1;else return;e.preventDefault();select(x,true)})});
+
+  // deep link: #panel / #browser / ... ; #panel-hosts / #panel-work / #panel-set
+  var valid=['panel','browser','newworkspace','queue','menu','editor'],h=(location.hash||'').replace('#',''),parts=h.split('-');
+  if(valid.indexOf(parts[0])>=0){
+    show(parts[0]);
+    if(parts[0]==='panel'&&parts[1]){var ti={hosts:0,work:1,set:2}[parts[1]];if(ti!==undefined)select(ti,false)}
+  }
+
+  // 视口宽度标签（拖动 .dw 右下角时更新，模拟侧栏变宽/变窄）
+  var dw=document.getElementById('dw'),dwLabel=document.getElementById('dw-label');
+  function syncDw(){dwLabel.textContent='当前视口 '+Math.round(dw.getBoundingClientRect().width)+'px'}
+  if(window.ResizeObserver){new ResizeObserver(syncDw).observe(dw)}else{dw.addEventListener('mouseup',syncDw)}
+  syncDw();
+
+  // toast
+  var toastEl=document.getElementById('toast'),timer=null;
+  function showToast(msg){toastEl.textContent=msg;toastEl.className='toast show';clearTimeout(timer);timer=setTimeout(function(){toastEl.className='toast'},7000)}
+
+  document.querySelectorAll('.entry').forEach(function(e){e.addEventListener('click',function(){document.querySelectorAll('.entry').forEach(function(x){x.classList.remove('picked')});e.classList.add('picked')});e.addEventListener('dblclick',function(){showToast('已进入 '+e.querySelector('.nm').textContent)})});
+  document.querySelectorAll('[data-toast]').forEach(function(b){b.addEventListener('click',function(){showToast(b.dataset.toast)})});
+
+  // 开机自动连接开关：点击切换勾选态，并给出对应提示
+  document.querySelectorAll('.auto-toggle').forEach(function(b){
+    b.addEventListener('click',function(){
+      var on=b.getAttribute('aria-checked')==='true';on=!on;
+      b.setAttribute('aria-checked',on?'true':'false');
+      b.title=on?'已开启自动连接':'已关闭自动连接';
+      showToast(on?'已开启自动连接':'已关闭自动连接');
+    });
+  });
+})();
+</script>
+</body>
+</html>

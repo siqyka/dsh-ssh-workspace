@@ -57,7 +57,7 @@ function check (label, ok, detail) {
   }
 }
 
-const REMOTE_ROOT = 'ssh://qiyk/home/qiyk/test/dsh-ssh-workspace'
+const REMOTE_ROOT = 'ssh://dev/home/dev/test/dsh-ssh-workspace'
 const LOCAL_ROOT = path.join(tmpdir(), 'not-a-real-ptc-session')
 
 /**

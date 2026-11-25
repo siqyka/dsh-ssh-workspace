@@ -265,15 +265,15 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
 
     const registry = [
       { workspaceId: 'w-local', path: 'F:/GitHub/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
-      { workspaceId: 'w-remote', path: 'ssh://qiyk/home/qiyk/test/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
-      { workspaceId: 'w-only-remote', path: 'ssh://word/srv/site', title: 'soxtastic_ssh' },
+      { workspaceId: 'w-remote', path: 'ssh://dev/home/dev/test/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+      { workspaceId: 'w-only-remote', path: 'ssh://web/srv/site', title: 'blog' },
 ]
     // The remote-only reply lands first, exactly as the panel's /status fetch does.
     marks.collectRemoteWorkspaces(registry.filter(item => item.path.startsWith('ssh://')), [])
     check('a remote-only reply cannot mark a title yet: it cannot rule out a local twin',
       marks.remoteTitleMatch('dsh-ssh-workspace') === false,
       'titles are only provable from the complete list')
-    marks.collectRemoteWorkspaces(registry, ['ssh://word/srv/site'], true)
+    marks.collectRemoteWorkspaces(registry, ['ssh://web/srv/site'], true)
     check('the complete list settles the title rule', sandbox.remoteMarks.titlesSettled === true)
     check('a title BOTH sides use identifies neither row',
       marks.remoteTitleMatch('dsh-ssh-workspace') === false,
@@ -281,10 +281,10 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     check('...the same title cannot grey a local row either',
       marks.detachedTitleMatch('dsh-ssh-workspace') === false)
     check('a title only a remote workspace uses still marks',
-      marks.remoteTitleMatch('soxtastic_ssh') === true,
+      marks.remoteTitleMatch('blog') === true,
       'a genuinely remote row lost its mark')
     check('...and greys when that workspace is detached',
-      marks.detachedTitleMatch('soxtastic_ssh') === true)
+      marks.detachedTitleMatch('blog') === true)
     check('a basename spelling counts as a claim on both sides',
       marks.remoteTitleMatch('site') === true && marks.remoteTitleMatch('dsh-ssh-workspace') === false)
     check('an unknown title never matches', marks.remoteTitleMatch('') === false && marks.remoteTitleMatch('nope') === false)
@@ -296,8 +296,8 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     check('settling is monotonic: a second complete read keeps the rule on',
       (() => {
         marks.collectRemoteWorkspaces(registry, [], true)
-        return marks.remoteTitleMatch('soxtastic_ssh') === true &&
-          marks.detachedTitleMatch('soxtastic_ssh') === false &&
+        return marks.remoteTitleMatch('blog') === true &&
+          marks.detachedTitleMatch('blog') === false &&
           marks.remoteTitleMatch('dsh-ssh-workspace') === false
       })(),
       'a later read with no detach dropped the remote-only title claim')
@@ -308,15 +308,15 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     const boot = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
     const bootMarks = new Function('remoteMarks', 'knownDisabledPaths',
       `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(boot.remoteMarks, boot.knownDisabledPaths)
-    bootMarks.collectRemoteWorkspaces(registry.filter(item => item.path.startsWith('ssh://')), ['ssh://word/srv/site'])
+    bootMarks.collectRemoteWorkspaces(registry.filter(item => item.path.startsWith('ssh://')), ['ssh://web/srv/site'])
     check('an unsettled rule stays silent even for a remote-only title',
-      bootMarks.remoteTitleMatch('soxtastic_ssh') === false && bootMarks.detachedTitleMatch('soxtastic_ssh') === false,
+      bootMarks.remoteTitleMatch('blog') === false && bootMarks.detachedTitleMatch('blog') === false,
       'the /status fallback marked a title it could not prove')
     check('...while the id rule still works, because a path is not a guess',
       boot.remoteMarks.ids.has('w-remote') && boot.remoteMarks.disabledIds.has('w-only-remote'))
-    bootMarks.collectRemoteWorkspaces(registry, ['ssh://word/srv/site'], true)
+    bootMarks.collectRemoteWorkspaces(registry, ['ssh://web/srv/site'], true)
     check('...and the very same titles mark once a complete read settles them',
-      bootMarks.remoteTitleMatch('soxtastic_ssh') === true && bootMarks.detachedTitleMatch('soxtastic_ssh') === true)
+      bootMarks.remoteTitleMatch('blog') === true && bootMarks.detachedTitleMatch('blog') === true)
     // The three mark sites are DOM decoration that this suite cannot run, so
     // pin the rule each must call. A row matching on its title alone would
     // re-open the collision on the one surface that actually had an id.
@@ -330,22 +330,22 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
       'the row greys on the raw disabled-title set')
     // A detached remote workspace can share its title with a local checkout
     // exactly like a live one can — the real /status reply carries
-    // ssh://qiyk/tmp/dsh-ssh-workspace-acceptance beside this very repo. If the
+    // ssh://dev/tmp/dsh-ssh-workspace-acceptance beside this very repo. If the
     // detach rule keeps only its remote half, that local row goes inert.
     const twin = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
     const twinMarks = new Function('remoteMarks', 'knownDisabledPaths',
       `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(twin.remoteMarks, twin.knownDisabledPaths)
-    const detachedPaths = ['ssh://qiyk/tmp/dsh-ssh-workspace', 'ssh://qiyk/tmp/soxtastic_ssh-acceptance']
+    const detachedPaths = ['ssh://dev/tmp/dsh-ssh-workspace', 'ssh://dev/tmp/blog-acceptance']
     twinMarks.collectRemoteWorkspaces([
       { workspaceId: 'w-local', path: 'F:/GitHub/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
-      { workspaceId: 'w-twin', path: 'ssh://qiyk/tmp/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
-      { workspaceId: 'w-detached', path: 'ssh://qiyk/tmp/soxtastic_ssh-acceptance', title: 'soxtastic_ssh-acceptance' },
+      { workspaceId: 'w-twin', path: 'ssh://dev/tmp/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+      { workspaceId: 'w-detached', path: 'ssh://dev/tmp/blog-acceptance', title: 'blog-acceptance' },
     ], detachedPaths, true)
     check('a DETACHED remote row sharing a local title does not grey the local row',
       twinMarks.detachedTitleMatch('dsh-ssh-workspace') === false,
       'the detach rule kept only its remote half')
     check('...while a detached title no local workspace uses still greys',
-      twinMarks.detachedTitleMatch('soxtastic_ssh-acceptance') === true,
+      twinMarks.detachedTitleMatch('blog-acceptance') === true,
       'a genuinely detached row lost its grey')
 
     // The local branch must not fall through into remote identity when the list
@@ -355,7 +355,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
       `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(mixed.remoteMarks, mixed.knownDisabledPaths)
     mixedMarks.collectRemoteWorkspaces([
       { workspaceId: 'w-local-only', path: 'F:/GitHub/other-project', title: 'other-project' },
-      { workspaceId: 'w-remote', path: 'ssh://qiyk/home/qiyk/test/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
+      { workspaceId: 'w-remote', path: 'ssh://dev/home/dev/test/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
     ], [], false)
     check('a partial list never promotes a local workspace to remote identity',
       !mixed.remoteMarks.ids.has('w-local-only') && !mixed.remoteMarks.titles.has('other-project'),
@@ -1111,6 +1111,54 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   check('the report route is fetched in exactly one place',
     /function fetchReportText \(\)/u.test(client) && fetchSites === 1,
     `${fetchSites} fetch site(s) — a second fetch spelling drifts`)
+
+  // ---- the host form's 「测试」 button
+  //
+  // The panel could only test a host that already existed, so "is this address
+  // right?" was answered by saving a possibly-wrong host first. The button now
+  // sits between 取消 and 保存 and probes the UNSAVED form. Three properties are
+  // load-bearing and none of them is visible in a screenshot:
+  //
+  //  - it posts the FORM (an alias would describe the stored host, not the one
+  //    being typed);
+  //  - save and test build their body with ONE function, or the probe goes
+  //    green about a field the save route never receives;
+  //  - the answer is dropped the moment the form changes, so a stale "可达"
+  //    cannot outlive the address that produced it.
+  const editorStart = dialogs.indexOf('function HostEditor (')
+  const editorEnd = dialogs.indexOf('\n    function ', editorStart + 1)
+  const editorSource = editorStart >= 0 && editorEnd > editorStart ? dialogs.slice(editorStart, editorEnd) : ''
+  check('the host editor is locatable', editorSource.length > 0, 'component not found')
+  const footerAt = editorSource.indexOf("className: 'sshwsp-dialog-footer'")
+  const testAt = editorSource.indexOf('onClick: test,')
+  check('a 测试 button sits in the footer',
+    footerAt >= 0 && testAt > footerAt, `footer=${footerAt} test=${testAt}`)
+  check('...between 取消 and 保存, where the question it answers belongs',
+    testAt > editorSource.indexOf('onClick: onClose') &&
+    testAt < editorSource.indexOf('onClick: submit'),
+    'the probe must sit between the two verbs it bridges')
+  check('...and it posts the form rather than an alias',
+    /fetchJson\(API\.test, \{\s*method: 'POST'[\s\S]{0,200}?JSON\.stringify\(\{ form: payload \}\)/u.test(editorSource),
+    'testing by alias would answer about the saved host')
+  check('...and it never saves',
+    !/API\.hostSave[\s\S]{0,80}test/u.test(editorSource) &&
+    /const test = async \(\) => \{[\s\S]*?\n      \}/u.test(editorSource) &&
+    !/const test = async \(\) => \{[\s\S]{0,600}?onSaved/u.test(editorSource),
+    'a probe that saves is a destructive "test"')
+  check('save and test share one payload builder',
+    /const buildPayload = \(\) => \(\{/u.test(editorSource) &&
+    (editorSource.match(/buildPayload\(\)/gu) ?? []).length >= 3,
+    `${(editorSource.match(/buildPayload\(\)/gu) ?? []).length} use(s)`)
+  check('the validation is shared too, so both verbs refuse the same forms',
+    /const validate = \(\) => \{/u.test(editorSource) &&
+    (editorSource.match(/= validate\(\)/gu) ?? []).length >= 2,
+    `${(editorSource.match(/= validate\(\)/gu) ?? []).length} caller(s)`)
+  check('the answer is dropped once the form changes',
+    /probeLive = probe !== null && probe\.for === JSON\.stringify\(buildPayload\(\)\)/u.test(editorSource),
+    'a green tick would survive the edit that invalidated it')
+  check('the answer renders as a status line, not as an error',
+    /role: 'status'/u.test(editorSource) && /sshwsp-probe-ok/u.test(editorSource) &&
+    /sshwsp-probe-err/u.test(editorSource))
 
   // ---- panel tabs
   //

@@ -54,9 +54,9 @@ console.log('[masking: consistent, and the shape survives]')
   // A short alias is masked COMPLETELY: `w*e` from `web` is one guess away, and
   // a three-letter hostname is exactly the case where a partial reveal matters.
   check('a short alias is masked completely', maskAlias('web') === '***', maskAlias('web'))
-  check('a long alias keeps a prefix and a suffix', maskAlias('qiyk-server') === 'qi***r', maskAlias('qiyk-server'))
+  check('a long alias keeps a prefix and a suffix', maskAlias('dev-server') === 'de***r', maskAlias('dev-server'))
   check('an empty alias is a placeholder', maskAlias('') === '?', maskAlias(''))
-  check('masking is stable for the same input', maskAlias('qiyk-server') === maskAlias('qiyk-server'))
+  check('masking is stable for the same input', maskAlias('dev-server') === maskAlias('dev-server'))
 }
 
 {
@@ -70,8 +70,8 @@ console.log('[masking: consistent, and the shape survives]')
 }
 
 {
-  const masked = maskRemotePath('ssh://qiyk-server/home/alice/proj')
-  check('a remote path masks the alias', masked.startsWith('ssh://qi***r'), masked)
+  const masked = maskRemotePath('ssh://dev-server/home/alice/proj')
+  check('a remote path masks the alias', masked.startsWith('ssh://de***r'), masked)
   check('...and the remote home', masked.includes('/home/<user>/proj'), masked)
   check('a non-ssh path falls back to plain masking', maskRemotePath('/home/alice/x') === '/home/<user>/x')
 }
@@ -90,11 +90,11 @@ const FULL_INPUT = {
     { id: 'PATCH-fs', probe: 'already', detail: 'installed' },
   ],
   events: [
-    { seq: 1, at: 1_700_000_000_000, kind: 'connect', message: 'connected to root@10.0.0.1:22', alias: 'qiyk-server' },
-    { seq: 2, at: 1_700_000_001_000, kind: 'disconnect', message: 'transport lost', alias: 'qiyk-server' },
+    { seq: 1, at: 1_700_000_000_000, kind: 'connect', message: 'connected to root@10.0.0.1:22', alias: 'dev-server' },
+    { seq: 2, at: 1_700_000_001_000, kind: 'disconnect', message: 'transport lost', alias: 'dev-server' },
   ],
   hosts: [{
-    alias: 'qiyk-server',
+    alias: 'dev-server',
     host: '10.0.0.1',
     port: 22,
     auth: 'key',
@@ -102,13 +102,13 @@ const FULL_INPUT = {
     source: 'ssh-config',
     unsupported: [{ keyword: 'localforward', verdict: 'lost', detail: 'no local tunnel is created' }],
   }],
-  mounted: ['ssh://qiyk-server/home/alice/proj'],
-  disabled: ['ssh://qiyk-server/home/alice/old'],
-  connections: [{ alias: 'qiyk-server', state: 'connected', inFlight: 0 }],
-  reconnecting: [{ alias: 'qiyk-server', phase: 'waiting', attempts: 3, lastError: 'connect ECONNREFUSED 10.0.0.1:22' }],
-  forwards: [{ localHost: '127.0.0.1', localPort: 5173, alias: 'qiyk-server', remoteHost: '127.0.0.1', remotePort: 5173, connections: 1 }],
+  mounted: ['ssh://dev-server/home/alice/proj'],
+  disabled: ['ssh://dev-server/home/alice/old'],
+  connections: [{ alias: 'dev-server', state: 'connected', inFlight: 0 }],
+  reconnecting: [{ alias: 'dev-server', phase: 'waiting', attempts: 3, lastError: 'connect ECONNREFUSED 10.0.0.1:22' }],
+  forwards: [{ localHost: '127.0.0.1', localPort: 5173, alias: 'dev-server', remoteHost: '127.0.0.1', remotePort: 5173, connections: 1 }],
   capabilities: [{
-    alias: 'qiyk-server',
+    alias: 'dev-server',
     tools: { rg: true, git: false, inotifywait: false, sha256sum: true, tar: true, rsync: false, tput: true },
     environment: { shell: '/bin/bash', locale: 'en_US.UTF-8', diskFreeKb: 500000, inotifyWatches: 8192 },
   }],
@@ -117,8 +117,8 @@ const FULL_INPUT = {
   // therefore formats from rows and masks the alias itself — passing
   // pre-rendered text is what leaked the alias in the first version.
   commands: [
-    { seq: 1, at: 1_700_000_000_000, alias: 'qiyk-server', command: 'ls -la /home/alice/proj', channel: 'exec', durationMs: 12, exitCode: 0, timedOut: false },
-    { seq: 2, at: 1_700_000_001_000, alias: 'qiyk-server', command: 'rm -rf /srv/app', channel: 'exec', durationMs: 0, exitCode: null, timedOut: false, refused: true },
+    { seq: 1, at: 1_700_000_000_000, alias: 'dev-server', command: 'ls -la /home/alice/proj', channel: 'exec', durationMs: 12, exitCode: 0, timedOut: false },
+    { seq: 2, at: 1_700_000_001_000, alias: 'dev-server', command: 'rm -rf /srv/app', channel: 'exec', durationMs: 0, exitCode: null, timedOut: false, refused: true },
   ],
 }
 
@@ -154,8 +154,10 @@ console.log('\n[the bundle leaks nothing]')
 
 {
   // The alias is identifying and must not appear verbatim.
-  check('the alias is not verbatim', !bundle.includes('qiyk-server'), 'the masked alias should replace it')
-  check('...in every section, not just the host table', !/qiyk/u.test(bundle), bundle.split('\n').filter(line => line.includes('qiyk')).join(' | '))
+  check('the alias is not verbatim', !bundle.includes('dev-server'), 'the masked alias should replace it')
+  check('...in every section, not just the host table',
+    bundle.split(/^## /mu).every(section => !section.includes('dev-server')),
+    bundle.split(/^## /mu).filter(section => section.includes('dev-server')).map(section => section.split('\n')[0]).join(' | '))
   check('the local username is not present', !bundle.includes('alice'), 'a home path leaked')
   // A remote address is not secret; a username is.
   check('the host address survives', bundle.includes('10.0.0.1'), 'the address is the useful part')

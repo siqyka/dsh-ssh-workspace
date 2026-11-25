@@ -139,14 +139,14 @@ npm ci          # ssh2 是直接依赖，不随 clone 到位
 
 ## 主机管理
 
-主机记录存放在 `$DSH_HOME/dsh-ssh.json`；没有该文件时，会退回到读取
+主机记录存放在 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json`（旧版在 `$DSH_HOME/dsh-ssh.json`，仍可读并在首次写盘时自动迁入子目录）；没有该文件时，会退回到读取
 `~/.ssh/config` 里具体的 `Host` 块。因此**已经配好的主机无需重复配置**。
 
 「远程工作区」面板里可以直接**添加 / 编辑 / 删除**主机，写回
-`$DSH_HOME/dsh-ssh.json`（原子写入，保留文件里本插件不认识的字段）。
+`$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json`（原子写入，保留文件里本插件不认识的字段）。
 `~/.ssh/config` 中的主机是**只读回退**，面板不会修改那个文件；
 与存储同名的主机以存储为准。密码 / 私钥口令**加密保存**在 `dsh-ssh.json` 的
-`secrets` 段（AES-256-GCM，密钥是 `$DSH_HOME/dsh-ssh.key`，仅本用户可读），
+`secrets` 段（AES-256-GCM，密钥是 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.key`，仅本用户可读；旧密钥仍被读取），
 且不会回传到浏览器，编辑时留空表示保持原值。
 删除主机不会自动卸载已挂载的工作区，但那些工作区会因主机不存在而无法访问。
 

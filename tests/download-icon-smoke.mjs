@@ -176,28 +176,28 @@ const findDownloadItemFor = new Function(`${matcherMatch?.[0] ?? ''}\n return do
 
 const queueOf = (...items) => ({ items })
 const itemOf = (overrides) => ({
-  id: 't', direction: 'download', alias: 'word', remotePath: '/home/u/src', name: 'src',
+  id: 't', direction: 'download', alias: 'web', remotePath: '/home/u/src', name: 'src',
   status: 'running', bytesTotal: null, ...overrides,
 })
 
-check('an absent queue is not an error', findDownloadItemFor(null, 'word', '/home/u/src') === null &&
-  findDownloadItemFor({}, 'word', '/home/u/src') === null)
+check('an absent queue is not an error', findDownloadItemFor(null, 'web', '/home/u/src') === null &&
+  findDownloadItemFor({}, 'web', '/home/u/src') === null)
 check('the active download for that path is found',
-  findDownloadItemFor(queueOf(itemOf({})), 'word', '/home/u/src')?.status === 'running')
+  findDownloadItemFor(queueOf(itemOf({})), 'web', '/home/u/src')?.status === 'running')
 check('...but an upload of the same path is not it',
-  findDownloadItemFor(queueOf(itemOf({ direction: 'upload' })), 'word', '/home/u/src') === null)
+  findDownloadItemFor(queueOf(itemOf({ direction: 'upload' })), 'web', '/home/u/src') === null)
 check('...nor is a download from another host',
-  findDownloadItemFor(queueOf(itemOf({ alias: 'qiyk' })), 'word', '/home/u/src') === null)
+  findDownloadItemFor(queueOf(itemOf({ alias: 'dev' })), 'web', '/home/u/src') === null)
 check('...nor is a sibling path on the same host',
-  findDownloadItemFor(queueOf(itemOf({ remotePath: '/home/u/src2' })), 'word', '/home/u/src') === null)
+  findDownloadItemFor(queueOf(itemOf({ remotePath: '/home/u/src2' })), 'web', '/home/u/src') === null)
 check('a settled row gives its control back',
   ['done', 'failed', 'cancelled'].every(status =>
-    findDownloadItemFor(queueOf(itemOf({ status })), 'word', '/home/u/src') === null),
+    findDownloadItemFor(queueOf(itemOf({ status })), 'web', '/home/u/src') === null),
   'a finished transfer still holds the row in progress state')
 check('a retried transfer is the one the row reflects, not the stale one',
-  findDownloadItemFor(queueOf(itemOf({ id: 'old' }), itemOf({ id: 'new', status: 'queued' })), 'word', '/home/u/src')?.id === 'new')
+  findDownloadItemFor(queueOf(itemOf({ id: 'old' }), itemOf({ id: 'new', status: 'queued' })), 'web', '/home/u/src')?.id === 'new')
 check('a queued download counts as in progress',
-  findDownloadItemFor(queueOf(itemOf({ status: 'queued' })), 'word', '/home/u/src')?.status === 'queued')
+  findDownloadItemFor(queueOf(itemOf({ status: 'queued' })), 'web', '/home/u/src')?.status === 'queued')
 
 // ---- the row menu's DOM icon builder ---------------------------------------
 

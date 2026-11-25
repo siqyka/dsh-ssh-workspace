@@ -90,14 +90,14 @@ console.log('\n[a real problem is red, and says which one]')
 }
 
 {
-  const report = diagnose({ pluginVersion: '1', unpinnedHostKeys: [{ alias: 'qiyk-server', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }] })
+  const report = diagnose({ pluginVersion: '1', unpinnedHostKeys: [{ alias: 'dev-server', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }] })
   check('an unpinned host key is a finding', report.state === STATE.warn, JSON.stringify(report))
   check('...carrying the fingerprint a reader needs', report.findings[0].detail.includes('SHA256:abc'), report.findings[0].detail)
   // The alias travels as its own FIELD, never inside the sentence: the report
   // masks the field, so a sentence that already embedded it could not be
   // masked without a second rule.
-  check('...and keeping the alias out of the sentence', !report.findings[0].detail.includes('qiyk-server'), report.findings[0].detail)
-  check('...while the alias is available as a field', report.findings[0].alias === 'qiyk-server', report.findings[0].alias)
+  check('...and keeping the alias out of the sentence', !report.findings[0].detail.includes('dev-server'), report.findings[0].detail)
+  check('...while the alias is available as a field', report.findings[0].alias === 'dev-server', report.findings[0].alias)
 }
 
 {
@@ -243,7 +243,7 @@ console.log('\n[the report carries the verdict, and it agrees with the sections]
 {
   const input = {
     pluginVersion: '0.2.7',
-    unpinnedHostKeys: [{ alias: 'qiyk-server', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }],
+    unpinnedHostKeys: [{ alias: 'dev-server', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }],
     upstreamWorkarounds: [{ id: 'UPSTREAM-9', probe: 'fixed', detail: 'the Host no longer needs it' }],
   }
   const bundle = buildSupportBundle(input)
@@ -254,8 +254,8 @@ console.log('\n[the report carries the verdict, and it agrees with the sections]
   check('...naming both findings', bundle.includes('UPSTREAM-9') && bundle.includes('NOT PINNED'), bundle)
   // The alias must be MASKED in the verdict line, exactly as in every other
   // section: one masking rule for one string, or the report stops correlating.
-  check('the alias in a finding is masked', !bundle.includes('qiyk-server'), bundle.split('\n').filter(line => line.includes('PINNED')).join(' | '))
-  check('...with the masked form present', bundle.includes(maskAlias('qiyk-server')), maskAlias('qiyk-server'))
+  check('the alias in a finding is masked', !bundle.includes('dev-server'), bundle.split('\n').filter(line => line.includes('PINNED')).join(' | '))
+  check('...with the masked form present', bundle.includes(maskAlias('dev-server')), maskAlias('dev-server'))
 }
 
 {
@@ -305,7 +305,7 @@ console.log('\n[the report gained the facts it used to omit]')
     pluginVersion: '0.2.7',
     hostsSkipped: [{ alias: 'bastion', reason: 'configured with a jump host' }],
     storeError: 'permission denied',
-    unpinnedHostKeys: [{ alias: 'qiyk-server', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }],
+    unpinnedHostKeys: [{ alias: 'dev-server', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }],
     connections: [{ alias: 'box', state: 'connected', inFlight: 0, generation: 3 }],
     forwardRows: [{ alias: 'box', localHost: '127.0.0.1', localPort: 5173, remotePort: 5173, error: 'port in use' }],
   })

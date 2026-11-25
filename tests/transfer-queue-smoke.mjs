@@ -662,7 +662,7 @@ console.log('\n[chunked sender: progress and cancellation]')
     const transport = recordingFetch()
     const progress = []
     const { postFileInChunks } = bind(transport.fetchImpl)
-    const { parsed } = await postFileInChunks('qiyk', '/tmp/queue', file, { onProgress: (bytes) => progress.push(bytes) })
+    const { parsed } = await postFileInChunks('dev', '/tmp/queue', file, { onProgress: (bytes) => progress.push(bytes) })
     check('the sender splits a file into 2 MiB chunks',
       JSON.stringify(transport.calls.map(call => call.offset)) === JSON.stringify([0, 2 * 1024 * 1024, 4 * 1024 * 1024]),
       JSON.stringify(transport.calls.map(call => call.offset)))
@@ -684,7 +684,7 @@ console.log('\n[chunked sender: progress and cancellation]')
     const { postFileInChunks } = bind(transport.fetchImpl)
     let outcome
     try {
-      await postFileInChunks('qiyk', '/tmp/queue', file, {
+      await postFileInChunks('dev', '/tmp/queue', file, {
         isCancelled: () => transport.calls.filter(call => call.abort !== true).length >= 1,
       })
       outcome = 'resolved'
@@ -706,7 +706,7 @@ console.log('\n[chunked sender: progress and cancellation]')
     // sent, because "nothing was staged" is the server's state to explain.
     const transport = recordingFetch()
     const { postFileInChunks } = bind(transport.fetchImpl)
-    await postFileInChunks('qiyk', '/tmp/queue', makeFile(10), { isCancelled: () => true }).catch(() => {})
+    await postFileInChunks('dev', '/tmp/queue', makeFile(10), { isCancelled: () => true }).catch(() => {})
     check('a cancel before the first chunk sends only the abort',
       transport.calls.length === 1 && transport.calls[0].abort === true,
       JSON.stringify(transport.calls.map(call => [call.offset, call.abort])))
@@ -715,7 +715,7 @@ console.log('\n[chunked sender: progress and cancellation]')
   {
     const transport = recordingFetch()
     const { postFileInChunks } = bind(transport.fetchImpl)
-    await postFileInChunks('qiyk', '/tmp/queue', makeFile(0), {})
+    await postFileInChunks('dev', '/tmp/queue', makeFile(0), {})
     check('a zero-byte file still sends exactly one final chunk',
       transport.calls.length === 1 && transport.calls[0].final === true && transport.calls[0].data === '',
       JSON.stringify(transport.calls))
@@ -733,7 +733,7 @@ console.log('\n[chunked sender: progress and cancellation]')
       }
     })
     const { postFileInChunks } = bind(transport.fetchImpl)
-    await postFileInChunks('qiyk', '/tmp/queue', makeFile(1024), {}).catch(() => {})
+    await postFileInChunks('dev', '/tmp/queue', makeFile(1024), {}).catch(() => {})
     check('a final-chunk transport death is not replayed',
       transport.calls.filter(call => call.final === true).length === 1,
       JSON.stringify(transport.calls.map(call => call.final)))
@@ -753,7 +753,7 @@ console.log('\n[chunked sender: progress and cancellation]')
       : { ok: true, bytes: request.offset + (request.data === '' ? 0 : Buffer.from(request.data, 'base64').length) })
     const { postFileInChunks } = bind(transport.fetchImpl)
     const progress = []
-    const result = await postFileInChunks('qiyk', '/tmp/queue', file, {
+    const result = await postFileInChunks('dev', '/tmp/queue', file, {
       uploadId: 'c'.repeat(32),
       identity: `${file.size}:123`,
       attempt: 1,
@@ -789,7 +789,7 @@ console.log('\n[chunked sender: progress and cancellation]')
       ? { ok: true, bytes: 1024, offset: 0, resume: false, discarded: true, reason }
       : { ok: true, bytes: request.offset + (request.data === '' ? 0 : Buffer.from(request.data, 'base64').length) })
     const { postFileInChunks } = bind(transport.fetchImpl)
-    const result = await postFileInChunks('qiyk', '/tmp/queue', file, {
+    const result = await postFileInChunks('dev', '/tmp/queue', file, {
       uploadId: 'd'.repeat(32),
       identity: `${file.size}:123`,
       attempt: 1,
@@ -823,7 +823,7 @@ console.log('\n[chunked sender: progress and cancellation]')
       })
     }
     const { postFileInChunks } = bind(fetchImpl)
-    const promise = postFileInChunks('qiyk', '/tmp/queue', file, {
+    const promise = postFileInChunks('dev', '/tmp/queue', file, {
       uploadId: 'e'.repeat(32),
       identity: `${file.size}:123`,
       isPaused: () => paused,

@@ -24,8 +24,8 @@
 
 | 项 | 位置 | 保护 |
 | --- | --- | --- |
-| 主机清单（别名、地址、端口、用户名、认证方式） | `$DSH_HOME/dsh-ssh.json` | 明文。不是秘密，但会暴露你的网络拓扑 |
-| 密码、私钥口令 | 同上，`enc:v1:` 前缀的值 | AES-256-GCM，密钥在 `$DSH_HOME/dsh-ssh.key` |
+| 主机清单（别名、地址、端口、用户名、认证方式） | `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json`（旧版 `$DSH_HOME/dsh-ssh.json`，仍可读并迁移） | 明文。不是秘密，但会暴露你的网络拓扑 |
+| 密码、私钥口令 | 同上，`enc:v1:` 前缀的值 | AES-256-GCM，密钥在 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.key`（旧密钥仍可读） |
 | 该密钥文件 | `dsh-ssh.key` | 文件权限 `0600`、目录 `0700`（尽力而为；Windows 上不强制） |
 
 要点：

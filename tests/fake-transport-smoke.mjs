@@ -25,7 +25,7 @@
  */
 
 import { EventEmitter, getEventListeners } from 'node:events'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -458,6 +458,82 @@ console.log('\n[6] editing the SSH config drops a live connection')
   check('the edit does not cancel the reconnect loop permanently',
     engine.reconnector?.stateOf?.('fake') === undefined,
     JSON.stringify(engine.reconnector?.list?.()))
+}
+
+// ================================================ [probe] an unsaved form, dialed
+//
+// The host editor's 「测试」 must answer about the fields on screen, which are
+// not in the store yet. So the descriptor is built from the FORM and dialed
+// directly — the connection must come up, and it must not survive the probe:
+// a test that left a pooled socket behind would make the panel claim the host
+// is connected, and a reconnect loop would start retrying a host nobody saved.
+console.log('[probe] an unsaved form is dialed and then hung up')
+{
+  const server = await startFakeSshServer({ pluginRoot, password: 'sekret' })
+  track(() => server.close())
+  const engine = await engineOver(server)
+  const resolved = engine.store.descriptorForForm({
+    alias: '',
+    host: '127.0.0.1',
+    port: server.port,
+    user: 'tester',
+    auth: { kind: 'password', password: 'sekret' },
+  })
+  check('a form with no alias still resolves to a dialable descriptor',
+    resolved.host === '127.0.0.1' && resolved.port === server.port && resolved.auth.kind === 'password' && resolved.alias === '(unsaved host)',
+    JSON.stringify({ ...resolved, auth: { ...resolved.auth, password: '***' } }))
+  const before = server.connections
+  const storeFile = engine.store.entryStore.path
+  const storeBefore = readFileSync(storeFile, 'utf8')
+  const probe = await engine.probeDescriptor(resolved)
+  check('the probe reports the handshake time', Number.isFinite(probe.durationMs) && probe.durationMs >= 0,
+    JSON.stringify(probe))
+  check('...over a real socket', server.connections > before, `${before} → ${server.connections}`)
+  check('...and pools nothing: a probe is not a connection',
+    engine.pool.size === 0, String(engine.pool.size))
+  check('...and arms no reconnect loop', engine.reconnector?.stateOf?.('fake') === undefined,
+    JSON.stringify(engine.reconnector?.list?.()))
+  // Nothing is WRITTEN. A probe is a question, not a trust decision, so the
+  // store file must come back byte-identical — no host entry, and no
+  // known-hosts row pinned under the placeholder alias the probe used.
+  check('...and leaves the store file byte-identical',
+    readFileSync(storeFile, 'utf8') === storeBefore, 'the probe rewrote the store')
+  check('...so no host key is pinned for the unsaved alias',
+    engine.store.knownHostKey('(unsaved host)') === undefined,
+    JSON.stringify(engine.store.knownHostKey('(unsaved host)')))
+
+  // A saved host: connect once so the key IS pinned, then probe the same alias
+  // and check the store does not move again. Pinning is not a verifier's only
+  // duty either — a probe that skipped the comparison would call a
+  // MITM-presented host "reachable".
+  await engine.acquire('fake')
+  check('a real connection still pins the host key', engine.store.knownHostKey('fake') !== undefined,
+    JSON.stringify(engine.store.knownHostKey('fake')))
+  engine.forget('fake')
+  const pinnedStore = readFileSync(storeFile, 'utf8')
+  const again = await engine.probeDescriptor(engine.store.resolve('fake'))
+  check('probing a saved host answers as well', Number.isFinite(again.durationMs), JSON.stringify(again))
+  check('...and writes nothing either', readFileSync(storeFile, 'utf8') === pinnedStore,
+    'the probe rewrote the store')
+
+  // The refusal is the whole point of the button: a wrong password must come
+  // back as the server's answer, not as a green tick.
+  const wrong = engine.store.descriptorForForm({
+    alias: '',
+    host: '127.0.0.1',
+    port: server.port,
+    user: 'tester',
+    auth: { kind: 'password', password: 'not-the-password' },
+  })
+  let refusal = null
+  try {
+    await engine.probeDescriptor(wrong)
+  } catch (error) {
+    refusal = error
+  }
+  check('a refused password fails the probe', refusal !== null, 'the probe reported success')
+  check('...with the transport\'s own words',
+    /authentication|All configured|Permission denied/iu.test(refusal?.message ?? ''), String(refusal?.message))
 }
 
 // ==================================================================== cleanup

@@ -570,8 +570,8 @@ console.log('\n[the fences]')
   check('a root that is not a prefix is refused', !api.localPathWithin('C:/work', 'C:/work2'))
 
   const remote = useDom(makeTreeDom())
-  const remoteTree = buildTree(remote, 'ssh://qiyk/home/qiyk/test')
-  addRow(remote, remoteTree.list, 'directory', 'ssh://qiyk/home/qiyk/test/sub')
+  const remoteTree = buildTree(remote, 'ssh://dev/home/dev/test')
+  addRow(remote, remoteTree.list, 'directory', 'ssh://dev/home/dev/test/sub')
   check('a remote tree does not enter the local blank path',
     api.localBlankTargetOf(remoteTree.list) === null)
 }
@@ -585,7 +585,7 @@ console.log('\n[which panel a blank gesture belongs to]')
  * That sibling relationship is the whole reason the lookup has to widen past
  * the pointer's container, and the reason it must stop at the page.
  */
-function buildPage (dom, { alias = 'qiyk', dir = '/home/qiyk/test', root = 'ssh://qiyk/home/qiyk/test', withButton = true } = {}) {
+function buildPage (dom, { alias = 'dev', dir = '/home/dev/test', root = 'ssh://dev/home/dev/test', withButton = true } = {}) {
   const page = dom.make({ tag: 'div', attrs: { 'data-files-page': '' } })
   const header = dom.make({ tag: 'div' })
   if (withButton) {
@@ -631,23 +631,23 @@ function buildPage (dom, { alias = 'qiyk', dir = '/home/qiyk/test', root = 'ssh:
   check('blank space in the tree body resolves to its page',
     scope?.page === built.page && scope?.tree === built.tree)
   check('...carrying the alias and directory the header publishes',
-    scope?.alias === 'qiyk' && scope?.dir === '/home/qiyk/test',
+    scope?.alias === 'dev' && scope?.dir === '/home/dev/test',
     `${scope?.alias ?? 'null'} / ${scope?.dir ?? 'null'}`)
-  check('...and the tree root', scope?.root === 'ssh://qiyk/home/qiyk/test', scope?.root ?? 'null')
+  check('...and the tree root', scope?.root === 'ssh://dev/home/dev/test', scope?.root ?? 'null')
 
   // The header is the case the widening exists for: a page ancestor, but no
   // tree ancestor. The tree is found by querying the page.
   const onHeader = api.blankMenuScopeOf(built.header)
   check('a right-click on the panel header still resolves to the page tree',
     onHeader?.tree === built.tree, onHeader?.tree === undefined ? 'null' : 'wrong tree')
-  check('...using the same button', onHeader?.alias === 'qiyk' && onHeader?.dir === '/home/qiyk/test')
+  check('...using the same button', onHeader?.alias === 'dev' && onHeader?.dir === '/home/dev/test')
 
   // Blank space below the rows, inside the body but outside any row.
   const spacer = dom.make({ tag: 'div' })
   built.body.appendChild(spacer)
   const belowRows = api.blankMenuScopeOf(spacer)
   check('blank space below the rows resolves to the same directory',
-    belowRows?.dir === '/home/qiyk/test' && belowRows?.tree === built.tree)
+    belowRows?.dir === '/home/dev/test' && belowRows?.tree === built.tree)
 }
 
 console.log('\n[the panel boundary is not the document]')
@@ -656,7 +656,7 @@ console.log('\n[the panel boundary is not the document]')
   // must not borrow the remote panel's button: that is how a local header
   // right-click used to offer uploading to a host the user was not looking at.
   const dom = useDom(makeTreeDom())
-  const remotePanel = buildPage(dom, { alias: 'qiyk', dir: '/home/qiyk/test' })
+  const remotePanel = buildPage(dom, { alias: 'dev', dir: '/home/dev/test' })
   const localPanel = buildPage(dom, {
     alias: null, dir: null, root: 'C:\\work\\project', withButton: false,
   })
@@ -666,7 +666,7 @@ console.log('\n[the panel boundary is not the document]')
   check('...and its header does not borrow the remote panel either',
     api.blankMenuScopeOf(localPanel.header) === null)
   check('...while the remote panel beside it still resolves',
-    api.blankMenuScopeOf(remotePanel.list)?.alias === 'qiyk')
+    api.blankMenuScopeOf(remotePanel.list)?.alias === 'dev')
 
   // A tree that is NOT inside the page: `closest` can walk past a page, so the
   // containment check is what stops a page with no tree of its own from
@@ -687,11 +687,11 @@ console.log('\n[the panel boundary is not the document]')
 console.log('\n[the empty attributes are refusals, not empty menus]')
 {
   const dom = useDom(makeTreeDom())
-  const panel = buildPage(dom, { alias: '', dir: '/home/qiyk/test' })
+  const panel = buildPage(dom, { alias: '', dir: '/home/dev/test' })
   check('an empty alias is refused', api.blankMenuScopeOf(panel.list) === null)
 
   const dom2 = useDom(makeTreeDom())
-  const panel2 = buildPage(dom2, { alias: 'qiyk', dir: '' })
+  const panel2 = buildPage(dom2, { alias: 'dev', dir: '' })
   check('an empty directory is refused', api.blankMenuScopeOf(panel2.list) === null)
 
   // An empty root is a supported answer (null), not a refusal: the page still

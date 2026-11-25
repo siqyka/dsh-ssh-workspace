@@ -93,6 +93,7 @@ const SUITES = [
   'browser-rows',
   'path-preview',
   'host-card',
+  'connection-intent',
   'mutations',
   'text-routes',
   'text-encoding',

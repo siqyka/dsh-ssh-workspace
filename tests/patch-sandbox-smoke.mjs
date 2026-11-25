@@ -8,7 +8,7 @@
  * realpaths that spelling as a host path and fails closed:
  *
  *   sandbox-local: windows-acl workspace and temp directory resolution failed:
- *   Error: ENOENT … realpath 'C:\Users\…\ssh:\qiyk\home\qiyk\test\dsh-ssh-workspace'
+ *   Error: ENOENT … realpath 'C:\Users\…\ssh:\dev\home\dev\test\dsh-ssh-workspace'
  *
  * so no remote command ever started. The properties asserted here are the ones
  * that keep the fix honest:
@@ -57,7 +57,7 @@ function check (label, ok, detail) {
   }
 }
 
-const REMOTE_ROOT = 'ssh://qiyk/home/qiyk/test/dsh-ssh-workspace'
+const REMOTE_ROOT = 'ssh://dev/home/dev/test/dsh-ssh-workspace'
 
 /** A provider instance shaped like the mounted `ctx.sandbox` service. */
 function fakeProvider () {
@@ -125,10 +125,10 @@ console.log('\n[policy localization]')
   const withExtras = localizePolicy({
     mode: 'workspace-write',
     workspaceRoot: 'F:\\repo',
-    additionalWritableRoots: ['F:\\repo\\.git', 'ssh://qiyk/home/qiyk/.git'],
+    additionalWritableRoots: ['F:\\repo\\.git', 'ssh://dev/home/dev/.git'],
   })
   check('a remote extra root is dropped',
-    !withExtras.additionalWritableRoots.includes('ssh://qiyk/home/qiyk/.git'),
+    !withExtras.additionalWritableRoots.includes('ssh://dev/home/dev/.git'),
     JSON.stringify(withExtras.additionalWritableRoots))
   check('a local extra root is kept',
     withExtras.additionalWritableRoots.includes('F:\\repo\\.git'),
@@ -137,7 +137,7 @@ console.log('\n[policy localization]')
   const allRemote = localizePolicy({
     mode: 'workspace-write',
     workspaceRoot: 'F:\\repo',
-    additionalWritableRoots: ['ssh://qiyk/a'],
+    additionalWritableRoots: ['ssh://dev/a'],
   })
   check('dropping every extra root still leaves a well-formed array',
     Array.isArray(allRemote.additionalWritableRoots) && allRemote.additionalWritableRoots.length === 0,

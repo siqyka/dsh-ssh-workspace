@@ -2,6 +2,11 @@
 
 本文件记录 dsh-ssh-workspace 的版本变更。0.1.16 之前的版本为未公开的本地迭代，未收录。
 
+## [未发布]
+
+- **连接意图持久化 + 失败可见性**（借鉴 fork 2f570b3）：面板每台主机新增「自动连接」勾选框，勾选状态反映**存储的意图**而非当前 socket——握手期间已勾选、状态行「连接中…」。打开走 `POST /hosts/reconnect`（先写 `dsh-ssh.json` 顶层 `autoConnect` 别名数组再拨号），关闭走 `POST /hosts/disconnect`（先清意图再拆连接），改名带走意图、删除一并清除；下次启动稍后的 tick 上**串行**用 `acquire`（非 `retryNow`，不违背「自动开隧道」总开关）连回，单个失败记诊断不中断其余。同一意图登记为引擎的 `addWantedCheck`（掉线后台重拨）与 `addKeepAliveCheck`（空闲 30 分钟回收豁免），否则自动连回的连接会被回收。`engine.failures` 记住每个别名最后一次连接失败（成功 / 主动断开清除），`/status` 与 `ssh_workspace_status` 新增 `autoConnect` / `connecting` / `failures`，卡片在 fatal 失败（不武装重连器）时显示红点 +「连接失败」与原因——此前这种失败除了诊断环没有任何用户可见痕迹。`connection-intent-smoke` +18、`host-card-smoke` 38 → 49。
+- **主机配置迁入插件私有目录**：可编辑的 `dsh-ssh.json` 与加密密钥从 `$DSH_HOME` 根目录移到 `$DSH_HOME/dsh-ssh-workspace/`。旧位置仍可读，首次写盘自动迁移整个文档（保留主机、密钥密文与未知段），不丢数据、无需手工搬文件；显式传入路径的调用（测试 / 备用安装）不受影响。`secrets-smoke` +10（26 → 36）。
+
 ## [0.4.0] - 2026-11-24
 
 这一版整版重构：浏览器端文件编辑、客户端分层拆 chunk、`lib/` 按能力域重组，并修掉一批围栏、并发与可访问性问题。
@@ -30,6 +35,8 @@
 
 - **传输与写入围栏**：下载受 `ctx.sandboxPolicy` 约束（fail closed），写流错误不再吞掉发布截断文件；R-02…R-10（status provenance、mode 0644、JSON 413、统一拒绝形状、上传只 mkdirp 一次、键盘共用策略缓存、小文件 preload 等）。
 - **转发与连接**：反向转发加 hold / close 钩子；保存转发按 id 复用；abort 在拨号前检查并释放监听；监视上限 64（`FS_TOO_MANY`）。
+- **主机表单里可以先测再存**：底栏「取消 / 测试 / 保存」，`POST /test` 新增 `form` 分支——按屏幕上未保存的字段构造描述符（`store.descriptorForForm`，编辑时空口令沿用已存凭据）并 `engine.probeDescriptor` 真拨一次，成功即 `destroy()`：**不写存储**（主机记录与 `knownHosts` 都不动；主机密钥只比对不 pin，TOFU 仍由真正的连接完成）、不入连接池、不启动重连。保存与测试共用同一个 `buildPayload()` / `validate()`，结果以 `role="status"` 就地显示，表单任一字段改动后旧结果立刻失效；`engine` 抽出 `#dial()` 让探针与真实连接走同一握手路径，`fake-transport-smoke` 43 → 55（含「存储文件逐字节不变」）、`routes-smoke` 297 → 303、`client-shape-smoke` 402 → 417。
+- **主机卡片的元信息行改成「就绪」打头**：`密钥/密码/agent · 就绪 · 来源` → `就绪 · 密钥 · ~/.ssh/config`。就绪是这行里唯一能让连接直接失败的事实，原来夹在中间，密钥缺失时卡片先念「密钥」再把警告推到余光里；`host-card-smoke` 34 → 38 钉住顺序。
 - **与 `~/.ssh/config` 同名的主机不再能删或改**：存储记录若与某个 `Host` 块同别名，`listing()` 带上 `configAlias: true`，面板不给编辑 / 删除并打印 `hosts.configShadow`（删掉存储条目只会露出那个块、主机「自己回来」；改它会让本机其它 ssh 客户端解析到的东西悄悄变样）；`POST /hosts/delete` 与 `POST /hosts/save` 都改成先查配置别名并答 409，改名到空闲别名仍放行，`host-listing-smoke` 57 → 61、`host-card-smoke` 30 → 34、`routes-smoke` 290 → 297。
 - **嵌套工作区停用不再误伤父目录**：围栏判据改为 `isDetachedTarget`（落在停用根下且不被任何在服务的根覆盖才拒绝），`protocol-smoke` 27 → 36、`detach-smoke` 加真实嵌套用例。
 - **启用、标记与编辑器细节**：启用不再 `createCanonical` 新建记录；`ssh_workspace_hosts` 三态；保存回包固化 `savingPath`；文件大小守卫改 `EDIT_MAX_BYTES + 1`；`apply()` 的两处监听并入 disposer。

@@ -407,7 +407,7 @@ console.log('\n[sandbox wrapper]')
   // so the front token is the app exe, not `node`. Only identity with this
   // process's executable may recognise it: the same argv from a process that
   // is not that exe must stay unrecognised.
-  const DESKTOP = 'E:\\software\\DSH\\DeepSeek Harness.exe'
+  const DESKTOP = 'C:\\Program Files\\DSH\\DeepSeek Harness.exe'
   {
     const realExecPath = process.execPath
     process.execPath = DESKTOP
@@ -487,7 +487,7 @@ console.log('\n[sandbox wrapper]')
   // The Forge panel's real shape: the official change-request plugin confines
   // git, and the packaged Desktop fronts that confinement with its own exe.
   const h3 = harness({ roots: [ROOT], run: { output: ' M tracked.txt\n' } })
-  const desktopExecPath = 'E:\\software\\DSH\\DeepSeek Harness.exe'
+  const desktopExecPath = 'C:\\Program Files\\DSH\\DeepSeek Harness.exe'
   const realExecPath = process.execPath
   process.execPath = desktopExecPath
   try {
