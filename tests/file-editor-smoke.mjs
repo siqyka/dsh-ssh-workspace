@@ -219,6 +219,13 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('...reading the value back from the DOM instead of composing it',
     editor.includes('element.value') && !/setState\([^)]*text: `\$\{.*\}  `/u.test(editor))
   check('Shift+Tab un-indents', editor.includes('event.shiftKey') && editor.includes("document.execCommand('delete')"))
+  check('Python files get four spaces',
+    /function indentFor \(path\)[\s\S]{0,240}?PYTHON_INDENT/u.test(editor) &&
+      editor.includes('const indent = indentFor(target)'),
+    'indentation is syntax in Python; two spaces writes a file its own formatter would rewrite')
+  check('...and the un-indent unit follows the file',
+    editor.includes('while (remove < indent.length') && editor.includes('insertAtCaret(area, indent)'),
+    'Shift+Tab must take back exactly what Tab inserted')
   check('Ctrl/Cmd+S saves and stops the browser save dialog',
     /\(event\.ctrlKey \|\| event\.metaKey\) && !event\.altKey && \(event\.key === 's' \|\| event\.key === 'S'\)/u.test(editor) &&
       /preventDefault\(\)\s*\n\s*void save\(\)/u.test(editor))
