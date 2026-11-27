@@ -506,6 +506,92 @@ console.log('\n[client wiring]')
 rmSync(scratch, { recursive: true, force: true })
 
 // ---------------------------------------------------------------------------
+// [viewers] what each kind of file opens as
+// ---------------------------------------------------------------------------
+console.log('\n[viewers]')
+{
+  const bundle = clientPartSource(pluginRoot, 'client.js')
+  const lift = (marker, next) => {
+    const start = bundle.indexOf(marker)
+    const end = bundle.indexOf(next, start)
+    if (start < 0 || end < 0) throw new Error('cannot lift ' + marker)
+    return bundle.slice(start, end)
+  }
+  const source = lift('const VIEWER_FAMILIES', 'function viewerOf') +
+    lift('function viewerOf', '    /**\n     * Whether the directory pickers')
+  const previewNameOf = (path) => String(path ?? '').split(/[\\/]/u).pop().toLowerCase()
+  const isPreviewablePath = (path) => /\.(?:txt|json|ts)$/u.test(String(path ?? '').toLowerCase())
+  const factory = new Function('previewNameOf', 'isPreviewablePath', source + '\nreturn viewerOf')
+  const viewerOf = factory(previewNameOf, isPreviewablePath)
+  const table = [
+    ['/repo/README.md', 'markdown'],
+    ['/repo/doc.markdown', 'markdown'],
+    ['/repo/index.html', 'html'],
+    ['/repo/page.htm', 'html'],
+    ['/repo/logo.PNG', 'image'],
+    ['/repo/clip.mp4', 'video'],
+    ['/repo/song.mp3', 'audio'],
+    ['/repo/manual.pdf', 'pdf'],
+    ['/repo/config.json', 'text'],
+    ['/repo/archive.zip', 'binary'],
+  ]
+  for (const [path, kind] of table) {
+    check(path + ' opens as ' + kind, viewerOf(path) === kind)
+  }
+  check('the chunk borrows the table instead of copying it',
+    /const \{ isPreviewablePath, isDocumentPath, previewNameOf, fileTabName, fileTabIdOf, viewerOf \} = host/u
+      .test(clientPartSource(pluginRoot, 'client.fileview.js')) &&
+      /\n        viewerOf,\n/u.test(bundle),
+    'two tables would drift')
+}
+
+// ---------------------------------------------------------------------------
+// [byte route] ranges and real media types
+// ---------------------------------------------------------------------------
+const load = (rel) => import(new URL('../' + rel, import.meta.url).href)
+const ROOT = pluginRoot
+console.log('\n[byte route]')
+{
+  const range = await load('lib/routes/byte-range.js')
+  check('a png is served as an image, not octet-stream',
+    range.mediaTypeOfPath('a/b/c.png') === 'image/png' && range.mediaTypeOfPath('x.mp4') === 'video/mp4' &&
+      range.mediaTypeOfPath('x.pdf') === 'application/pdf')
+  check('an unknown suffix stays octet-stream', range.mediaTypeOfPath('x.bin') === 'application/octet-stream')
+  const window = range.parseByteRange('bytes=10-19', 100)
+  check('one range window is parsed', window !== null && window.start === 10 && window.end === 19)
+  const openEnded = range.parseByteRange('bytes=90-', 100)
+  check('an open-ended range reaches the end', openEnded.start === 90 && openEnded.end === 99)
+  const suffix = range.parseByteRange('bytes=-10', 100)
+  check('a suffix range counts from the end', suffix.start === 90 && suffix.end === 99)
+  check('no header means no range', range.parseByteRange(undefined, 100) === null)
+  check('a start past the end is refused', range.parseByteRange('bytes=200-300', 100) === 'invalid')
+  check('a reversed window is refused', range.parseByteRange('bytes=20-10', 100) === 'invalid')
+  check('multi-range is refused rather than half-served', range.parseByteRange('bytes=0-1,5-6', 100) === 'invalid')
+}
+
+// ---------------------------------------------------------------------------
+// [html view] relative references become byte-route URLs
+// ---------------------------------------------------------------------------
+console.log('\n[html view]')
+{
+  const rewrite = await load('lib/routes/html-rewrite.js')
+  const byteUrl = (target) => 'byte:' + target
+  const html = '<link href="./style.css"><img src="../img/a.png"><a href="#top">t</a>' +
+    '<script src="/app.js"></script><div style="background: url(bg.png)"></div>' +
+    '<a href="https://example.com/x">x</a>'
+  const out = rewrite.rewriteHtmlReferences(html, '/site/docs/page.html', byteUrl)
+  check('a sibling stylesheet is resolved against the document', out.includes('href="byte:/site/docs/style.css"'))
+  check('a parent-relative image is resolved too', out.includes('src="byte:/site/img/a.png"'))
+  check('a root-relative script is resolved against the remote root', out.includes('src="byte:/app.js"'))
+  check('an inline url() is resolved', out.includes('url(byte:/site/docs/bg.png)'))
+  check('a fragment is left alone', out.includes('href="#top"'))
+  check('an absolute URL is left alone', out.includes('href="https://example.com/x"'))
+  const route = readFileSync(path.join(ROOT, 'lib/routes/view.js'), 'utf8')
+  check('the route refuses documents past its window', /HTML_TOO_LARGE/u.test(route))
+  check('the route serves html with an explicit type', /text\/html; charset=utf-8/u.test(route))
+}
+
+// ---------------------------------------------------------------------------
 // [renderer] the document pane renders with the plugin's own styled renderer
 // ---------------------------------------------------------------------------
 console.log('\n[renderer]')

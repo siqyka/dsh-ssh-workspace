@@ -364,7 +364,9 @@ check('an empty document renders an empty article',
       /const PREVIEW_DOCUMENT_NAMES = new Set\(\['changelog', 'readme'\]\)/u.test(source))
 
   check('a document tab opens in preview, everything else at its source',
-    /const \[mode, setMode\] = React\.useState\(\(\) => \(isDocumentPath\(filePath\) \? 'preview' : 'source'\)\)/u.test(source))
+    /const viewer = viewerOf\(filePath\)/u.test(source) &&
+      /const isDocument = viewer === 'markdown' \|\| viewer === 'html'/u.test(source) &&
+      /const \[mode, setMode\] = React\.useState\(\(\) => \(isDocument \? 'preview' : 'source'\)\)/u.test(source))
 
   check('the mode switch sits at the top-right, in flow above the body',
     /className: 'sshwsp-filepane-bar'/u.test(source) &&
@@ -377,7 +379,8 @@ check('an empty document renders an empty article',
       /className: 'sshwsp-filepane-modehint'/u.test(source))
 
   check('the pane publishes which mode it is in',
-    /'data-sshwsp-mode': isDocument \? mode : 'source'/u.test(source))
+    /'data-sshwsp-mode': isMedia \? viewer : \(isDocument \? mode : 'source'\)/u.test(source) &&
+      /'data-sshwsp-viewer': viewer/u.test(source))
 
   check('the document read uses the same route the editor uses',
     /function DocumentPreview \(\{ path, sessionId: givenSessionId, t \}\)/u.test(source) &&

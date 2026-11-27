@@ -11,10 +11,10 @@
 
 | figure | value | source |
 | --- | --- | --- |
-| HTTP routes | 42 | `lib/routes/` |
+| HTTP routes | 43 | `lib/routes/` |
 | model-facing tools | 11 | `lib/surface/tools.js` |
 | upstream patch modules | 7 | `lib/patch/patch-*.js` |
-| modules under `lib/` | 69 | recursive listing |
+| modules under `lib/` | 72 | recursive listing |
 | test suites | 88 | `tests/run.mjs` |
 | passing assertions (sampled) | 6190 | measured 2026-11-27 |
 
@@ -45,6 +45,8 @@
 | `lib/index.js` | 插件入口：`name` / `inject` 声明、引擎装配、`ctx.inject(['fs'])` 接管时序、工具与路由注册、系统提示公告 |
 | `lib/engine/engine.js` | SSH 引擎：按别名维护持久连接与 SFTP 通道、连接池、空闲回收、`exec` 远端命令。文件底部是**命令审计**：容量可配（默认 200）的有界环，每条带 `sessionId` 与 `channel`（exec / background / shell / terminal），脱敏**在写入时**发生而不是导出时补第二次（导出时才抹的副本会从任何别的读取路径漏出去）；不记输出，只记命令 / 退出码 / 耗时。它**不是沙箱**——远端命令以登录用户权限运行，这里只能记录。与诊断环分开是因为两者的保留需求相反：一次故障产出一串事件与零条命令，一次繁忙会话产出上百条命令与一次连接，共用一个有界环会让任一方挤掉另一方 |
 | `lib/engine/audit-limits.js` | 审计容量与保留条数的**唯一常量与唯一校验**：`AUDIT_CAPACITY` 200、`AUDIT_MIN_CAPACITY` 1、`AUDIT_MAX_CAPACITY` 2000，`auditRetentionPatchOf(body)` 把请求体变成 `{ok, retention}` 或一句 400 文案。**无依赖**，所以 store 与 engine 都能引用它而不成环（store → engine 的边会成环），套件也能只 import 它 |
+| `lib/routes/byte-range.js` | 预览字节路由的**窗口算术**（无依赖）：`mediaTypeOfPath()` 只认真正会被渲染的类型（图片/音视频/PDF/文本），其余一律 octet-stream；`parseByteRange()` 只收单区间，支持 `a-b`、`a-`、`-n` 三种写法，越界、倒序、多区间一律 `'invalid'`（由路由答 416），`MAX_RANGE_BYTES` 16 MiB 限制单次窗口。 |
+| `lib/routes/html-rewrite.js` | HTML 预览的**相对引用改写**（无依赖，`byteUrl` 由路由注入）：`src`/`href`/`poster` 属性与内联 `url(...)`，相对路径按文档目录解析、`/` 开头按远端根解析，带 scheme 的、`//` 开头的、`#` 片段和 `data:` 一律不动。路径形状的端点需要前缀路由，本宿主的注册表只有精确匹配，所以用改写拿到同样结果。 |
 | `lib/engine/command-log.js` | 命令审计的**落盘**（无依赖）：`commandLogPath()` 定 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh-commands.json`，`serializeCommandLog` / `parseCommandLog` 负责 `{version:1, entries}` 的读写与四层上界（条数、字段、无输出、512 KB 丢最旧），`CommandLog` 订阅 `audit.onChange`、500 ms 防抖、暂存名 + rename 原子替换、0600 / 目录 0700、内容未变不重写、`dispose()` 最后 flush 一次。失败只 warn，绝不让一份日志弄失败它描述的那条命令 |
 | `lib/fs/remote-fs.js` | SFTP 文件系统后端：实现 `ctx.fs` 的远端方法（stat / 读写 / 列目录 / 原子写 / 流式读 / 变更监视等），`FsError` 语义与本地后端对齐；变更监视优先 `inotifywait` 推送，无则轮询 |
 | `lib/core/protocol.js` | `ssh://` 路径：解析、规范化、`file:` URI、前缀判定、basename / dirname |
@@ -71,7 +73,7 @@
 | `lib/hosts/store.js` | `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json` 存储：校验、合并（保留未知字段）、原子写。旧版直接放在 `$DSH_HOME` 根下；默认路径读取时仍回退到旧位置，首次写盘把文档迁到私有子目录，不丢主机。文件底部是**静态加密那一半**：AES-256-GCM，密钥在 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.key`（owner-only，首次按需生成；旧根路径密钥仍被读取以解密迁移密文），密文拼写 `enc:v1:<base64(iv|tag|ciphertext)>`，没有该前缀的值原样通过——那是让旧明文存储与 `~/.ssh/config` 的明文 `password` 继续可用、由启动迁移改写成密文的原因。两半共用一个 `dshHome()` 与同一私有子目录：密钥写在 A 处却从 B 处读，症状与「密钥被换掉」无法区分 |
 | `lib/hosts/disable.js` | **主机硬停用**：`HostDisabler` 把「关掉一台存储主机」排成一个有顺序的动作——先持久化 `enabled:false`，再关引擎闸门（`engine.disabledHosts`），再 abort 在途命令、关持久 shell、关正 / 反向转发、停变更监视、终止远端终端、最后 `forget` 池化连接；`counts(alias)` 从各 manager 实时数出「会被打断什么」供确认框使用。管理器是 getter 传入的，慢一秒挂上也不影响装卸；任何一个 manager 抛错都不阻断其余步骤 |
 | `lib/hosts/preferences.js` | 面板「文件查看」的三个偏好（`fileView` / `showFiles` / `hideComposer`）的**唯一规则与默认值**：`preferencesOf` 读文档（非法值落回默认，`hideComposer` 只在显式 `false` 时关闭）、`preferencesPatchOf` 校验 POST 体（未知键、错类型、模式越界各给一句 400 文案）。无依赖，所以 store、路由与套件共用同一份判定 |
-| `lib/routes/` | 浏览器半边的 42 条 HTTP 路由，按资源域分开：`routes.js`（组合点 + `ROUTES` 表）负责把五个数组拼成一张表，`hosts` / `workspaces` / `forwards` / `transfers` / `entries` 五个模块各放自己那族 handler，`kit.js` 是围栏与流式响应工具，`transfer-bytes.js` 是浏览器直传 / 直下的字节搬运。入口仍是 `lib/index.js` 里的一次 `makeRoutes()`：hosts / hosts/toggle / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / create-file / mutation-policy / read-text / write-text / edit-text / self-check / support-bundle / passthrough-settings / preferences / audit / audit/settings |
+| `lib/routes/` | 浏览器半边的 43 条 HTTP 路由，按资源域分开：`routes.js`（组合点 + `ROUTES` 表）负责把六个数组拼成一张表，`hosts` / `workspaces` / `view`（一份 HTML 文档，相对引用改写成字节路由 URL）/ `forwards` / `transfers` / `entries` 五个模块各放自己那族 handler，`kit.js` 是围栏与流式响应工具，`transfer-bytes.js` 是浏览器直传 / 直下的字节搬运。入口仍是 `lib/index.js` 里的一次 `makeRoutes()`：hosts / hosts/toggle / save / delete / forget-key / disconnect / reconnect / test / ls / git-history / status / mount / unmount / enable / forward / unforward / forward/save / forward/toggle / forward/delete / forward/remember / forward/probe / forward/settings / transfer / download / download-tree / upload / upload-chunk / rename / delete（条目）/ mkdir / create-file / mutation-policy / read-text / write-text / edit-text / self-check / support-bundle / passthrough-settings / preferences / audit / audit/settings |
 | `lib/surface/shell.js` | 远端 shell 的两半。上半是**持久会话**：`(别名, 会话名)` 一个长活 PTY，`cd` / 导出变量 / 后台任务跨调用保留，每条命令后追加带退出状态的重标记（新标记每命令一次，程序自己打印不出一个假结尾）。下半是**这台主机到底有哪几支 shell**：接管宿主 `terminalController.shells()`（宿主只在 `spawn` / `spawnTerminal` 上被包过，`resolveExecutable` / `terminalEnvironment` 没有 seam，所以菜单一直答的是本机），一次往返跑 `command -v` 加 `dsh-shells-done` 完成标记，三态诚实——缺标记 / 非零退出 / 传输抛错一律 reject 且不缓存，绝不回落成一份本机列表；答案按「主机 + 连接代次」缓存，只在重连时重探 |
 | `lib/surface/tools.js` | 11 个 `ssh_workspace_*` Agent 工具（schema / 渲染 / 执行），加文件底部的**命令确认策略**：哪些远端命令要先问一句（`rm -rf` / 越界写 / `sudo` / 关机），默认关闭、可按规则子集启用；匹配刻意笨（整条命令的字面量与正则），因为「理解 shell」的匹配器一律会被 `sh -c`、引号或一行两条命令绕过，却仍然打印同样自信的提示。它是**减速带不是沙箱**——被判的命令以远端登录用户权限运行，文案只说「需要你批准」不说「已阻止」；围栏在 `lib/core/mode-gate.js`。不可读的策略 / 未知模式 / 没有审批者一律「不运行」，绝不静默 fail open |
 | `lib/surface/status.js` | `ssh_workspace_status` 的三半放在一处：输出 schema（形，375 行无行为）、`renderStatus`（词，措辞本身就是契约——面板与渲染器回答同一个问题）、`statusProvenance`（`live` / `cached` / `stale` 三种来源标注，第四种会抛）。四者外加 `text()` 那个唯一的结果形状都只随彼此变化：**加一个字段就要渲染它并标注它**，少一处答案就错在一个地方；未标注的字段是 bug，不是「大概没问题」的字段 |

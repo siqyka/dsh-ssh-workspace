@@ -611,7 +611,7 @@ shell。接管后，`spec.cwd` 是 `ssh://` 就改开 SSH PTY 通道，返回满
 
 浏览器端另有一条 `GET /download` 流式路由（`lib/routes/transfers.js`），把字节直接写进响应
 而不是编码成 JSON：base64 会放大三分之一、且受 4 MiB 请求体上限约束，而下载的
-文件本来就可能远大于此。因为它不回答 JSON，所以不复用共享的 `guard()`，而是自己
+文件本来就可能远大于此。因为它不回答 JSON，所以不复用共享的 `guard()`，而是自己它同时是**预览的字节通道**：`inline=1` 时返回真实 media type 并支持单区间 `Range`（206/416，窗口上限 16 MiB），客户端因此能把图片、音视频与 PDF 直接喂给 `<img>/<video>/<audio>/<embed>`；`inline` 之外仍走体积围栏，保存的语义没有被预览放松。
 重新施加回环来源 + `Host` 头双重校验，并只接受 GET。
 
 ## 目录选择器：一轮往返的列表与跟随输入的路径栏
@@ -817,12 +817,12 @@ Ctrl-C 丢弃、回车成条，CSI/SS3 与 OSC 序列整体跳过（否则方向
   `priority: -100` 遮蔽原生 `directoryFlow` 双入口）与远端目录对话框；
 - 工作区标记是 **DOM 装饰**：不删改 React 节点，隐藏原生文件夹图标、
   插入自有 `svg[data-sshwsp-mark]`，MutationObserver 自愈重扫；
-- 与宿主通信走 42 条路由（前缀 `/api/dsh-ssh-workspace/`）：
+- 与宿主通信走 43 条路由（前缀 `/api/dsh-ssh-workspace/`）：
   `hosts`、`hosts/save`、`hosts/delete`、`hosts/forget-key`、
   `hosts/disconnect`、`hosts/reconnect`、`hosts/intent`、`hosts/toggle`、`test`、`ls`、`git-history`、`status`、`mount`、
   `unmount`、`enable`、`forward`、`unforward`、`forward/save`、
   `forward/toggle`、`forward/delete`、`forward/remember`、`forward/probe`、
-  `forward/settings`、`transfer`、`download`、`download-tree`、`upload`、
+  `forward/settings`、`transfer`、`download`、`download-tree`、`html`（一份文档，相对引用改写成字节路由 URL）、`upload`、
   `upload-chunk`、`rename`、`delete`、`mkdir`、`create-file`、`mutation-policy`、
   `read-text`、`write-text`、`edit-text`、`self-check`、`support-bundle`、
   `passthrough-settings`、`preferences`、`audit`、`audit/settings`。
