@@ -286,7 +286,7 @@ console.log('\n[client wiring]')
       /preview\.tabClose/u.test(client),
     'a file tab that can only be closed from inside the file view is a trap once several are open')
   check('the × stays on the name\'s line, pinned right, above a capped tab width',
-    /const FILE_TAB_MAX_WIDTH = 180/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
+    /const FILE_TAB_MAX_WIDTH = 160/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
       /position: 'absolute'/u.test(client) && /right: '4px'/u.test(client) &&
       /flex: '0 1 auto'/u.test(client) && /maxWidth: `\$\{FILE_TAB_MAX_WIDTH\}px`/u.test(client) && /paddingRight: `\$\{FILE_TAB_CLOSE_ROOM\}px`/u.test(client),
     'an inline × wraps under a long name and makes the whole tab row a line taller')
@@ -927,7 +927,7 @@ console.log('\n[tab labels]')
       chunk.includes("borderRadius: '8px'") && chunk.includes("setAttribute('role', 'tooltip')"),
     'the native title is square and unstylable; a rounded tip is the only one that can look like this product')
   check('every file tab truncates at the same width',
-    chunk.includes("maxWidth: tail === '' ? '148px' : '96px'"),
+    chunk.includes("maxWidth: tail === '' ? '128px' : '84px'"),
     'a tab that fits its name and one that does not must not look like two components')
 }
 
@@ -951,9 +951,9 @@ console.log('\n[strip]')
   check('...and so is the ×',
     lift({ childNodes: [label, close] }) === 'index.ts',
     'the same glued read would have made every decorated tab unrecognisable')
-  check('the strip is pinned to one row',
-    chunk.includes("flexWrap: 'nowrap'") && chunk.includes("overflowX: 'auto'"),
-    'the host wraps the strip, and a second row pushes the whole pane down')
+  check('the host strip keeps its own layout',
+    !chunk.includes("flexWrap: 'nowrap'") && !chunk.includes("overflowX: 'auto'"),
+    'one row is not ours to decide: forcing nowrap put a scrollbar on the host strip, and that is the host\'s surface')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
