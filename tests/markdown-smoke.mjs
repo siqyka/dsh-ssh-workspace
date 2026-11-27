@@ -59,6 +59,7 @@ function element (type, props) {
 }
 const reactStub = {
   useMemo: (factory) => factory(),
+  useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
   createElement: element,
 }
 const jsxRuntimeStub = {
@@ -294,6 +295,31 @@ check('a relative path is not a link (the file lives on another machine)',
   })
   check('...and an unresolved one keeps the placeholder',
     unresolved.props.children[0].props.children[0].type === 'span')
+}
+
+{
+  const doc = markdown.MarkdownDocument({ text: '```bash\ngit status\n```\n', t: (key) => key })
+  const fence = doc.props.children[0]
+  check('a fenced block renders through the code card, not as a bare <pre>',
+    typeof fence.type === 'function')
+  // Call the component the way React would: the renderer returns an ELEMENT
+  // describing it, so its own markup only exists after that call.
+  const card = fence.type(fence.props)
+  check('the card is a card, and it remembers its language',
+    card.props.className === 'sshwsp-md-card' && card.props['data-lang'] === 'bash')
+  const head = card.props.children[0]
+  check('the card names its language on a strip',
+    head.props.children[0].props.children === 'bash')
+  check('the card carries wrap and copy actions',
+    head.props.children[1].props.children.length === 2)
+  const body = card.props.children[1]
+  check('the code keeps its text inside the card',
+    body.type === 'pre' && body.props.children.props.children === 'git status')
+  const unlabelledFence = markdown.MarkdownDocument({ text: '```\nx\n```\n', t: (key) => key })
+    .props.children[0]
+  const unlabelled = unlabelledFence.type(unlabelledFence.props)
+  check('an unlabelled fence says text instead of lying about a language',
+    unlabelled.props.children[0].props.children[0].props.children === 'text')
 }
 
 check('an empty document renders an empty article',
