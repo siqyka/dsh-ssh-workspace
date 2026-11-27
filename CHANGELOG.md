@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+- **修复：编辑器里 Python 仍是 2 空格**：上一轮只改了 textarea 回退路径的 Tab 处理；有 CodeMirror 时按键由它接管，缩进走 `indentUnit` 面（默认 2）。现在引擎接收 `indent` 参数，`indentUnit.of(unit)` 与 `tabSize` 一起生效，面板按后缀把 4/2 传进去。`file-editor-smoke` 234 项。
+
 - **服务端能力自检**：`/status.features` 列出本构建注册的路由能力，客户端开页时对比自己的需求；旧进程在设置页顶部给出「服务端进程比当前插件旧」的横幅，并在控制台说明缺了哪些能力——不再让「图片打不开」「文件不存在」去冒充文件问题。`file-preview-smoke` 179 项。
 
 - **按内容判文本，而不是按后缀**：后缀表退为快速路径，认不出的后缀先在会话里接管，再读 4 KiB 决定（BOM → 无 BOM UTF-16 → NUL → UTF-8 → GB18030）。`cts`、`bat`、无扩展名脚本因此能在会话里打开；确认二进制给说明卡而不是白屏。`readText` 新增 `sniff=1`，判定结论按（会话, 路径）缓存。`file-preview-smoke` 175 项，新增 `lib/routes/text-sniff.js`。

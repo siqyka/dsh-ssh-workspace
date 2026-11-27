@@ -223,6 +223,23 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
     /function indentFor \(path\)[\s\S]{0,240}?PYTHON_INDENT/u.test(editor) &&
       editor.includes('const indent = indentFor(target)'),
     'indentation is syntax in Python; two spaces writes a file its own formatter would rewrite')
+  check('the engine is told the indent unit', (() => {
+    const engine = readFileSync(path.join(pluginRoot, 'editor-engine', 'engine.js'), 'utf8')
+    return /function createEditorEngine \(\{[^}]*indent/u.test(engine) &&
+      engine.includes('indentUnit.of(unit)') &&
+      engine.includes('EditorState.tabSize.of(unit.length)')
+  })(), 'CodeMirror consults its own facet: the textarea rule cannot reach it')
+  check('...and the panel passes the per-file unit', editor.includes('indent: indentFor(target)'))
+  check('...which is four spaces for Python', (() => {
+    const start = editor.indexOf('const INDENT =')
+    const end = editor.indexOf('\n    }', editor.indexOf('function indentFor'))
+    if (start < 0 || end < 0) return false
+    const factory = new Function(editor.slice(start, end + 6) + '\nreturn indentFor')
+    const indentFor = factory()
+    return indentFor('/a/b.py').length === 4 && indentFor('/a/b.PY').length === 4 &&
+      indentFor('/a/b.pyw').length === 4 && indentFor('/a/b.js').length === 2 &&
+      indentFor('/a/b').length === 2
+  })(), 'python only, including .pyw and any case')
   check('...and the un-indent unit follows the file',
     editor.includes('while (remove < indent.length') && editor.includes('insertAtCaret(area, indent)'),
     'Shift+Tab must take back exactly what Tab inserted')

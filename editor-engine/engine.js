@@ -28,6 +28,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import {
   HighlightStyle,
   StreamLanguage,
+  indentUnit,
   bracketMatching,
   indentOnInput,
   syntaxHighlighting,
@@ -162,7 +163,11 @@ const editorTheme = EditorView.theme({
  * this object only renders it and reports edits. Every method is intentionally
  * synchronous and side-effect free about the network.
  */
-export function createEditorEngine ({ parent, doc, language, path, wrap, onChange, onSave, onFind, onEscape }) {
+export function createEditorEngine ({ parent, doc, language, path, wrap, indent, onChange, onSave, onFind, onEscape }) {
+  // Tab, `indentOnInput` and `Shift+Tab` all follow this ONE facet; the panel's
+  // textarea fallback has its own copy of the same decision. Python gets four
+  // spaces because indentation is syntax there, everything else keeps two.
+  const unit = typeof indent === 'string' && indent !== '' ? indent : '  '
   const languageCompartment = new Compartment()
   const wrapCompartment = new Compartment()
 
@@ -177,7 +182,10 @@ export function createEditorEngine ({ parent, doc, language, path, wrap, onChang
         history(),
         indentOnInput(),
         bracketMatching(),
-        EditorState.tabSize.of(2),
+        // The rendered width of a tab character follows the indent unit, so a
+        // python file does not show its four spaces as if they were a tab of two.
+        EditorState.tabSize.of(unit.length),
+        indentUnit.of(unit),
         EditorState.allowMultipleSelections.of(true),
         editorTheme,
         syntaxHighlighting(highlightStyle),
