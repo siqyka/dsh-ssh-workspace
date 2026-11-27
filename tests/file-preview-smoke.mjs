@@ -931,6 +931,31 @@ console.log('\n[tab labels]')
     'a tab that fits its name and one that does not must not look like two components')
 }
 
+// [strip] the row stays one row, and our own nodes are never read as the name
+console.log('\n[strip]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  const source = chunk.slice(chunk.indexOf('function tabTextOf'), chunk.indexOf('function cssEscape'))
+  const node = (text, attributes = []) => ({
+    textContent: text,
+    hasAttribute: name => attributes.includes(name),
+  })
+  const label = node('index.ts')
+  const tail = node('…/src', ['data-sshwsp-tab-dir'])
+  const close = node('×', ['data-sshwsp-tab-close'])
+  const lift = new Function(source + '; return tabTextOf')()
+  const read = lift({ childNodes: [label, tail, close] })
+  check('a tail is a sibling, never part of the tab name',
+    read === 'index.ts',
+    'reading textContent glued it on, so no open file matched and the tail survived its twin being closed')
+  check('...and so is the ×',
+    lift({ childNodes: [label, close] }) === 'index.ts',
+    'the same glued read would have made every decorated tab unrecognisable')
+  check('the strip is pinned to one row',
+    chunk.includes("flexWrap: 'nowrap'") && chunk.includes("overflowX: 'auto'"),
+    'the host wraps the strip, and a second row pushes the whole pane down')
+}
+
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`)
