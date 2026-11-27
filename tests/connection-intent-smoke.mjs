@@ -140,6 +140,29 @@ console.log('\n=== connection intent smoke ===\n')
   const statusSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'workspaces.js'), 'utf8')
   check('/status ships autoConnect, connecting and failures',
     /\bautoConnect,/.test(statusSource) && /\bconnecting,/.test(statusSource) && /\bfailures,/.test(statusSource))
+
+  // The box is a MARKER. Its change handler must reach the intent route and
+  // never the connection actions: reusing /hosts/reconnect and
+  // /hosts/disconnect made ticking the box connect the host and unticking it
+  // drop the connection the user was working in.
+  const panelSource = readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.panel.js'), 'utf8')
+  const boxAt = panelSource.indexOf("key: 'autoConnect'")
+  const boxSource = boxAt < 0 ? '' : panelSource.slice(boxAt, boxAt + 1200)
+  check('the intent box exists in the panel', boxAt >= 0)
+  check('the box writes the intent through onSetIntent',
+    /onSetIntent\(host\.alias, next\)/.test(boxSource), boxSource.slice(0, 200))
+  check('the box no longer calls the reconnect or disconnect actions',
+    !/onReconnect/.test(boxSource) && !/onDisconnect/.test(boxSource), boxSource.slice(0, 200))
+  check('the box is gated on its own write, not on the socket',
+    /disabled: intentBusy/.test(boxSource) && !/disabled: busy/.test(boxSource), boxSource.slice(0, 200))
+
+  const hostsSource = readFileSync(path.join(pluginRoot, 'lib', 'routes', 'hosts.js'), 'utf8')
+  const intentAt = hostsSource.indexOf('path: ROUTES.hostIntent')
+  const intentSource = intentAt < 0 ? '' : hostsSource.slice(intentAt, intentAt + 1600)
+  check('the intent route only writes the flag',
+    intentAt >= 0 && /setAutoConnect\(alias, enabled\)/.test(intentSource) &&
+    !/reconnector/.test(intentSource) && !/engine\.acquire/.test(intentSource) && !/engine\.forget/.test(intentSource),
+    intentSource.slice(0, 200))
 }
 
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)

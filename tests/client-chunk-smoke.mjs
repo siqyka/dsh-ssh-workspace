@@ -345,7 +345,7 @@ console.log('\n[6] the boot chunks\' names are republished')
 
   /** The names in one `{ a, b, c }` destructuring assignment of the boot body. */
   const filled = new Set()
-  for (const match of bootBody.matchAll(/\(\{([\s\S]*?)\} = (?:locale|styles|icons)\)/gu)) {
+  for (const match of bootBody.matchAll(/\(\{([\s\S]*?)\} = (?:kernel|locale|styles|icons)\)/gu)) {
     for (const piece of match[1].split(',')) {
       const name = piece.trim().split(':').pop()?.trim() ?? ''
       if (/^[A-Za-z_$][\w$]*$/u.test(name)) filled.add(name)
@@ -364,6 +364,25 @@ console.log('\n[6] the boot chunks\' names are republished')
   const republished = listed(republishBody)
   check('the boot load fills in some names', filled.size > 0, String(filled.size))
   check('republishBootNames lists some names', republished.size > 0, String(republished.size))
+
+  // The kernel destructuring is the widest one, and a name missing from the
+  // kernel's own exports block silently arrives as `undefined` — the dialogs
+  // then call it and the user sees "sortPickerEntries is not a function" from a
+  // directory listing that has nothing to do with the name. Static and loud.
+  const kernelSource = readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.kernel.js'), 'utf8')
+  const kernelExports = listed(kernelSource)
+  const kernelFilled = new Set()
+  for (const match of bootBody.matchAll(/\(\{([\s\S]*?)\} = kernel\)/gu)) {
+    for (const piece of match[1].split(',')) {
+      const name = piece.trim().split(':').pop()?.trim() ?? ''
+      if (/^[A-Za-z_$][\w$]*$/u.test(name)) kernelFilled.add(name)
+    }
+  }
+  check('the boot load takes names from the kernel', kernelFilled.size > 0, String(kernelFilled.size))
+  const kernelMissing = [...kernelFilled].filter(name => !kernelExports.has(name))
+  check('every name the boot load takes from the kernel is exported by it',
+    kernelMissing.length === 0,
+    `destructured from the kernel but absent from its exports block: ${kernelMissing.join(', ')}`)
 
   // Only the ones a chunk can actually reach matter: a boot name that is not
   // exported is invisible to chunks and needs no republishing.

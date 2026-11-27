@@ -104,6 +104,8 @@ function renderCard (conn, overrides = {}) {
     onForgetKey: () => {},
     onDisconnect: () => {},
     onReconnect: () => {},
+    onSetIntent: () => {},
+    ...overrides.handlers,
     testState: undefined,
     deleteError: '',
     deleting: false,
@@ -210,23 +212,57 @@ check('a retry that carries an error prints it',
 
 // ---- connection intent (autoConnect switch + connecting/failed badges) ------
 
-// The checkbox reflects the persisted INTENT, not the socket: a host switched on
-// while its boot dial is still handshaking has no pool record, yet must stay
-// checked and still offer a way to turn it back off.
+// The checkbox is a MARKER for the persisted intent, not a switch for the
+// socket. It must not read as "connected": a live host the user never ticked is
+// off, and ticking it neither dials nor drops anything.
 const checkboxOf = (tree) => [...elementsOf(tree)].find(node => node.type === 'input' && node.props?.type === 'checkbox')
 check('every host card carries an auto-connect checkbox', checkboxOf(neverConnected) !== undefined)
 check('a host with no intent leaves the box unchecked', checkboxOf(neverConnected)?.props.checked === false)
-check('a live host checks the box', checkboxOf(connectedCard)?.props.checked === true)
+check('a live host with no intent still leaves the box unchecked',
+  checkboxOf(connectedCard)?.props.checked === false)
+const liveIntended = renderCard({ ...connected, autoConnect: true })
+check('a live host with the intent checked shows the box checked',
+  checkboxOf(liveIntended)?.props.checked === true)
 const intentOnly = renderCard({ alias: 'alpha', state: 'broken', inFlight: 0, autoConnect: true })
 check('a switched-on host with no socket still checks the box',
   checkboxOf(intentOnly)?.props.checked === true)
-check('a switched-on host with no socket offers a way to switch off',
-  actionKeyed(intentOnly, 'disconnect') !== undefined)
-// The control is a checkbox inside a label, not a button: `actionsOf` collects
-// only buttons, so the ordinary action set must be unchanged by its presence.
+check('a marked host with no socket offers no disconnect (there is nothing to close)',
+  actionKeyed(intentOnly, 'disconnect') === undefined)
+
+// Ticking the box only writes the intent: it must reach onSetIntent and never
+// the reconnect/disconnect handlers, which are the buttons' job.
+{
+  const calls = []
+  const recorded = renderCard(connected, {
+    handlers: {
+      onSetIntent: (alias, enabled) => calls.push(['intent', alias, enabled]),
+      onReconnect: (alias) => calls.push(['reconnect', alias]),
+      onDisconnect: (alias) => calls.push(['disconnect', alias]),
+    },
+  })
+  const box = checkboxOf(recorded)
+  await box.props.onChange({ target: { checked: true } })
+  await box.props.onChange({ target: { checked: false } })
+  check('ticking the box records the intent only',
+    JSON.stringify(calls) === JSON.stringify([['intent', 'alpha', true], ['intent', 'alpha', false]]),
+    JSON.stringify(calls))
+  check('the box is not gated on socket activity (it never touches the socket)',
+    checkboxOf(renderCard({ ...connected, inFlight: 3 }))?.props.disabled === false)
+}
+// The power switch is a button too, so "the action set is unchanged" is no
+// longer the same question as "no extra button exists": the switch must be
+// OUTSIDE the keyed action set, and only a store host may carry it (an
+// ssh-config host has no record to write `enabled` to).
+const powerSwitches = (tree) => [...elementsOf(tree)].filter(node => node.type === 'button' && node.props?.role === 'switch')
 check('the auto-connect checkbox is not counted as an action button',
   ['test', 'browse', 'edit', 'delete', 'forget'].every(key => actionKeyed(neverConnected, key) !== undefined) &&
-  [...elementsOf(neverConnected)].filter(node => node.type === 'button' && node.props?.role === 'switch').length === 0)
+  powerSwitches(neverConnected).every(node => node.props?.key === undefined || !['test', 'browse', 'edit', 'delete', 'forget'].includes(node.props.key)))
+check('a store host carries the power switch, checked while enabled',
+  powerSwitches(neverConnected).length === 1 && powerSwitches(neverConnected)[0].props['aria-checked'] === true)
+check('...and a switched-off host shows it unchecked',
+  powerSwitches(renderCard(undefined, { host: { enabled: false } }))[0]?.props['aria-checked'] === false)
+check('an ssh-config host has no power switch',
+  powerSwitches(renderCard(undefined, { host: { source: 'sshConfig' } })).length === 0)
 
 // "connecting" is the boot dial: the switch is already on, only the handshake
 // is outstanding. It must not render as the neutral "disconnected".

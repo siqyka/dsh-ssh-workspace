@@ -748,6 +748,39 @@ rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之�
   冲掉 40 条环形缓冲），状态经 `ssh_workspace_status` 的 `reconnecting` 字段与面板卡片暴露；
   `POST /hosts/reconnect` 跳过等待立即尝试。
 
+### 主机硬停用（`lib/hosts/disable.js` + `engine.disabledHosts`）
+
+「停用主机」不是一个 UI 状态，而是一道**准入闸门加一次拆除**。闸门在引擎里：
+`disabledHosts: Set<alias>`，`acquire` / `probeDescriptor` / `exec` / `openChannel` 一进来就
+`assertHostEnabled(alias)`，被拒的一次 `exec` 仍写审计（`refused: true`）——否则「为什么这条命令
+没跑」在审计里会是一片空白。拆除在 `HostDisabler.disable(alias)`：**先持久化** `enabled:false`
+（写失败就整体失败，不动任何东西），**再关闸**，然后按「在途命令 abort → 池化连接 forget →
+持久 shell → 正/反向转发 → 变更监视 → 远端终端」收尾。顺序不是风格问题：闸门必须早于拆除，
+否则后台重连能在这几步之间重新拨上；池化连接必须最后丢，因为前面每一步都可能还要用它道别。
+`enable(alias)` 只持久化并开闸，**不拨号**——开关是权限，拨号是另一件事。
+
+`HostDisabler` 的协作者全部由构造参数注入（shells / forwards / watches / terminals 可为 getter，
+因为终端路由是后建的），所以 `host-disable-smoke` 能用假 manager 驱动整场编排，也能断言
+「某个 manager 抛错不阻断其余拆除」。会话与工作区属于宿主，插件不关它们，只在客户端按
+`/status.disabledHosts` 置灰。
+
+### 命令审计的落盘与终端捕获（`lib/engine/command-log.js`、`lib/patch/terminal-typing.js`）
+
+审计环本身是内存里的（`CommandAudit`，见 engine.js 底部），重启即空。落盘是它的**外围**，
+刻意不写在环里：环只管「有没有记到、有没有边界」，写入器订阅 `audit.onChange`，500 ms 防抖后
+把整份文档原子替换。四条上界各管一层——条数由保留条数设置（1–2000，默认 200，`setCapacity`
+一处生效）、字段在**写入时**就截断与脱敏（读回时也走同一个清洗器，文件是外部输入）、
+输出从不记录、文档 512 KB 封顶（超了丢最旧）。写入失败只记为环外的一次 warn：
+一份日志不能让它描述的那条命令失败。
+
+终端捕获是审计的**第四个通道**，也是最不精确的一个。PTY 只有字节流，没有「命令行」，
+所以 `terminal-typing.js` 用一个小状态机把击键重建成行：可打印字符累积、退格/Ctrl-U 删、
+Ctrl-C 丢弃、回车成条，CSI/SS3 与 OSC 序列整体跳过（否则方向键会把 `[A` 敲进命令）。
+它明确**不是行编辑器模拟器**，所以 Tab 补全、历史展开、here-doc 都只是近似；
+`exitCode` 记 null 而不是 0，因为一次击键没有状态。馈入点在
+`RemoteTerminalHandle.write()` 的通道接受**之后**——被模式闸门拒绝的字节没有到达远端，
+不应出现在「跑过什么」里。
+
 **连接与转发的方向性是单向的**，且两个方向都有测试守着：
 
 - 连接断 → 转发断（显式拆除，不依赖 ssh2 的 `close` 事件；主动断开走
@@ -783,23 +816,23 @@ rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之�
   `priority: -100` 遮蔽原生 `directoryFlow` 双入口）与远端目录对话框；
 - 工作区标记是 **DOM 装饰**：不删改 React 节点，隐藏原生文件夹图标、
   插入自有 `svg[data-sshwsp-mark]`，MutationObserver 自愈重扫；
-- 与宿主通信走 37 条路由（前缀 `/api/dsh-ssh-workspace/`）：
+- 与宿主通信走 42 条路由（前缀 `/api/dsh-ssh-workspace/`）：
   `hosts`、`hosts/save`、`hosts/delete`、`hosts/forget-key`、
-  `hosts/disconnect`、`hosts/reconnect`、`test`、`ls`、`git-history`、`status`、`mount`、
+  `hosts/disconnect`、`hosts/reconnect`、`hosts/intent`、`hosts/toggle`、`test`、`ls`、`git-history`、`status`、`mount`、
   `unmount`、`enable`、`forward`、`unforward`、`forward/save`、
   `forward/toggle`、`forward/delete`、`forward/remember`、`forward/probe`、
   `forward/settings`、`transfer`、`download`、`download-tree`、`upload`、
   `upload-chunk`、`rename`、`delete`、`mkdir`、`create-file`、`mutation-policy`、
   `read-text`、`write-text`、`edit-text`、`self-check`、`support-bundle`、
-  `passthrough-settings`。
+  `passthrough-settings`、`preferences`、`audit`、`audit/settings`。
   路由只服务**回环请求**：除 `remoteAddress`
   回环外，还要求 `Host` 头精确为本机监听端口的 `localhost` / `127.0.0.1` /
   `[::1]` 三种拼写之一，否则 403——仅凭回环地址挡不住 DNS rebinding（页面
   可把自己的域名解析到 127.0.0.1 从而同源访问），Host 校验把这条路堵死；
   反向代理 / 自定义域名访问会被一并拒绝（预期行为）。
 - POST 路由（`hosts/save`、`hosts/delete`、`hosts/forget-key`、
-  `hosts/disconnect`、`hosts/reconnect`、`test`、`mount`、`unmount`、`enable`、
-  转发七条、`transfer`）额外要求
+  `hosts/disconnect`、`hosts/reconnect`、`hosts/intent`、`hosts/toggle`、`test`、`mount`、`unmount`、`enable`、
+  转发七条、`preferences`、`audit/settings`、`transfer`）额外要求
   `content-type: application/json`，否则 415：
   跨站 HTML 表单只能发 `text/plain` / `urlencoded` / `multipart`，且
   `text/plain` 可伪造出合法 JSON 体，靠内容类型就能把整类跨站写请求挡在

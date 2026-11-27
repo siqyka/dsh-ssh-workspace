@@ -17,15 +17,18 @@
  * callback out of `lib/client/client.js` by brace matching, binds its free
  * identifiers to recording stubs, and calls it for both kinds of entry.
  *
- * ## One kind of row
+ * ## Two kinds of row (the "show files" option)
  *
- * The picker lists DIRECTORIES: they are the rows it exists to navigate (a
- * button; double-click enters, keyboard activation enters). Files are not
- * rows at all — the request asks the server for directories only (`dirs=1`),
- * so a file entry reaching this callback means the request or the filter
- * regressed. The suite still calls the callback with one to prove it is not
- * rendered as a half-control: this dialog cannot enter a file and offers no
- * download, so a file row would be a button that does nothing.
+ * The pickers list DIRECTORIES as controls: they are the rows the dialog exists
+ * to navigate (a button; double-click enters, keyboard activation enters). With
+ * the "show files" preference on, the same listing also carries FILE rows — but
+ * those are context, not choices: a plain `div`, no handler, no `aria-current`,
+ * no focus. The suite renders both kinds through the shipped callback and pins
+ * that difference, because a file row that quietly became a button would mount or
+ * create a workspace at a path that is not a directory.
+ *
+ * The request side is pinned too: the `dirs=1` filter is still what both pickers
+ * send by default, and it is dropped only when `pickerShowsFiles()` says so.
  *
  * Run: node tests/browser-rows-smoke.mjs
  */
@@ -69,13 +72,15 @@ const callbackSource = source.slice(arrowAt, bodyEnd)
 if (source[bodyEnd] !== ')') throw new Error('the lifted listing callback does not end where the map call does')
 
 const FolderIcon = function FolderIcon () {}
+const FileIcon = function FileIcon () {}
+const t = (key) => key
 
 /**
  * Render one row through the shipped callback with recording stubs.
  *
  * @param {object} entry - listing entry from `/ls`.
- * @returns {{row: object|undefined, navigated: string[]}} the element, and the
- *   directories the row asked to enter.
+ * @returns {{row: object|undefined, navigated: string[], picks: string[]}} the
+ *   element, the directories the row asked to enter, and the picks it made.
  */
 function renderRow (entry, options = {}) {
   const navigated = []
@@ -94,11 +99,11 @@ function renderRow (entry, options = {}) {
 
   // eslint-disable-next-line no-new-func
   const factory = new Function(
-    'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
+    'jsxs', 'jsx', 'React', 'FolderIcon', 'FileIcon', 't', 'handleEntry',
     'path', 'picked', 'setPicked', 'childDirectoryPath',
     `return (${callbackSource})`,
   )
-  const callback = factory(jsxs, jsx, React, FolderIcon, handleEntry, path, picked, setPicked, childDirectoryPath)
+  const callback = factory(jsxs, jsx, React, FolderIcon, FileIcon, t, handleEntry, path, picked, setPicked, childDirectoryPath)
   return { row: callback(entry), navigated, picks }
 }
 
@@ -138,19 +143,31 @@ check('...with no batch-selection or focus override',
     dirRow.row?.props['aria-current'] === undefined,
   'an unpicked row claims to be picked, or the row re-declares its own role')
 
-// ---- and a file entry is not rendered as a second kind of row ---------------
+// ---- and a file entry is context, never a control ---------------------------
 
-// `dirs=1` means a file should never arrive. If one does, the callback still
-// answers with the directory row (it does not branch on type any more): the
-// alternative — a file row with its own glyph and no handler — is the
-// half-control this dialog deliberately does not have.
-check('a file entry gets the same directory row, not a file row of its own',
-  fileRow.row?.type === 'button' &&
-    fileRow.row?.props.className === dirRow.row?.props.className,
+// With "show files" on, a file row reaches this callback on purpose. It must
+// stay inert: a button here would offer to mount a path that is not a directory
+// (and would pick it as the mount/create target).
+check('a file entry renders a plain, non-interactive element',
+  fileRow.row?.type === 'div' && fileRow.row?.props.onClick === undefined,
+  `${fileRow.row?.type} onClick=${String(fileRow.row?.props?.onClick)}`)
+check('...with no second gesture either',
+  fileRow.row?.props.onDoubleClick === undefined,
+  'a double click on a file row would ask to enter it')
+check('...carrying the file-row class',
+  fileRow.row?.props.className.includes('sshwsp-entry-file'),
   String(fileRow.row?.props?.className))
-check('...with no class or glyph for a file row anywhere in the bundle',
-  !/sshwsp-entry-file|function FileIcon/u.test(source),
-  'a file-row style or glyph survived in a dialog that only lists directories')
+check('...announced as neither picked nor selectable',
+  fileRow.row?.props['aria-current'] === undefined &&
+    fileRow.row?.props.role === undefined &&
+    fileRow.row?.props.tabIndex === undefined,
+  'a file row claims a selection state it cannot have')
+check('...and carrying the file glyph and name',
+  partsOf(fileRow.row).length === 2 &&
+    partsOf(fileRow.row)[0].props.children.type === FileIcon &&
+    partsOf(fileRow.row)[1].props.children === 'README.md')
+check('...while the directory row keeps its button contract',
+  dirRow.row?.type === 'button', 'the two kinds of row collapsed into one')
 
 // ---- entering a directory is a double click ---------------------------------
 
@@ -197,18 +214,22 @@ check('...and the name span printing the entry name',
   dirParts[1].props.className === 'sshwsp-entry-name' &&
     dirParts[1].props.children === 'logs')
 
-// ---- both dialogs ask for directories only ----------------------------------
+// ---- both dialogs ask for directories by default ----------------------------
 
-// `dirs=1` is what makes a directory row the only row: the server filters
-// before it applies the cap, so `total` and `truncated` count the rows the
-// picker shows. `all=1` was tried and removed — it listed files as context,
-// which this dialog can neither enter nor act on.
-const dirsQueries = source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []
-check('both directory pickers request directories only', dirsQueries.length === 2,
-  `${dirsQueries.length} of 2 listings send dirs=1`)
-check('...and neither asks for the whole listing any more',
-  !/BROWSE_LIST_LIMIT\}&all=1/u.test(source),
-  'a picker still asks for files it cannot use')
+// Each picker builds the filter from the preference: `dirs=1` unless "show
+// files" is on. The server filters to directories BEFORE it applies the cap, so
+// `total` and `truncated` count the rows the picker actually shows. `all=1` was
+// tried and removed — an unconditional full listing puts files in the way of
+// choosing a directory.
+const listingQueries = source.match(/const listingQuery = pickerShowsFiles\(\) \? '' : '&dirs=1'/gu) ?? []
+check('both directory pickers build the dirs filter from the preference',
+  listingQueries.length === 2, `${listingQueries.length} of 2 listings consult the preference`)
+check('...and both spell the default as directories only',
+  !/staticListingQuery|'&all=1'/u.test(source) && (source.match(/\$\{listingQuery\}/gu) ?? []).length === 2,
+  'a picker no longer sends the preference-derived filter')
+check('...while sorting every answer directories first',
+  (source.match(/sortPickerEntries\(data\.entries\)/gu) ?? []).length === 2,
+  'a picker lost the directories-first ordering the file rows depend on')
 
 // ---- the dialog is browse-only ---------------------------------------------
 
@@ -228,11 +249,11 @@ check('...while still announcing the one row it will act on',
 const withoutReturn = callbackSource.replace(/\breturn\s+jsx\(/gu, 'jsx(')
 check('the stripped slice is a different program', withoutReturn !== callbackSource)
 const stripped = new Function(
-  'jsxs', 'jsx', 'React', 'FolderIcon', 'handleEntry',
+  'jsxs', 'jsx', 'React', 'FolderIcon', 'FileIcon', 't', 'handleEntry',
   'path', 'picked', 'setPicked', 'childDirectoryPath',
   `return (${withoutReturn})`,
 )((type, props) => ({ type, props }), (type, props) => ({ type, props }),
-  { createElement: () => ({}) }, FolderIcon, () => {}, '/home/me', null, () => {},
+  { createElement: () => ({}) }, FolderIcon, FileIcon, t, () => {}, '/home/me', null, () => {},
   (dir, name) => `${dir}/${name}`)
 check('without the return the same callback yields undefined',
   stripped(logs) === undefined,

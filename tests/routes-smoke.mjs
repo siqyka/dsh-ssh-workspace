@@ -2014,6 +2014,49 @@ async function postChunk (route, body, chunks = []) {
       }
     }
 
+    // The 「开机自动连接」 box is a MARKER: the intent route writes the flag and
+    // nothing else — no dial, no teardown. The old wiring reused
+    // /hosts/reconnect and /hosts/disconnect, so ticking the box connected the
+    // host and unticking it dropped the connection the user was working in.
+    {
+      const intentRoute = findRoute(ROUTES.hostIntent)
+      check('the intent route exists', intentRoute !== undefined)
+      const mark = async (body) => {
+        const { res, state } = fakeRes()
+        await intentRoute.handler(fakeReq({
+          method: 'POST',
+          headers: { host: 'localhost:4074', 'content-type': 'application/json' },
+          body,
+        }), res)
+        return { status: state.status, body: JSON.parse(state.body) }
+      }
+
+      const on = await mark({ alias: 'alpha-store', enabled: true })
+      check('marking a host answers 200 and echoes the intent',
+        on.status === 200 && on.body.ok === true && on.body.enabled === true, `${on.status} ${JSON.stringify(on.body)}`)
+      check('...and the intent is persisted',
+        JSON.stringify(contractEngine.store.entryStore.autoConnectHosts()) === '["alpha-store"]',
+        JSON.stringify(contractEngine.store.entryStore.autoConnectHosts()))
+      check('...without opening a connection (no dial, no pool record)',
+        contractEngine.pool.size === 0, String(contractEngine.pool.size))
+
+      const off = await mark({ alias: 'alpha-store', enabled: false })
+      check('clearing the mark answers 200 and clears the intent',
+        off.status === 200 && JSON.stringify(contractEngine.store.entryStore.autoConnectHosts()) === '[]',
+        `${off.status} ${JSON.stringify(contractEngine.store.entryStore.autoConnectHosts())}`)
+
+      // An intent for an alias nothing defines would be dialed on every start
+      // and fail there; the route refuses it instead of writing a trap.
+      const unknown = await mark({ alias: 'nobody', enabled: true })
+      check('marking an unknown host answers 404', unknown.status === 404, `${unknown.status} ${JSON.stringify(unknown.body)}`)
+      check('...and nothing was written',
+        JSON.stringify(contractEngine.store.entryStore.autoConnectHosts()) === '[]',
+        JSON.stringify(contractEngine.store.entryStore.autoConnectHosts()))
+
+      const empty = await mark({ alias: '   ', enabled: true })
+      check('a blank alias answers 400', empty.status === 400, `${empty.status} ${JSON.stringify(empty.body)}`)
+    }
+
     // The host form's 「测试」 posts the UNSAVED form: it must answer about what
     // is on screen, and nothing may be written. A probe that saved first would
     // make "test" a destructive verb, so the route hands the form straight to

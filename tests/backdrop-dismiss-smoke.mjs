@@ -189,23 +189,24 @@ console.log('\n[wiring]')
 // props are spread over several lines is still one backdrop, and matching only
 // to the newline would quietly stop checking it.
 const backdrops = [...source.matchAll(/className: 'sshwsp-backdrop'[\s\S]{0,120}?children:/gu)].map(match => match[0])
-// Four: the host editor, the directory browser, the report, and the
-// add-workspace flow. The count is asserted so a new dialog cannot be added
-// without wiring the helper — the number is the assertion, not a detail.
+// Five: the host editor, the directory browser, the report, the add-workspace
+// flow, and the host power-off confirmation. The count is asserted so a new
+// dialog cannot be added without wiring the helper — the number is the
+// assertion, not a detail.
 //
-// It used to be five. The file editor stopped being a modal: it is an inline
-// overlay on the preview body now, so it portals nowhere and has no backdrop
-// to dismiss. That change is pinned by the assertion right below, so a later
-// "just make the editor a dialog again" cannot land silently.
-check('all four dialog backdrops were found', backdrops.length === 4, `${backdrops.length} found`)
+// It used to be five and then dropped to four: the file editor stopped being a
+// modal (it is an inline overlay on the preview body now, so it portals nowhere
+// and has no backdrop). The host power dialog brought the fifth back, so the
+// check right below still pins the editor's absence.
+check('all five dialog backdrops were found', backdrops.length === 5, `${backdrops.length} found`)
 check('no backdrop still dismisses on a raw onClick',
   backdrops.every(line => !/onClick/.test(line)),
   backdrops.filter(line => /onClick/.test(line)).join(' | '))
 check('every backdrop spreads backdropDismiss',
-  backdrops.length === 4 && backdrops.every(line => line.includes('...backdropDismiss(')),
+  backdrops.length === 5 && backdrops.every(line => line.includes('...backdropDismiss(')),
   backdrops.join(' | '))
 check('the helper is wired at every floating surface',
-  (source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length === 5,
+  (source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length === 6,
   `${(source.match(/\.\.\.backdropDismiss\(/gu) ?? []).length} call(s)`)
 // The editor chunk registers in the document-preview action slot. If it ever
 // grows a backdrop again, it belongs in the count above; until then it must
@@ -274,7 +275,7 @@ console.log('\n[the dialog body still stops propagation-free dismissal]')
 {
   const panels = [...source.matchAll(/className: 'sshwsp-dialog[^']*'[\s\S]{0,400}?onClick: \((?:event|e)\) => (?:event|e)\.stopPropagation\(\)/gu)]
   check('every dialog panel still stops its own clicks (unchanged)',
-    panels.length === 4, `${panels.length} panel(s)`)
+    panels.length === 5, `${panels.length} panel(s)`)
 }
 
 console.log(`\n=== ${passes.length} passed, ${failures.length} failed ===`)

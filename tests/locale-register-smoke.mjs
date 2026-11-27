@@ -212,6 +212,7 @@ const interpolated = [...new Set(
 // `conn.state` is connected|broken; a toast action is details|copy|retry.
 // A new member is a new entry in BOTH tables, not a new literal call site.
 const FAMILIES = {
+  'audit.channel.': ['exec', 'shell', 'background', 'terminal'],
   'connections.': ['connected', 'broken'],
   'hosts.auth.': ['key', 'password', 'agent'],
   'hosts.source.': ['store', 'sshConfig'],

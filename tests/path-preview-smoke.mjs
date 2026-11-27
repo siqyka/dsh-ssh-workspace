@@ -324,6 +324,15 @@ function makeDialog ({ name, props }) {
     API: { ls: '/ls', mount: '/mount', hosts: '/hosts' },
     BROWSE_LIST_LIMIT: 2000,
     FolderIcon: function FolderIcon () {},
+    FileIcon: function FileIcon () {},
+    // The "show files" preference is off in these scenarios, so the pickers
+    // still ask for directories only.
+    pickerShowsFiles: () => false,
+    sortPickerEntries: (entries) => (entries ?? []).slice().sort((a, b) => {
+      const rankA = a.type === 'directory' ? 0 : 1
+      const rankB = b.type === 'directory' ? 0 : 1
+      return rankA - rankB || a.name.localeCompare(b.name)
+    }),
     GlobeIcon: function GlobeIcon () {},
     ArrowLeftIcon: function ArrowLeftIcon () {},
     CloseIcon: function CloseIcon () {},

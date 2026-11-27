@@ -2,7 +2,7 @@
 
 > 这个目录原先放的是**待实施的设计方案 + 一次性任务书**：`NN-<topic>.md` 是方案，`NN-<topic>-prompt.md` 是任务书。
 > 01–10 全部完成后，按约定**方案与任务书均已删除**；本页只留一行索引，指向每个工作流最终沉淀下来的文档位置。
-> 11 是**调查文档**（fork 审阅 + 两项待建功能调查），实施前先读它，实施完成后按约定删除并把落点写回本表。
+> 11、12 是**调查文档**（11 = fork 审阅 + 待建功能调查；12 = 会话窗查看文件 + 两个设置项），实施前先读，实施完成后按约定删除并把落点写回本表。两份都已实施：11 的 ①–⑤ 与 12 的全部内容都落在下表与各文档里，`11-*.md`、`12-*.md` 只剩一个指针页（运行环境不允许删文件）。
 > 行号会漂，按这里给出的文档与小节找，不要按旧任务书里的行号定位。
 
 ## 已完成的工作流
@@ -19,7 +19,8 @@
 | 08 | 文件树菜单改成「数据模型 + 宿主渲染」——**已否决**：同一份模型交给宿主画之后，本地工作区的右键长着宿主的壳、远端工作区长着插件的，同一个手势两张脸。最终选择是删掉宿主那条渲染器，只留自绘 | `docs/ui.md` 的「行菜单、重命名与删除」一节；`docs/architecture.md` 的客户端半边；`CHANGELOG.md` 的 `## [未发布]` 修复条 |
 | 09 | 剩余工作（2026-11-23 全仓审查） | R-01…R-10 已修 / 已落地，落点在 `CHANGELOG.md` 的 `## [未发布]` 与 `docs/development.md` 的套件表；R-11（读窗口 512 KiB A/B）需真机 WAN 测量，按方案约定不盲改常量，保留 `lib/fs/read-window.js` 的 256 KiB；「不再做」判定见下方 |
 | 10 | 前端表现层重构（`--sshwsp-*` 令牌契约 + 视觉语言，风格参照 dsh-opencode-go；修掉 9 个假 token、62 个游离色字面量、散乱的圆角/字号/间距/z-index、缺失的交互态与浅色层） | `docs/ui.md` 的「表现层：一套令牌契约」一节；`docs/development.md` 的 `presentation-tokens-smoke` 套件说明与反向验证一节；`tests/presentation-tokens-smoke.mjs`、`scripts/reverse-verify-presentation.mjs`；真机视觉走查清单在 `docs/manual-test-checklist.md` 的「表现层 / 视觉」组 |
-| 11 | **调查中**：fork 最近 5 commits 借鉴结论（连接失败可见性 / 连接意图 / 保活豁免）+ 三项待建功能调查：①设置「展示文件」（开关控制两个目录对话框是否显示不可选的文件行）②每台存储型主机启停电源按钮（**硬停用**：停止该主机一切连接 / shell / 转发 / 监视 / 在途命令 + 准入闸门 + 下拉过滤 + 工作区 / 会话置灰 + 点击前确认）③会话命令行审查（审计留痕 + 按会话归属；终端 PTY 按键重建，标注近似性边界；审计落盘 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh-commands.json` + 四层大小硬上界）④面板「审计」tab（按工作区审计，sessionId→工作区反查）⑤设置可配置审计保留条数（默认 200，ring / tab / 落盘以设置为唯一事实） | `docs/FF/11-fork-review-and-next-features.md`（本文，含现状调查、可行性结论、设计约束、改动面与反向验证建议）；实施后落点回写本表 |
+| 11 | **已实施（①–⑤ 全部）**：①设置「展示文件」（开关控制两个目录对话框是否显示不可选的文件行）：`preferences.showFiles`（`POST /preferences` + `/status`），两个 picker 按开关决定是否带 `dirs=1`，文件行是纯展示 `div`；②每台存储型主机电源开关（硬停用）：`POST /hosts/toggle`、`lib/hosts/disable.js`、引擎 `disabledHosts` 闸门、`/hosts` 每行 `resources`、`/status.disabledHosts` 置灰、确认框列实时资源；③会话命令行审查：`sessionId` 随 exec/background/shell/terminal 四条通道进入审计环，持久 shell 由 `ShellManager.run` 自记，终端 PTY 按键重建（近似，标注边界），审计落盘 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh-commands.json`（`lib/engine/command-log.js`）+ 四层硬上界；④面板「审计」tab（`GET /audit`、按工作区过滤、手动刷新）；⑤可配置保留条数（默认 200，1–2000；ring / tab / 落盘以 `setCapacity` 为唯一事实，`POST /audit/settings`） | `docs/features.md` 的「展示文件」「主机硬停用」「命令审计」「终端击键捕获」「审计落盘」「保留条数与审计 tab」六行；`docs/ui.md` 的「文件行只是『这里有什么』」「卡片左侧的电源开关」「第四个 tab：审计是一张表，不是一个开关」三节；`docs/architecture.md` 的「主机硬停用」与「命令审计的落盘与终端捕获」；`CHANGELOG.md` 的 `## [未发布]` 五条；`tests/host-disable-smoke.mjs`（49 项）与 `tests/command-log-smoke.mjs`（78 项） |
+| 12 | **已实施（落点已改版）**：右侧文件树点击文件在**会话窗**查看——文件占一个 `conversation.view` 标签（会话顶部标签条，与「对话 / 轨迹 / …」同排，懒注册、关掉即消失），内容占满会话区；设置项只剩「查看文件」二段式切换（会话 / 右侧文件树），控件在插件面板「设置」tab，值走插件 store 的 `preferences` 节（`/status` 下发 + `POST .../preferences`）；点击经既有捕获桥接管，读取复用 `read-text`；关闭 = `Esc` / 标头 `×`；默认 `sidebar`。初版落点 `conversation.input.dock` 与「隐藏输入框」设置已移除 | `docs/features.md` 的「会话窗查看文件」一行；`docs/ui.md` 的「会话窗里的文件预览」一节；`CHANGELOG.md` 的 `## [未发布]` 新增条；`tests/file-preview-smoke.mjs`（66 项）与 `lib/hosts/preferences.js` |
 
 ## 客户端 chunk 的宿主事实（04 的方案摘要）
 

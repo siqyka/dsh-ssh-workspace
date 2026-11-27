@@ -1018,9 +1018,11 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // what this pins, and a CRLF checkout would otherwise break the slice.
   const start = client.indexOf('// ---- Diagnostic report')
   // The pane arrays end just before the return, so the report section runs from
-  // its marker to the first line after the diagnostics pane — ending it at the
-  // dialog marker would swallow the head and tab bar that now sit between them.
-  const end = client.indexOf('const panes = {', start)
+  // its marker to the next pane marker — the audit pane now sits between the
+  // diagnostics pane and `const panes`, and slicing to that would swallow its
+  // two buttons and count them as this section's.
+  const auditStart = client.indexOf('// ---- The command audit', start)
+  const end = auditStart > start ? auditStart : client.indexOf('const panes = {', start)
   const section = start >= 0 && end > start ? client.slice(start, end) : ''
   const countIn = (re) => (section.match(re) ?? []).length
   check('the report section is locatable', section.length > 0, 'section markers missing')
@@ -1167,17 +1169,27 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // element ids, and one that lands in none disappears while the panel still
   // looks complete. So the sections are counted per pane instead of trusting
   // the tab list to be exhaustive.
-  const PANE_NAMES = ['Hosts', 'Workspaces', 'Settings']
-  const paneStarts = PANE_NAMES.map(name => client.indexOf(`const pane${name} = [`))
-  const paneBodies = paneStarts.map((at, index) => {
+  const PANE_NAMES = ['Hosts', 'Workspaces', 'Audit', 'Settings']
+  // Located BY NAME and sliced in FILE order, not in tab order: the audit pane
+  // is declared next to the settings pane (both read `status`), while the tabs
+  // list it third. Slicing by tab order would hand the audit pane the settings
+  // body and report the settings sections as missing.
+  const paneStarts = PANE_NAMES
+    .map(name => ({ name, at: client.indexOf(`const pane${name} = [`) }))
+    .filter(pane => pane.at >= 0)
+    .sort((left, right) => left.at - right.at)
+  const paneBodyOf = {}
+  for (let index = 0; index < paneStarts.length; index += 1) {
     const next = index + 1 < paneStarts.length
-      ? paneStarts[index + 1]
-      : client.indexOf('const panes = {', at)
-    return at >= 0 && next > at ? client.slice(at, next) : ''
-  })
-  check('the panel declares its three panes in tab order',
+      ? paneStarts[index + 1].at
+      : client.indexOf('const panes = {', paneStarts[index].at)
+    paneBodyOf[paneStarts[index].name] = next > paneStarts[index].at ? client.slice(paneStarts[index].at, next) : ''
+  }
+  const paneBodies = PANE_NAMES.map(name => paneBodyOf[name] ?? '')
+  check('the panel declares its four panes in tab order',
     paneBodies.every(body => body.length > 0) &&
-      client.includes("const PANEL_TABS = ['hosts', 'workspaces', 'settings']"),
+      client.includes("const PANEL_TABS = ['hosts', 'workspaces', 'audit', 'settings']") &&
+      /const panes = \{\s*hosts: paneHosts,\s*workspaces: paneWorkspaces,\s*audit: paneAudit,\s*settings: paneSettings,/u.test(client),
     paneBodies.map(body => (body.length > 0 ? 'ok' : 'missing')).join(' '))
   const PANEL_SECTIONS = [
     '// ---- Hosts',
@@ -1189,6 +1201,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     '// ---- Remote environment self-check',
     '// ---- Recent remote commands',
     '// ---- Diagnostic report',
+    '// ---- The command audit',
   ]
   const doubleParked = PANEL_SECTIONS.filter(marker =>
     paneBodies.filter(body => body.includes(marker)).length !== 1)
@@ -1201,11 +1214,13 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // Merging them is only correct if all three really moved — a leftover
   // forwards section still rendered by a deleted tab would simply vanish.
   check('the panes group the sections the way the tabs promise',
-    paneBodies[1].includes('// ---- Mounted workspaces') && paneBodies[1].includes('// ---- Detached workspaces') &&
-      paneBodies[2].includes('// ---- Port forwards') && paneBodies[2].includes('// ---- Persistent remote shells') &&
-      paneBodies[2].includes('// ---- File references') &&
-      paneBodies[2].includes('// ---- Recent remote commands') &&
-      paneBodies[2].includes('// ---- Diagnostic report'),
+    paneBodyOf.Workspaces.includes('// ---- Mounted workspaces') && paneBodyOf.Workspaces.includes('// ---- Detached workspaces') &&
+      paneBodyOf.Audit.includes("className: 'sshwsp-audit sshwsp-audit-full'") &&
+      !paneBodyOf.Audit.includes('// ---- Diagnostic report') &&
+      paneBodyOf.Settings.includes('// ---- Port forwards') && paneBodyOf.Settings.includes('// ---- Persistent remote shells') &&
+      paneBodyOf.Settings.includes('// ---- File references') &&
+      paneBodyOf.Settings.includes('// ---- Recent remote commands') &&
+      paneBodyOf.Settings.includes('// ---- Diagnostic report'),
     'a tab shows a section another tab already owns')
   // Only the selected pane renders. A `display: none` over all five would keep
   // every section mounted, which is how a panel ends up running five sections'
@@ -1257,7 +1272,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
       !/\.sshwsp-panel-inner \{[^}]*padding:[^;}]*calc\(50%/u.test(stylesText),
     'a percentage padding resolves against the container, not the capped box')
   check('the tab labels exist in both dictionaries',
-    ['panel.tabHosts', 'panel.tabWorkspaces', 'panel.tabSettings', 'panel.tabsLabel']
+    ['panel.tabHosts', 'panel.tabWorkspaces', 'panel.tabAudit', 'panel.tabSettings', 'panel.tabsLabel']
       .every(key => (client.match(new RegExp(`'${key.replace(/\./gu, '\\.')}':`, 'gu')) ?? []).length === 2),
     'a tab without a label renders as its key in one language')
   // The list is ids, not records. Dereferencing a field off a string yields
@@ -1266,7 +1281,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // `sshwsp-tab-undefined`, and every click selects the same pane. Nothing
   // throws, so only this shape pins it down.
   check('the tab row iterates the id list rather than record fields',
-    /const PANEL_TABS = \['hosts', 'workspaces', 'settings'\]/u.test(client) &&
+    /const PANEL_TABS = \['hosts', 'workspaces', 'audit', 'settings'\]/u.test(client) &&
       /PANEL_TABS\.map\(id => jsx\('button'/u.test(client) &&
       /children: t\(PANEL_TAB_KEYS\[id\]\)/u.test(client),
     'an id list read as records renders empty labels and one shared pane')
@@ -1385,20 +1400,19 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
     liveIn('DirectoryBrowser', /id: dialog\.titleId, children: t\('browser\.title'/u),
     'aria-labelledby points at nothing')
 
-  // Every row is a directory row, and it is the only row kind. The dialog used
-  // to branch — a file was a static `div`, a directory a `button` — and then
-  // briefly rendered both again; a file row is a thing this picker can neither
-  // enter nor act on, so it is gone along with its glyph and its class. A
-  // directory row is the control, and a type test has no business in the map:
-  // the request (`dirs=1`) already guarantees what arrives.
+  // A directory row is a button; a FILE row (only when the "show files"
+  // preference is on) is context and must stay inert. The distinction is the
+  // whole point of that option: the picker can enter a directory and can only
+  // mount a directory, so a file row with a handler would offer an action the
+  // dialog does not have.
   check('a directory row is a real button control',
     liveIn('DirectoryBrowser', /return jsx\('button', \{[\s\S]{0,600}?className: isPicked[\s\S]{0,160}?'sshwsp-entry sshwsp-entry-dir'/u) &&
       !/rowcheck|type: 'checkbox'/u.test(bodyOf('DirectoryBrowser')),
     'a directory row is no longer a button, or a checkbox column came back')
-  check('...and no file row survives anywhere',
-    !/sshwsp-entry-file|function FileIcon/u.test(source) &&
-      !/entry\.type !== 'directory'[\s\S]{0,80}?sshwsp-entry/u.test(bodyOf('DirectoryBrowser')),
-    'a file row, its glyph or its branch is back in a picker that only lists directories')
+  check('...and a file row is rendered, but is not a control',
+    liveIn('DirectoryBrowser', /if \(entry\.type !== 'directory'\) \{[\s\S]{0,400}?jsx\('div', \{[\s\S]{0,200}?sshwsp-entry-file/u) &&
+      !/entry\.type !== 'directory'[\s\S]{0,600}?onClick/u.test(bodyOf('DirectoryBrowser')),
+    'a file row is missing, or it grew a click handler')
   // One picked row, not a selection set: this picker has exactly one verb, and a
   // set would only exist to serve a batch action that is not here.
   check('...and the picker holds one picked row, not a selection set',
@@ -1407,10 +1421,11 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       !/rowClassName|rowChildren|selectReduce/u.test(bodyOf('DirectoryBrowser')) &&
       !/new Set\(|new Map\(/u.test(bodyOf('DirectoryBrowser')),
     'a batch selection set came back to a picker with one verb')
-  check('...and both pickers ask for directories only',
-    (source.match(/limit=\$\{BROWSE_LIST_LIMIT\}&dirs=1/gu) ?? []).length === 2 &&
+  check('...and both pickers ask for the listing the preference names',
+    (source.match(/const listingQuery = pickerShowsFiles\(\) \? '' : '&dirs=1'/gu) ?? []).length === 2 &&
+      (source.match(/\$\{listingQuery\}/gu) ?? []).length === 2 &&
       !/BROWSE_LIST_LIMIT\}&all=1/u.test(source),
-    'a picker asks for files it can neither enter nor act on')
+    'a picker no longer derives its listing from the show-files preference')
 
   // A single click PICKS a row and a double click ENTERS it. A single click used
   // to enter, which made the listing impossible to read; it then did nothing at
