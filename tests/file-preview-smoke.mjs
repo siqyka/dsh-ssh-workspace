@@ -182,9 +182,9 @@ let helpers
 try {
   const text = clientPartSource(pluginRoot, 'client.js')
   const start = text.indexOf('    /**\n     * The extension whitelist the file view will show.')
-  const end = text.indexOf('    /** The cached viewing preferences', start)
+  const end = text.indexOf('    /**\n     * Whether the directory pickers list files as read-only context rows.', start)
   const decisionStart = text.indexOf('    function filePreviewDecision', start)
-  const decisionEnd = text.indexOf('    /** Open one file in its own conversation tab', decisionStart)
+  const decisionEnd = text.indexOf('    /**\n     * Fetch and install the chunk', decisionStart)
   if (start < 0 || end < 0 || decisionStart < 0 || decisionEnd < 0) {
     throw new Error('the preview helpers are not where the map says they are')
   }
@@ -292,8 +292,8 @@ console.log('\n[client wiring]')
     client.indexOf('if (next === null) openView(\'chat\', \'\')') > 0,
     'Chat must be the absence of a file tab, not the first thing every close does')
   check('a click is only claimed when the tab could be created',
-    /decision === 'pane' && openFilePreview\(/u.test(client) &&
-      (client.match(/decision === 'pane' && openFilePreview\(/gu) ?? []).length === 2,
+    /decision === 'pane' && \(fileView\?\.open\(/u.test(client) &&
+      (client.match(/decision === 'pane' && \(fileView\?\.open\(/gu) ?? []).length === 2,
     'claiming a click the view cannot show turns "open this file" into nothing')
   check('the file view reuses the plugin editor, not a second reader',
     client.includes("require.async('./client.editor.js')") && client.includes('ConversationFileEditor') &&

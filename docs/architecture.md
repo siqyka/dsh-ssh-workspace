@@ -18,7 +18,7 @@
   用 `ctx.inject(['fs', 'workspaceRegistry'], …)` 恢复重启前登记的远端工作区；
   用 `ctx.inject(['fs', 'webServer'], …)` 注册浏览器半边的 HTTP 路由。
   这些注入都可以晚于本插件出现，安装顺序无关。
-- **客户端半边**（`lib/client/client.js` 加 13 个手写 chunk：7 个启动期、6 个按需；另有 1 个构建产物 `client.editor-engine.js`）：由 DSH 客户端的模块加载器
+- **客户端半边**（`lib/client/client.js` 加 15 个手写 chunk：7 个启动期、8 个按需；另有 1 个构建产物 `client.editor-engine.js`）：由 DSH 客户端的模块加载器
   （`window.__ModuleLoader__.load({ id, factory })`）直接执行，通过 `slots`
   服务挂载「远程工作区」面板与「添加工作区」菜单，并做工作区标记的 DOM 装饰。
   文件树右键菜单是**模型 + 一个渲染器**：`rowMenuModel` / `blankMenuModel` 先产出一份
@@ -809,8 +809,9 @@ Ctrl-C 丢弃、回车成条，CSI/SS3 与 OSC 序列整体跳过（否则方向
 
 ## 客户端半边
 
-`lib/client/client.js` 是手写的主包（无构建步骤），由 DSH 客户端加载器执行；五个
-`client.<name>.js` chunk 与它同目录，按需 `require.async`：
+`lib/client/client.js` 是手写的主包（无构建步骤），由 DSH 客户端加载器执行；十五个
+`client.<name>.js` chunk 与它同目录（七个启动期取回，其余按需 `require.async`，
+另有一个构建产物 `client.editor-engine.js`）：
 
 - 通过 `slots` 挂「远程工作区」面板、「添加工作区」锚定菜单（以
   `priority: -100` 遮蔽原生 `directoryFlow` 双入口）与远端目录对话框；

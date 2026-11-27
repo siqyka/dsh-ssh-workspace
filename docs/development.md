@@ -14,7 +14,7 @@
 | HTTP routes | 42 | `lib/routes/` |
 | model-facing tools | 11 | `lib/surface/tools.js` |
 | upstream patch modules | 7 | `lib/patch/patch-*.js` |
-| modules under `lib/` | 68 | recursive listing |
+| modules under `lib/` | 69 | recursive listing |
 | test suites | 88 | `tests/run.mjs` |
 | passing assertions (sampled) | 6190 | measured 2026-11-27 |
 
@@ -22,7 +22,7 @@
 
 ## 源码结构
 
-纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client/client.js`）加十二个 chunk（七个启动期、五个按需），都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
+纯 loader 插件，无构建步骤：宿主半边是原生 ESM，浏览器半边是手写的主 bundle（`lib/client/client.js`）加十五个 chunk（七个启动期、八个按需），都由 DSH 前端的 `window.__ModuleLoader__.load({id, factory})` 约定直接加载，不经打包器。
 
 `lib/` 按能力域分了文件夹，**分层只有一条规则**：越靠下越不依赖别人。`core/` 里的模块不 import `lib/` 内任何东西（`protocol` / `shared` / `peers` / `diagnostics` / `mode-gate` / `tool-schema` / `upstream-contract` 七个都是零出边），所以任何层都能安全地引用它们；其余文件夹可以引用 `core/`，也可以引用自己这一层，但不能反向。这条规则由 `scripts/graph-cycles.mjs` 的环数守（现在 6 个，全部是 `lib/routes/` 内部既有的——每加一个 handler 模块就会多一条它到组合点的回边）。
 
@@ -91,6 +91,9 @@
 | `lib/client/client.add-workspace.js` | 浏览器半边的按需 chunk：添加工作区流程（本地 / 远程选择器、远程目录选择、挂载）。宿主会无条件渲染 `directoryFlow` 空洞，所以主包留了个 `FlowSlot`：关闭时直接返回 `null`，只有 `open` 才去取 chunk |
 | `lib/client/client.transfer-queue.js` | 浏览器半边的按需 chunk：转移队列浮层（队列状态仍在主包，文件面板也在读它） |
 | `lib/client/client.history.js` | 浏览器半边的按需 chunk：更改请求标签页底部的提交历史页脚 |
+| `lib/client/client.fileview.js` | 浏览器半边的 chunk（`apply` 里就取回，不等手势）：会话里的文件视图——`conversation.view` 的每文件标签注册、会话 roster（离开会话注销而不遗忘）、标签条装饰与点击切换、Markdown 文档面板、复用编辑器 chunk 的内联编辑、合成器隐藏。纯规则（扩展名白名单、章节判定、标签 id/名字）留在主包，由 `installFileView(host)` 注入，因为文件树桥必须**同步**回答一次点击 |
+| `lib/client/client.markdown.js` | 浏览器半边的按需 chunk：自带的 Markdown 解析与渲染（frontmatter、表格、代码卡、引用、任务清单）；由文件视图第一次打开文档时取回，原始 HTML 一律当文本、相对链接与图片降级 |
+| `lib/client/client.editor.js` | 浏览器半边的按需 chunk：文件编辑器（CodeMirror 引擎 + 保存路径），文件视图把它以内联方式复用，宽度与关闭按钮交给会话标签 |
 | `lib/patch/patch-projection.js` | **上游临时补丁**（`UPSTREAM-1`）：把 `workingDirectory` 投影单元的 schema 放宽到接受 `ssh://`。上游修好后自动停止生效并报出六态结论，见 [upstream-workarounds.md](./upstream-workarounds.md) 与 [upstream-workaround-pattern.md](./upstream-workaround-pattern.md)。文件底部是它自己的**退役探针**：`observePathBindingReads` 在探测期间把 `node:path.isAbsolute` 换成记账包装，`acceptsWithoutOurPatch` 再问一次「把我们补丁撤掉还接受吗」——「宿主接受 `ssh://`」有两种成因，函数值形式被捕获下来的 schema 永远碰不到记账包装，只有真正读绑定的那次接受才意味着补丁可以删 |
 
 ## 上游临时补丁
