@@ -545,6 +545,10 @@ console.log('\n[renderer]')
   check('the document body takes the token text colour, not the host default',
     /\.sshwsp-md \{ max-width: 860px;[^}]*color: var\(--sshwsp-text\)/u.test(styles),
     'unstyled-looking text is the symptom of an unresolved token')
+  check('source and preview share one column',
+    /\.sshwsp-filepane-body \.sshwsp-editor-panel-inline \{[^}]*max-width: 904px;[^}]*margin: 0 auto;/u.test(styles) &&
+      /\.sshwsp-md \{ max-width: 860px/u.test(styles),
+    '860px of text plus 22px of side padding on each side: the buffer must not be full-bleed next to a centred document')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
