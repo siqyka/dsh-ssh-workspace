@@ -951,6 +951,22 @@ console.log('\n[strip]')
     'one row is not ours to decide: forcing nowrap puts a scrollbar on the host strip')
 }
 
+// [freeze] the decoration pass must not wake itself up
+console.log('\n[freeze]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  check('re-writing a tail feeds the observer that would rewrite it',
+    chunk.includes('if (tailNode.textContent !== tail) tailNode.textContent = tail'),
+    'assigning the same string still mutates the node, and the strip observer then re-runs the pass: an endless microtask loop that freezes the page')
+  check('the strip observer watches structure only',
+    chunk.includes('stripObserver.observe(strip, { childList: true, subtree: true })') &&
+      !chunk.includes('characterData: true'),
+    'React replaces label nodes; it does not edit their text in place')
+  check('a mounted strip is not re-queried on every DOM change',
+    chunk.includes('if (strip !== null && strip.isConnected === true) return'),
+    'the chat streams mutations constantly; querySelector per mutation is measurable work for no new information')
+}
+
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`)
