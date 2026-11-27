@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+- **本地文件也走字节路由**：本地会话的图片/视频/PDF/HTML 不再被让回右侧（也不再显示「会话还没连上主机」）。`download` 与 `html` 两条路由在拿不到别名时按 `sessionId` 走本地分支，围栏用会话自己的 `header.cwd`，词法与 `realpath` 双重检查；客户端一个 `byteUrlOf` 同时构造两种 URL。`file-preview-smoke` 160 项。
+
 - **修复：本地图片被会话预览接管后变死链**：字节查看器需要会话别名，本地工作区没有别名，于是图片被接管却只能显示「会话还没连上主机」。现在图片/音视频/PDF/HTML 只在能解析出别名时接管，其余仍交给宿主预览；加载失败时把路由的 `error` 原样附在提示下面。`file-preview-smoke` 155 项。
 
 - **修复：媒体预览报「远端文件不存在」**：文件树给的是 `ssh://<alias>/<abs>`，字节路由把它整串交给 SFTP，于是 `pdf`/`png` 打开时得到 `remote file does not exist: ssh://…`。新增 `lib/routes/remote-target.js` 在入口把这种拼写拆回别名 + 远端绝对路径，download、downloadTree、html 三条路由共用。`file-preview-smoke` 153 项（新增 7 条路径归一断言）。

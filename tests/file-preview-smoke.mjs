@@ -619,7 +619,7 @@ console.log('\n[renderer]')
     /jsx\(Document, \{ text: state\.text, t, imgSrc: imageResolverFor\(path, sessionId\) \}\)/u.test(chunk),
     'the only renderer that carries the plugin stylesheet')
   check('a document image is routed through the byte route',
-    /API\.download\}/u.test(chunk) &&
+    /byteUrlOf\(API\.download, absolute, sessionId/u.test(chunk) &&
       /function resolveRelativePath/u.test(chunk) &&
       /function imageResolverFor/u.test(chunk),
     'a remote <img src> has no local file to point at')
@@ -668,12 +668,37 @@ console.log('\n[media]')
   const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
   check('a local workspace keeps its media',
     chunk.includes("if (viewer !== 'text' && viewer !== 'markdown')") &&
-      chunk.includes("if (alias === '') return false"),
-    'claiming a click and then saying "not connected" turns a picture the host can show into a dead note')
+      chunk.includes("if (alias === '' && (typeof sessionId !== 'string' || sessionId === '')) return false"),
+    'a local file has no alias but still has a session to fence the read against')
+  check('one byte URL builder serves both worlds',
+    chunk.includes('function byteUrlOf (base, path, sessionId, extra = {})') &&
+      chunk.includes("else if (typeof sessionId === 'string' && sessionId !== '') query.set('sessionId', sessionId)") &&
+      chunk.includes("const source = byteUrlOf(API.html, path, sessionId)"),
+    'two hand-built URLs drifted apart once already')
   check('a failed media preview quotes the route',
     chunk.includes('sshwsp-filepane-reason') &&
       chunk.includes("typeof body?.error === 'string'"),
     'the element only says "no"; the JSON body says which repair it needs')
+}
+
+// [local bytes] a local preview is served from disk under the session fence
+console.log('\n[local bytes]')
+{
+  const localBytes = readFileSync(new URL('../lib/routes/local-bytes.js', import.meta.url), 'utf8')
+  const transfers = readFileSync(new URL('../lib/routes/transfers.js', import.meta.url), 'utf8')
+  const view = readFileSync(new URL('../lib/routes/view.js', import.meta.url), 'utf8')
+  check('a local read is fenced by the session root',
+    localBytes.includes('localRootOf(owner)') && localBytes.includes('isWithinLocalRoot(root, local)'),
+    'the root must come from the session, never from the request')
+  check('a junction cannot walk the read outside',
+    localBytes.includes('await realpath(local)') && localBytes.includes('isWithinLocalRoot(root, absolute)'),
+    'the lexical check alone is not enough on Windows')
+  check('both byte routes take the local branch',
+    transfers.includes('resolveLocalRead(ctx') && view.includes('resolveLocalRead(ctx'),
+    'the media viewer and the HTML frame share the download source')
+  check('a local byte route is addressed by session, not by alias',
+    clientPartSource(pluginRoot, 'client.fileview.js').includes("query.set('sessionId', sessionId)") && transfers.includes("trimmedParam(url, 'sessionId')"),
+    'a local workspace has no alias to name it by')
 }
 
 // [target] a workspace-spelled path is normalised before SFTP sees it
