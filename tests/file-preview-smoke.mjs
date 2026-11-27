@@ -527,10 +527,13 @@ console.log('\n[viewers]')
     if (start < 0 || end < 0) throw new Error('cannot lift ' + marker)
     return bundle.slice(start, end)
   }
+  // The binary table has to travel WITH the classifier: it is the only name
+  // list left, and an 'unknown' verdict is meaningless without it.
   const source = lift('const VIEWER_FAMILIES', 'function viewerOf') +
+    lift('const PREVIEW_BINARY_EXTENSIONS', '    /**') +
     lift('function viewerOf', '    /**\n     * Whether the directory pickers')
   const previewNameOf = (path) => String(path ?? '').split(/[\\/]/u).pop().toLowerCase()
-  const isPreviewablePath = (path) => /\.(?:txt|json|ts)$/u.test(String(path ?? '').toLowerCase())
+  const isPreviewablePath = (path) => /\.(?:txt|json|ts|cts|bat)$/u.test(String(path ?? '').toLowerCase())
   const factory = new Function('previewNameOf', 'isPreviewablePath', source + '\nreturn viewerOf')
   const viewerOf = factory(previewNameOf, isPreviewablePath)
   const table = [
@@ -544,6 +547,12 @@ console.log('\n[viewers]')
     ['/repo/manual.pdf', 'pdf'],
     ['/repo/config.json', 'text'],
     ['/repo/archive.zip', 'binary'],
+    ['/repo/tsconfig.cts', 'text'],
+    ['/repo/build.bat', 'text'],
+    // Neither text-by-name nor binary-by-name: the bytes decide, so the name
+    // alone must not send it to the host's preview.
+    ['/repo/LICENSE-APACHE', 'unknown'],
+    ['/repo/script', 'unknown'],
   ]
   for (const [path, kind] of table) {
     check(path + ' opens as ' + kind, viewerOf(path) === kind)
@@ -679,6 +688,38 @@ console.log('\n[media]')
     chunk.includes('sshwsp-filepane-reason') &&
       chunk.includes("typeof body?.error === 'string'"),
     'the element only says "no"; the JSON body says which repair it needs')
+}
+
+// [sniff] whose bytes decide, not whose name
+console.log('\n[sniff]')
+{
+  const { sniffTextBytes, bomlessUtf16, SNIFF_BYTES } = await load('lib/routes/text-sniff.js')
+  check('a plain UTF-8 file is text', sniffTextBytes(Buffer.from('hello\n')).kind === 'text')
+  check('a NUL after the encoding checks is binary',
+    sniffTextBytes(Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00])).kind === 'binary')
+  check('a UTF-8 BOM keeps text as text',
+    sniffTextBytes(Buffer.from('\ufeffhi', 'utf8')).encoding === 'utf8-bom')
+  check('UTF-16 without a BOM is not binary',
+    sniffTextBytes(Buffer.from('hello world', 'utf16le')).kind === 'text' &&
+      bomlessUtf16(Buffer.from('hello world', 'utf16le')) === 'utf16le')
+  check('a legacy CJK file stays text',
+    sniffTextBytes(Buffer.from([0xc4, 0xe3, 0xba, 0xc3, 0xca, 0xc0, 0xbd, 0xe7])).kind === 'text')
+  check('the window is the documented 4 KiB', SNIFF_BYTES === 4096)
+
+  const routes = readFileSync(new URL('../lib/routes/text.js', import.meta.url), 'utf8')
+  check('the read route answers the sniff', routes.includes("trimmedParam(url, 'sniff') === '1'") &&
+    routes.includes('sniffTextBytes(head)'), 'the client asks by path, so the route has to answer')
+
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  check('the pane probes instead of refusing', chunk.includes('function probeFile') &&
+    chunk.includes("sniffedKinds.set(key, kind)"), 'a verdict costs one read and is then free')
+  check('...and says so while it waits', chunk.includes('preview.sniffing') && chunk.includes('function BinaryNote'))
+
+  const bundleSource = clientPartSource(pluginRoot, 'client.js')
+  check('an unknown suffix is not a refusal', /return 'unknown'/u.test(bundleSource) &&
+    /PREVIEW_BINARY_EXTENSIONS/u.test(bundleSource), 'binary needs a name list; everything else is sniffed')
+  check('the fast path still knows cts and bat', /'bat', 'cmd', 'cts'/u.test(bundleSource),
+    'a whitelist is there so the common case never waits for a probe')
 }
 
 // [local bytes] a local preview is served from disk under the session fence

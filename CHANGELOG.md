@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+- **按内容判文本，而不是按后缀**：后缀表退为快速路径，认不出的后缀先在会话里接管，再读 4 KiB 决定（BOM → 无 BOM UTF-16 → NUL → UTF-8 → GB18030）。`cts`、`bat`、无扩展名脚本因此能在会话里打开；确认二进制给说明卡而不是白屏。`readText` 新增 `sniff=1`，判定结论按（会话, 路径）缓存。`file-preview-smoke` 175 项，新增 `lib/routes/text-sniff.js`。
+
 - **Python 文件里 Tab 现在插入 4 个空格**（`.py`/`.pyw`），`Shift+Tab` 同量收回；其余文件仍是 2 空格。缩进在 Python 里是语法，四个空格是 PEP 8 与所有格式化工具的共识。`file-editor-smoke` 231 项。
 
 - **本地文件也走字节路由**：本地会话的图片/视频/PDF/HTML 不再被让回右侧（也不再显示「会话还没连上主机」）。`download` 与 `html` 两条路由在拿不到别名时按 `sessionId` 走本地分支，围栏用会话自己的 `header.cwd`，词法与 `realpath` 双重检查；客户端一个 `byteUrlOf` 同时构造两种 URL。`file-preview-smoke` 160 项。
