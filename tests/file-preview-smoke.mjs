@@ -285,10 +285,10 @@ console.log('\n[client wiring]')
     /data-sshwsp-tab-close/u.test(client) && /new MutationObserver\(decorate\)/u.test(client) &&
       /preview\.tabClose/u.test(client),
     'a file tab that can only be closed from inside the file view is a trap once several are open')
-  check('the × stays on the name\'s line, pinned right, under a fixed tab width',
-    /const FILE_TAB_WIDTH = 208/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
+  check('the × stays on the name\'s line, pinned right, above a capped tab width',
+    /const FILE_TAB_MAX_WIDTH = 200/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
       /position: 'absolute'/u.test(client) && /right: '4px'/u.test(client) &&
-      /flex: `0 0 \$\{FILE_TAB_WIDTH\}px`/u.test(client) && /paddingRight: `\$\{FILE_TAB_CLOSE_ROOM\}px`/u.test(client),
+      /flex: '0 1 auto'/u.test(client) && /maxWidth: `\$\{FILE_TAB_MAX_WIDTH\}px`/u.test(client) && /paddingRight: `\$\{FILE_TAB_CLOSE_ROOM\}px`/u.test(client),
     'an inline × wraps under a long name and makes the whole tab row a line taller')
   check('closing the last tab returns the session to the conversation',
     /openView\('chat', ''\)/u.test(client),
@@ -924,7 +924,7 @@ console.log('\n[tab labels]')
     'React owns the name; the tail must be a node we can re-add, never text we rewrite')
   check('hovering names the file in full',
     chunk.includes('button.title = String(path)') && chunk.includes("textOverflow: 'ellipsis'"),
-    'the tab is a fixed 208px: a long name is clipped, so the tooltip is the only full spelling left')
+    'the tab is capped at 200px, not pinned: a pinned width made the host wrap the strip onto a second row')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
