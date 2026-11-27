@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+- **修复：HTML 的「允许脚本」点了没反应**：sandbox 标志在导航时固定，只改属性不会重载文档，因此页面仍在无脚本状态下运行。现在用 `key` 重建 iframe；同时把横幅从「这个页面来自远端主机」改成中性说明（本地文件也走同一个查看器）。沙箱仍不含 `allow-same-origin`——那会与 `allow-scripts` 组合成逃逸，依赖 cookie/localStorage 的页面解锁后仍会失败，属有意取舍。
+
 - **修复：编辑器里 Python 仍是 2 空格**：上一轮只改了 textarea 回退路径的 Tab 处理；有 CodeMirror 时按键由它接管，缩进走 `indentUnit` 面（默认 2）。现在引擎接收 `indent` 参数，`indentUnit.of(unit)` 与 `tabSize` 一起生效，面板按后缀把 4/2 传进去。`file-editor-smoke` 234 项。
 
 - **服务端能力自检**：`/status.features` 列出本构建注册的路由能力，客户端开页时对比自己的需求；旧进程在设置页顶部给出「服务端进程比当前插件旧」的横幅，并在控制台说明缺了哪些能力——不再让「图片打不开」「文件不存在」去冒充文件问题。`file-preview-smoke` 179 项。

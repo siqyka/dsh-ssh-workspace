@@ -684,6 +684,15 @@ console.log('\n[media]')
       chunk.includes("else if (typeof sessionId === 'string' && sessionId !== '') query.set('sessionId', sessionId)") &&
       chunk.includes("const source = byteUrlOf(API.html, path, sessionId)"),
     'two hand-built URLs drifted apart once already')
+  check('the frame is remounted when scripts are unlocked', (() => {
+    const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+    return /key: unlocked \? 'unlocked' : 'sandboxed'/u.test(chunk) &&
+      /sandbox: unlocked \? 'allow-scripts allow-forms allow-popups' : ''/u.test(chunk) &&
+      !/allow-same-origin/u.test(chunk)
+  })(), 'sandbox flags apply at navigation: flipping the attribute alone changes nothing, and allow-same-origin would let a page reach the app')
+  check('the unlock banner does not claim a remote host',
+    /preview\.htmlUnlocked': '脚本已允许：页面可以运行自己的代码/u.test(clientPartSource(pluginRoot, 'client.locale.js')),
+    'local files reach the same viewer')
   check('a failed media preview quotes the route',
     chunk.includes('sshwsp-filepane-reason') &&
       chunk.includes("typeof body?.error === 'string'"),
