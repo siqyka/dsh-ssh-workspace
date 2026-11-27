@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+- **修复：媒体预览报「远端文件不存在」**：文件树给的是 `ssh://<alias>/<abs>`，字节路由把它整串交给 SFTP，于是 `pdf`/`png` 打开时得到 `remote file does not exist: ssh://…`。新增 `lib/routes/remote-target.js` 在入口把这种拼写拆回别名 + 远端绝对路径，download、downloadTree、html 三条路由共用。`file-preview-smoke` 153 项（新增 7 条路径归一断言）。
+
 - **修复：媒体文件仍然落到右侧**：单击判定改对了，但安装后的 chunk 里 `openFilePreview()` 还有一道自己写的 `isPreviewablePath` 闸门——桥先 `preventDefault` 再被 chunk 拒绝，于是图片/视频/PDF 又回到宿主右栏。现在两道闸门都跟随 `viewerOf`（未知二进制才留给宿主）。`file-preview-smoke` 146 项（新增「打开与接管同一闸门」）。
 
 - **修复：图片/音视频/PDF 也会被会话接管**：点击判定原来只看文本白名单，于是 `logo.png` / `clip.mp4` / `manual.pdf` 在「会话中查看」模式下仍然落到宿主右栏，媒体查看器根本进不去。判定改为跟随 `viewerOf`——只要插件有查看器就接管，未知二进制（`zip`/`bin`）仍留给宿主。`file-preview-smoke` 145 项（新增 9 条「哪类文件被接管」）。

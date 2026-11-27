@@ -661,6 +661,34 @@ console.log('\n[renderer]')
     'a bar pinned to the pane edge puts the buttons past the text column; the 22px must match the docpane padding')
 }
 
+// [target] a workspace-spelled path is normalised before SFTP sees it
+console.log('\n[target]')
+{
+  const { resolveRemoteTarget } = await load('lib/routes/remote-target.js')
+  const prefixed = resolveRemoteTarget('', 'ssh://qiyk/home/qiyk/test/dzfp.pdf')
+  check('an ssh:// spelling is split into alias and path',
+    prefixed?.alias === 'qiyk' && prefixed?.remotePath === '/home/qiyk/test/dzfp.pdf',
+    JSON.stringify(prefixed))
+  check('an explicit alias wins over the prefix', (() => {
+    const target = resolveRemoteTarget('other', 'ssh://qiyk/home/a.png')
+    return target?.alias === 'other' && target?.remotePath === '/home/a.png'
+  })(), 'the route already said which host it means')
+  check('a bare path is passed through', (() => {
+    const target = resolveRemoteTarget('qiyk', '/home/a.png')
+    return target?.alias === 'qiyk' && target?.remotePath === '/home/a.png'
+  })(), 'the common case must not regress')
+  check('a bare path with no alias names nothing', resolveRemoteTarget('', '/home/a.png') === undefined)
+  check('a broken prefix is a bad request, not a missing file',
+    resolveRemoteTarget('qiyk', 'ssh://broken') === undefined)
+  const transfers = readFileSync(new URL('../lib/routes/transfers.js', import.meta.url), 'utf8')
+  const view = readFileSync(new URL('../lib/routes/view.js', import.meta.url), 'utf8')
+  check('both byte routes normalise', transfers.includes('resolveRemoteTarget(') && view.includes('resolveRemoteTarget('),
+    'the media viewer and the HTML frame take the same path, so both need the same split')
+  check('the raw query string never reaches SFTP',
+    !/openRemoteRead\(engine, alias, trimmedParam\(url, 'path'\)/u.test(transfers),
+    'passing ssh://qiyk/home/… to sftpStatOrNull is the bug this guards')
+}
+
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`)
