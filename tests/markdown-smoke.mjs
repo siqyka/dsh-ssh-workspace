@@ -313,13 +313,35 @@ check('a relative path is not a link (the file lives on another machine)',
   check('the card carries wrap and copy actions',
     head.props.children[1].props.children.length === 2)
   const body = card.props.children[1]
-  check('the code keeps its text inside the card',
-    body.type === 'pre' && body.props.children.props.children === 'git status')
+  const flatten = (children) => (Array.isArray(children) ? children : [children])
+    .map(child => typeof child === 'string' ? child : flatten(child?.props?.children))
+    .join('')
+  check('the code keeps its text inside the card, now as coloured runs',
+    body.type === 'pre' && flatten(body.props.children.props.children) === 'git status')
   const unlabelledFence = markdown.MarkdownDocument({ text: '```\nx\n```\n', t: (key) => key })
     .props.children[0]
   const unlabelled = unlabelledFence.type(unlabelledFence.props)
   check('an unlabelled fence says text instead of lying about a language',
     unlabelled.props.children[0].props.children[0].props.children === 'text')
+}
+
+{
+  // Highlighting is a tone table, not a grammar: the assertion is that the
+  // three things a reader scans for are separated — keywords, strings, comments.
+  const fence = markdown.MarkdownDocument({
+    text: '```bash\nif true; then echo "hi" fi # note\n```\n',
+    t: (key) => key,
+  }).props.children[0]
+  const rendered = fence.type(fence.props)
+  const code = rendered.props.children[1].props.children.props.children
+  const serialized = JSON.stringify(code)
+  check('shell keywords, strings and comments are coloured differently',
+    serialized.includes('sshwsp-md-tok-keyword') &&
+      serialized.includes('sshwsp-md-tok-string') &&
+      serialized.includes('sshwsp-md-tok-comment'))
+  check('the highlighted text still reads as the original line',
+    code.map(child => typeof child === 'string' ? child : child.props.children).join('') ===
+      'if true; then echo "hi" fi # note')
 }
 
 check('an empty document renders an empty article',

@@ -522,6 +522,15 @@ console.log('\n[renderer]')
       /function resolveRelativePath/u.test(chunk) &&
       /function imageResolverFor/u.test(chunk),
     'a remote <img src> has no local file to point at')
+  check('the pane carries its own close button',
+    /className: 'sshwsp-filepane-head'/u.test(chunk) &&
+      /className: 'sshwsp-filepane-close'/u.test(chunk) &&
+      /closeFilePreview\(filePath, sessionId\)/u.test(chunk),
+    'a tab collapsed into the overflow menu has no × on the strip, so the pane needs one')
+  check('fenced code is toned, not flat',
+    /sshwsp-md-tok-\$\{run\.kind\}/u.test(clientPartSource(pluginRoot, 'client.markdown.js')) &&
+      /sshwsp-md-tok-comment/u.test(clientPartSource(pluginRoot, 'client.styles.js')),
+    'the host preview colours code; a flat grey block is the thing being compared')
   check('an unresolvable image keeps the placeholder path',
     /typeof src !== 'string' \|\| src === ''/u.test(clientPartSource(pluginRoot, 'client.markdown.js')),
     'an unknown alias must not become src="" (which looks like a broken image)')
