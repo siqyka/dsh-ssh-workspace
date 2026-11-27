@@ -286,7 +286,7 @@ console.log('\n[client wiring]')
       /preview\.tabClose/u.test(client),
     'a file tab that can only be closed from inside the file view is a trap once several are open')
   check('the × stays on the name\'s line, pinned right, above a capped tab width',
-    /const FILE_TAB_MAX_WIDTH = 200/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
+    /const FILE_TAB_MAX_WIDTH = 180/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
       /position: 'absolute'/u.test(client) && /right: '4px'/u.test(client) &&
       /flex: '0 1 auto'/u.test(client) && /maxWidth: `\$\{FILE_TAB_MAX_WIDTH\}px`/u.test(client) && /paddingRight: `\$\{FILE_TAB_CLOSE_ROOM\}px`/u.test(client),
     'an inline × wraps under a long name and makes the whole tab row a line taller')
@@ -922,9 +922,13 @@ console.log('\n[tab labels]')
       chunk.includes("setAttribute('data-sshwsp-tab-dir', '')") &&
       chunk.includes("direction: 'rtl'"),
     'React owns the name; the tail must be a node we can re-add, never text we rewrite')
-  check('hovering names the file in full',
-    chunk.includes('button.title = String(path)') && chunk.includes("textOverflow: 'ellipsis'"),
-    'the tab is capped at 200px, not pinned: a pinned width made the host wrap the strip onto a second row')
+  check('hovering names the file in full, in a tip we draw',
+    chunk.includes('function showTabTip') && !chunk.includes('button.title = String(path)') &&
+      chunk.includes("borderRadius: '8px'") && chunk.includes("setAttribute('role', 'tooltip')"),
+    'the native title is square and unstylable; a rounded tip is the only one that can look like this product')
+  check('every file tab truncates at the same width',
+    chunk.includes("maxWidth: tail === '' ? '148px' : '96px'"),
+    'a tab that fits its name and one that does not must not look like two components')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
