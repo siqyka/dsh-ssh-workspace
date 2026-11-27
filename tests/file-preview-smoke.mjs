@@ -286,7 +286,7 @@ console.log('\n[client wiring]')
       /preview\.tabClose/u.test(client),
     'a file tab that can only be closed from inside the file view is a trap once several are open')
   check('the × stays on the name\'s line, pinned right, under a fixed tab width',
-    /const FILE_TAB_WIDTH = 208/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
+    /const FILE_TAB_WIDTH = 165/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
       /position: 'absolute'/u.test(client) && /right: '4px'/u.test(client) &&
       /flex: `0 0 \$\{FILE_TAB_WIDTH\}px`/u.test(client) && /paddingRight: `\$\{FILE_TAB_CLOSE_ROOM\}px`/u.test(client),
     'an inline × wraps under a long name and makes the whole tab row a line taller')
@@ -925,6 +925,30 @@ console.log('\n[tab labels]')
   check('hovering names the file in full',
     chunk.includes('button.title = String(path)') && chunk.includes("textOverflow: 'ellipsis'"),
     'the tab is a fixed 208px: a long name is clipped, so the tooltip is the only full spelling left')
+}
+
+// [strip] our own nodes are never read as the tab name
+console.log('\n[strip]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  const source = chunk.slice(chunk.indexOf('function tabTextOf'), chunk.indexOf('function cssEscape'))
+  const node = (text, attributes = []) => ({
+    textContent: text,
+    hasAttribute: name => attributes.includes(name),
+  })
+  const lift = new Function(source + '; return tabTextOf')()
+  const label = node('index.ts')
+  const tail = node('…/src', ['data-sshwsp-tab-dir'])
+  const close = node('×', ['data-sshwsp-tab-close'])
+  check('a tail is a sibling, never part of the tab name',
+    lift({ childNodes: [label, tail, close] }) === 'index.ts',
+    'reading textContent glued it on, so no open file matched and the tail survived its twin being closed')
+  check('...and so is the ×',
+    lift({ childNodes: [label, close] }) === 'index.ts',
+    'the same glued read would have made every decorated tab unrecognisable')
+  check('the tab keeps the host strip to itself',
+    !chunk.includes("flexWrap: 'nowrap'") && !chunk.includes("overflowX: 'auto'"),
+    'one row is not ours to decide: forcing nowrap puts a scrollbar on the host strip')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
