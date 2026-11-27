@@ -926,6 +926,21 @@ console.log('\n[tab labels]')
     chunk.includes("button.removeAttribute('title')") && !chunk.includes('button.title = ') &&
       chunk.includes("textOverflow: 'ellipsis'"),
     'the host chrome owns the tab strip: a black OS tooltip on top of it reads as a bug, and the pane header names the file')
+  check('the tab carries its own hover label instead',
+    chunk.includes('function installTabTip') && chunk.includes("'sshwsp-tabtip sshwsp-tokens'") &&
+      chunk.includes('data-sshwsp-tab-path') && chunk.includes('}, 320)'),
+    'a label the plugin draws can use the theme; a title the browser draws cannot')
+  check('the hover label is positioned, clamped and torn down',
+    chunk.includes('const above = box.top - own.height - 8') &&
+      chunk.includes('window.innerWidth - own.width - 8') &&
+      chunk.includes("window.addEventListener('scroll', hide, true)") &&
+      chunk.includes('tabTipDetach?.()'),
+    'a fixed label over a scrolling strip must move with nothing, so it hides rather than chases')
+  const chrome = clientPartSource(pluginRoot, 'client.styles.js')
+  check('the hover label is styled by the plugin, not the OS',
+    chrome.includes('.sshwsp-tabtip {') && chrome.includes('.sshwsp-tabtip,') &&
+      chrome.includes('pointer-events: none; }'),
+    'the token scope has to include the element, or --sshwsp-* vars resolve to nothing outside the panel')
 }
 
 // [strip] our own nodes are never read as the tab name
