@@ -101,6 +101,7 @@ const SUITES = [
   'command-log',
   'text-encoding',
   'file-editor',
+  'markdown',
   'backdrop-dismiss',
   'projection-relax',
   'projection-real',

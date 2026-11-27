@@ -984,6 +984,24 @@ const textRoutes = routeModuleSource(pluginRoot, 'text')
   check('...with build and staleness scripts, so the artifact cannot drift',
     /node scripts\/build-editor-engine\.mjs/u.test(manifest.scripts?.['build:editor'] ?? '') &&
       /--check/u.test(manifest.scripts?.['check:editor'] ?? ''))
+  // Word wrap off makes CodeMirror scroll the text under a pinned gutter. A
+  // see-through gutter lets a long line print straight over the line numbers,
+  // so the gutter paints the surface the code sits on — not `transparent`.
+  check('the gutter is opaque, so unwrapped text cannot run over the line numbers',
+    engineSource.includes('backgroundColor:"var(--sshwsp-gutter-bg, transparent)"') &&
+      /--sshwsp-gutter-bg: var\(--sshwsp-surface\)/u.test(styles) &&
+      /\.sshwsp-editor-panel-inline \{ --sshwsp-gutter-bg: var\(--sshwsp-bg\)/u.test(styles),
+    'a transparent gutter shows the line text through the numbers once the code scrolls sideways')
+
+  // A three-digit line number already fills the 2ch floor, so the digits need
+  // padding of their own before the first character of the line starts. This
+  // lives in the generated chunk, so the numbers are pinned here: change the
+  // theme without rebuilding and this fails.
+  check('the line numbers keep a gap from the text (gutter padding, not zero)',
+    engineSource.includes('".cm-gutterElement":{padding:"0 14px 0 0",minWidth:"2ch"}') &&
+      engineSource.includes('borderRight:"none",paddingLeft:"8px"}') &&
+      engineSource.includes('".cm-line":{padding:"0 12px 0 0"}'),
+    'gutter right padding at 6px left the first character touching the digits')
 
   // Evaluating the real bundle is the difference between "a file exists" and
   // "mounting an editor is possible": it proves the factory returns a real

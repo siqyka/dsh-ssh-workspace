@@ -130,14 +130,22 @@ const editorTheme = EditorView.theme({
     overflow: 'auto',
   },
   '.cm-content': { padding: '8px 0', caretColor: 'var(--dsw-alias-label-primary, #e0e0e0)' },
-  '.cm-line': { padding: '0 10px 0 0' },
+  '.cm-line': { padding: '0 12px 0 0' },
   '.cm-gutters': {
-    backgroundColor: 'transparent',
+    // Opaque on purpose: CodeMirror pins the gutters to the left edge while the
+    // text scrolls under them, so a see-through gutter lets a long line run
+    // straight over the line numbers once word wrap is off. The variable is the
+    // surface the code area itself sits on — `--sshwsp-surface` in the right
+    // pane, the conversation background for the inline view.
+    backgroundColor: 'var(--sshwsp-gutter-bg, transparent)',
     color: 'var(--dsw-alias-label-tertiary, #777)',
     borderRight: 'none',
-    paddingLeft: '6px',
+    paddingLeft: '8px',
   },
-  '.cm-gutterElement': { padding: '0 6px 0 0', minWidth: '2ch' },
+  // Room to the right of the digits: at the 2ch floor a three-digit line number
+  // already fills the gutter, and with no padding the first character of the
+  // line butts against it.
+  '.cm-gutterElement': { padding: '0 14px 0 0', minWidth: '2ch' },
   '.cm-activeLine': { backgroundColor: 'transparent' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--dsw-alias-label-secondary, #999)' },
   '&.cm-focused': { outline: 'none' },
