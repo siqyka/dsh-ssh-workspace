@@ -1502,11 +1502,22 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
       /\.sshwsp-browser-header \{[^}]*flex: 0 0 auto/u.test(source) &&
       !/\.sshwsp-browser-header \{[^}]*position: sticky/u.test(source),
     'the form or the path bar is still a flex-shrinking or sticky element of a list that no longer scrolls under it')
-  check('...which needs a height, not just a cap, for flex to divide',
-    /\.sshwsp-dialog-fill \{[^}]*height: min\(88vh, 760px\)/u.test(source) &&
-      /\.sshwsp-dialog-fill \{[^}]*max-height: 88vh/u.test(source) &&
+  // The fill dialog needs a bounded box for flex: 1 to divide, but a FIXED
+  // height is the wrong way to get it: a directory with three entries sat in a
+  // 760px frame with 300px of blank under the last row. The floor does the job
+  // the fixed height did (the body always has a height to divide) and the cap
+  // does the job max-height did — and the cap may not be tighter than the base
+  // dialog's, or the base rule silently wins and the list never gets its rows.
+  const fillRule = source.match(/\.sshwsp-dialog-fill \{[^}]*\}/u)?.[0] ?? ''
+  const baseDialogRule = source.match(/\.sshwsp-dialog \{[^}]*\}/u)?.[0] ?? ''
+  const baseCap = baseDialogRule.match(/max-height: ([^;]+);/u)?.[1] ?? ''
+  check('...which needs a floor, not a fixed height, for flex to divide',
+    /height: auto;/u.test(fillRule) &&
+      /min-height: min\(360px, 60vh\)/u.test(fillRule) &&
+      baseCap !== '' &&
+      fillRule.includes(`max-height: ${baseCap}`) &&
       (source.match(/className: 'sshwsp-dialog sshwsp-dialog-fill'/gu) ?? []).length === 2,
-    'a max-height-only dialog shrinks to its content, so the list never scrolls; a height under the base 80vh cap is silently clipped back')
+    'a max-height-only dialog shrinks to its content, so the list never scrolls; a fixed height leaves blank space under a short list; a cap tighter than the base dialog is silently overridden by it')
   check('...and the form above the list never becomes a scroller of its own',
     /\.sshwsp-form \{[^}]*box-sizing: border-box/u.test(source) &&
       !/\.sshwsp-form \{[^}]*overflow-y: auto/u.test(source),
@@ -2159,8 +2170,23 @@ console.log('\n[the file-reference zone: two titles, and they are not interchang
     // the assertion pins the relationship rather than the number: a rewrite
     // that made h4 the same weight would be the regression, and it is the one
     // that actually made the subheading look like a second title.
-    /\.sshwsp h4 \{ font-size: var\(--sshwsp-font-xs\); font-weight: 400; margin: 0 0 10px;/u.test(source) &&
-      /\.sshwsp h3 \{ font-size: var\(--sshwsp-font-xs\); font-weight: 500;/u.test(source),
+    //
+    // The numbers are READ, not written down here. The previous version pinned
+    // `font-weight: 500` on the zone head too, which made a purely visual
+    // decision (500 → 600, so a 12px muted label still reads as a heading)
+    // fail as if the level had been collapsed. Reading both weights is what
+    // this comment always claimed to do.
+    (() => {
+      const weightOf = (tag) => {
+        const rule = new RegExp(`\\.sshwsp ${tag} \\{([^}]*)\\}`, 'u').exec(source)?.[1] ?? ''
+        const raw = /font-weight:\s*(\d+)/u.exec(rule)?.[1]
+        return raw === undefined ? undefined : Number(raw)
+      }
+      const zone = weightOf('h3')
+      const sub = weightOf('h4')
+      return /\.sshwsp h4 \{ font-size: var\(--sshwsp-font-xs\); font-weight: \d+; margin: 0 0 10px;/u.test(source) &&
+        typeof zone === 'number' && typeof sub === 'number' && sub < zone
+    })(),
     'no lighter h4 rule — the subheading looks identical to the zone head, or is unstyled')
   check('the scheme box keeps its own accessible name',
     source.includes("'aria-label': t('passthrough.scheme')") &&

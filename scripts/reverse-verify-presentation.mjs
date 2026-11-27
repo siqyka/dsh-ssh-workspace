@@ -93,8 +93,8 @@ const MUTATIONS = [
   },
   {
     what: 'a container query restyles its own container',
-    from: '  .sshwsp-host { gap: 8px; }',
-    to: '  .sshwsp { padding: 16px; }\n  .sshwsp-host { gap: 8px; }',
+    from: '  .sshwsp-mount-info { flex: 1 0 100%; }',
+    to: '  .sshwsp { padding: 16px; }\n  .sshwsp-mount-info { flex: 1 0 100%; }',
   },
   {
     what: 'the panel stops declaring itself a container',
