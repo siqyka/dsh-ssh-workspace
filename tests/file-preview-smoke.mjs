@@ -245,6 +245,16 @@ console.log('\n[client wiring]')
   check('each tab injects its own path, so two same-named files stay apart',
     /inject: \(sessionId\) => \(\{ t: translate, filePath: path, sessionId \}\)/u.test(client),
     'a component that reads the path off the DOM cannot tell two `index.ts` apart')
+  {
+    // The host sorts `conversation.view` by this number (Chat 0, Trajectory 10,
+    // Stats 40), and an entry without one sorts as 0 — which put the file tab
+    // between "对话" and "轨迹". A file is an aside, so it must sort last.
+    const declared = /const FILE_TAB_ORDER = (\d+)/u.exec(client)
+    const used = /order: FILE_TAB_ORDER,/u.test(client)
+    check('a file tab sorts after every built-in view',
+      declared !== null && used && Number(declared[1]) > 40,
+      'without an order above the built-ins the host files the tab among the primary views')
+  }
   check('the tabs are registered lazily, one per opened file',
     /function ensureFileTab \(path\)/u.test(client) &&
       /if \(!ensureFileTab\(path\)\) return false/u.test(client) &&
