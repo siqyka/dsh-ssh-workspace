@@ -286,7 +286,7 @@ console.log('\n[client wiring]')
       /preview\.tabClose/u.test(client),
     'a file tab that can only be closed from inside the file view is a trap once several are open')
   check('the × stays on the name\'s line, pinned right, under a fixed tab width',
-    /const FILE_TAB_WIDTH = 165/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
+    /const FILE_TAB_WIDTH = 132/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
       /position: 'absolute'/u.test(client) && /right: '4px'/u.test(client) &&
       /flex: `0 0 \$\{FILE_TAB_WIDTH\}px`/u.test(client) && /paddingRight: `\$\{FILE_TAB_CLOSE_ROOM\}px`/u.test(client),
     'an inline × wraps under a long name and makes the whole tab row a line taller')
@@ -818,7 +818,7 @@ console.log('\n[tab menu]')
   check('...and trusts a label only when it is unique', (() => {
     // Both functions travel together: the fallback asks for the DRAWn label, so
     // a bare-name argument would be a second naming rule waiting to disagree.
-    const source = chunk.slice(chunk.indexOf('function tabSegmentsOf'), chunk.indexOf('function clickNthByText')) +
+    const source = chunk.slice(chunk.indexOf('function displayPathOf'), chunk.indexOf('function clickNthByText')) +
       chunk.slice(chunk.indexOf('function pathOfTabLabel'), chunk.indexOf('function closeTabs ('))
     const pathOf = new Function(
       'openFileTabs', 'fileTabName', 'sessionOpenFiles', 'registeredSessionId',
@@ -885,7 +885,7 @@ console.log('\n[tab menu]')
 console.log('\n[tab labels]')
 {
   const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
-  const source = chunk.slice(chunk.indexOf('function tabSegmentsOf'), chunk.indexOf('function clickNthByText'))
+  const source = chunk.slice(chunk.indexOf('function displayPathOf'), chunk.indexOf('function clickNthByText'))
   const build = (paths, session = 's1') => new Function(
     'fileTabName', 'sessionOpenFiles', 'registeredSessionId', 'openFileTabs',
     source + '; return tabDirTailFor',
@@ -923,8 +923,8 @@ console.log('\n[tab labels]')
       chunk.includes("direction: 'rtl'"),
     'React owns the name; the tail must be a node we can re-add, never text we rewrite')
   check('hovering names the file in full',
-    chunk.includes('button.title = String(path)') && chunk.includes("textOverflow: 'ellipsis'"),
-    'the tab is a fixed 208px: a long name is clipped, so the tooltip is the only full spelling left')
+    chunk.includes('button.title = displayPathOf(path)') && chunk.includes("textOverflow: 'ellipsis'"),
+    'the tab is a fixed 132px: a long name is clipped, so the tooltip is the only full spelling left')
 }
 
 // [strip] our own nodes are never read as the tab name
@@ -987,6 +987,26 @@ console.log('\n[batch]')
     chunk.includes('const roster = sessionOpenFiles.get(sessionId) ?? []') &&
       chunk.includes('const { others, right } = fileBatchFor(paths, path)'),
     'a folded file tab is a menuitem with no marker: asking the DOM leaves it open')
+}
+
+// [paths] one spelling for a path the user reads
+console.log('\n[paths]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  const source = chunk.slice(chunk.indexOf('function displayPathOf'), chunk.indexOf('function tabSegmentsOf'))
+  const displayPathOf = new Function(source + '; return displayPathOf')()
+  check('a remote path keeps a URL prefix and POSIX spelling',
+    displayPathOf('ssh://qiyk/home/qiyk/a\\b.py') === 'ssh://qiyk/home/qiyk/a/b.py',
+    JSON.stringify(displayPathOf('ssh://qiyk/home/qiyk/a\\b.py')))
+  check('a local path is spelled with backslashes throughout',
+    displayPathOf('F:/GitHub/x/y.md') === 'F:\\GitHub\\x\\y.md',
+    JSON.stringify(displayPathOf('F:/GitHub/x/y.md')))
+  check('an already-consistent path is left alone',
+    displayPathOf('/home/a/b.md') === '/home/a/b.md' && displayPathOf('\\\\srv\\share\\a.md') === '\\\\srv\\share\\a.md',
+    'normalisation must not invent a rewrite where there was none')
+  check('the tab tooltip and the pane header both display it',
+    chunk.includes('button.title = displayPathOf(path)') && chunk.includes('title: displayPathOf(filePath)'),
+    'one path, one spelling: a tooltip and a header that disagree read as two filesystems')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
