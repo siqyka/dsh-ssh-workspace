@@ -930,6 +930,11 @@ console.log('\n[tab labels]')
     chunk.includes('function installTabTip') && chunk.includes("'sshwsp-tabtip sshwsp-tokens'") &&
       chunk.includes('data-sshwsp-tab-path') && chunk.includes('}, 320)'),
     'a label the plugin draws can use the theme; a title the browser draws cannot')
+  check('a second gate hides a host bubble that opened anyway',
+    chunk.includes("setAttribute('data-sshwsp-tab-hover', '')") &&
+      chunk.includes("removeAttribute('data-sshwsp-tab-hover')") &&
+      clientPartSource(pluginRoot, 'client.styles.js').includes('body[data-sshwsp-tab-hover] [role="tooltip"][data-side] { display: none; }'),
+    'React also synthesises pointerenter from a pointerout that fires outside our tab; the attribute is what actually keeps the second bubble away')
   check('the host tooltip is kept from opening on our tabs',
     chunk.includes("document.addEventListener('pointerover', over, true)") &&
       chunk.includes('event.stopPropagation()') &&
