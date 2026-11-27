@@ -629,12 +629,22 @@ console.log('\n[renderer]')
       /body:not\(\[data-ds-dark-theme\]\) \.sshwsp-filepane,/u.test(styles),
     'the pane renders OUTSIDE .sshwsp; without the scope every var(--sshwsp-*) is empty and borders/backgrounds vanish')
   check('the document body takes the token text colour, not the host default',
-    /\.sshwsp-md \{ max-width: 860px;[^}]*color: var\(--sshwsp-text\)/u.test(styles),
+    /\.sshwsp-md \{ max-width: 1240px;[^}]*color: var\(--sshwsp-text\)/u.test(styles),
     'unstyled-looking text is the symptom of an unresolved token')
   check('source and preview share one column',
-    /\.sshwsp-filepane-body \.sshwsp-editor-panel-inline \{[^}]*max-width: 904px;[^}]*margin: 0 auto;/u.test(styles) &&
-      /\.sshwsp-md \{ max-width: 860px/u.test(styles),
-    '860px of text plus 22px of side padding on each side: the buffer must not be full-bleed next to a centred document')
+    /\.sshwsp-filepane-body \.sshwsp-editor-panel-inline \{[^}]*max-width: 1284px;[^}]*margin: 0 auto;/u.test(styles) &&
+      /\.sshwsp-md \{ max-width: 1240px/u.test(styles),
+    '1240px of text plus 22px of side padding on each side: the buffer must not be full-bleed next to a centred document')
+  check('the mode buttons end on the text edge',
+    (() => {
+      const rule = /\.sshwsp-filepane-bar \{([^}]*)\}/u.exec(styles)
+      if (rule === null) return false
+      return rule[1].includes('max-width: 1284px') &&
+        rule[1].includes('justify-content: flex-end') &&
+        rule[1].includes('padding: 6px 22px 4px') &&
+        rule[1].includes('margin: 0 auto')
+    })(),
+    'a bar pinned to the pane edge puts the buttons past the text column; the 22px must match the docpane padding')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)

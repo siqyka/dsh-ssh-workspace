@@ -395,7 +395,7 @@ check('an empty document renders an empty article',
   const styles = readFileSync(path.join(pluginRoot, 'lib', 'client', 'client.styles.js'), 'utf8')
   check('the reading column and its parts are styled',
     /\.sshwsp-docpane \{/u.test(styles) &&
-      /\.sshwsp-md \{ max-width: 860px/u.test(styles) &&
+      /\.sshwsp-md \{ max-width: 1240px/u.test(styles) &&
       /\.sshwsp-md \.sshwsp-md-pre \{/u.test(styles) &&
       /\.sshwsp-md \.sshwsp-md-table \{/u.test(styles) &&
       /\.sshwsp-md \.sshwsp-md-task\[data-checked="true"\]::before/u.test(styles))
