@@ -941,7 +941,8 @@ console.log('\n[tab labels]')
       chunk.includes("closest('[role=\"tab\"][data-sshwsp-tab-path]')"),
     'the host tooltip on a truncated label would stack a second bubble over ours; pointerover is what React reads for pointerenter')
   check('the hover label is positioned, clamped and torn down',
-    chunk.includes('const above = box.top - own.height - 8') &&
+    chunk.includes('const below = box.bottom + 8') &&
+      chunk.includes('below + own.height <= window.innerHeight - 8 ? below') &&
       chunk.includes('window.innerWidth - own.width - 8') &&
       chunk.includes("window.addEventListener('scroll', hide, true)") &&
       chunk.includes('tabTipDetach?.()'),
