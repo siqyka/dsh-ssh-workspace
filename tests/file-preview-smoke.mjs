@@ -548,11 +548,15 @@ console.log('\n[viewers]')
   for (const [path, kind] of table) {
     check(path + ' opens as ' + kind, viewerOf(path) === kind)
   }
-  check('the chunk borrows the table instead of copying it',
+  check('the pane borrows the table instead of copying it',
     /const \{ isPreviewablePath, isDocumentPath, previewNameOf, fileTabName, fileTabIdOf, viewerOf \} = host/u
       .test(clientPartSource(pluginRoot, 'client.fileview.js')) &&
       /\n        viewerOf,\n/u.test(bundle),
     'two tables would drift')
+  check('opening a file uses the same gate as the claim',
+    /if \(viewerOf\(path\) === 'binary'\) return false/u.test(clientPartSource(pluginRoot, 'client.fileview.js')) &&
+      !/if \(!isPreviewablePath\(path\)\) return false/u.test(clientPartSource(pluginRoot, 'client.fileview.js')),
+    'claiming the click and then declining it sends media back to the host after the navigation was prevented')
 }
 
 // ---------------------------------------------------------------------------
