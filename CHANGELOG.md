@@ -4,7 +4,7 @@
 
 ## [未发布]
 
-- **文档预览改用宿主的 Markdown 组件，远端图片也真的会显示**：会话里渲染 `.md` 时先借宿主右侧预览同款的 `MarkdownText`（`require('@deepseek-ai/dsh-client-ui-primitives')`）——字阶、带语言标签与复制 / 换行的代码卡、行内代码胶囊、引用竖条、表格横线都和右侧一致，插件自己的渲染器退成兜底。接法是**探测不是依赖**：`require` 包在 try/catch 里，只认 `typeof === 'function'`，再套一层 error boundary——借来的组件缺失或抛错都只是回落，不会白屏；`__sshwspProbe().preview.markdown` 报告 `host` / `fallback`。图片走 `pathImages.resolve`：按文档目录解析相对路径，再用既有的 `download` 字节路由取图（流式、可取消、有体积上限），所以远端工作区里引用相对路径（例如 `img/a.png`）的图片现在会真的渲染出来；别名未就绪时仍是占位。`client.marks.js` 顺带维护会话→别名索引（`aliasOfSession`）。
+- **文档预览的排版对齐右侧预览，远端图片会显示**：会话里渲染 `.md` 改用插件自己的渲染器配一套照宿主抄的字阶（正文 14px/1.72、标题 32/16 间距、无边框代码卡、行内代码胶囊、引用竖条、表格只留横线）。**没有借宿主的 `MarkdownText`**：它的外观来自宿主自己 `import` 的 CSS module（哈希类名），插件 chunk 拿不到，渲染出来是无样式的裸 HTML——上一版正是因此「看着还是不好看」。图片走 `imgSrc`：按文档目录解析相对路径，再用既有的 `download` 字节路由取图（流式、可取消、有体积上限），别名未就绪时仍是带 alt 的占位而不是坏图。`client.marks.js` 顺带维护会话→别名索引（`aliasOfSession`）。`file-preview-smoke` 101 项。
 
 - **文件视图拆成独立 chunk**：上一版把会话里的文件视图全塞进了主包，`client.js` 涨到 6000 行。现在 `conversation.view` 的每文件注册、会话 roster（离开会话只注销不遗忘）、标签条装饰与点击切换、Markdown 文档面板、复用编辑器的内联编辑、合成器隐藏都搬进新 chunk `lib/client/client.fileview.js`（`apply` 里就取回，不等手势——第一次点击可能早于一次懒加载）；主包只留**同步**才需要的部分：扩展名白名单、文档判定、标签 id 与名字、以及文件树桥的取用（这些谓词由 `installFileView(host)` 注入 chunk，因为桥必须在 chunk 到达前回答点击）。`client.js` 6033 → 4983 行，手写 chunk 13 → 15 个。`file-preview-smoke` 96 → 97 项（纯判定仍从主包 lift；新增断言：chunk 从 host 取谓词而不是自带一份）。
 - **文件标签排到所有内置视图之后**：`conversation.view` 的注册补上了 `order: 100`。宿主的标签条按这个数排序（「对话」0、「轨迹」10、「Lineage / Stats」40），而**没有 `order` 的条目会被当成 0**——上一版因此把文件标签插在了「对话」和「轨迹」之间。文件是从文件树随手打开的附页，不该混进主视图里，现在它总是排在行末，开一个、开十个都在最后。`file-preview-smoke` 96 → 97 项（新增：注册必须带 order 且大于内置视图的最大值）。

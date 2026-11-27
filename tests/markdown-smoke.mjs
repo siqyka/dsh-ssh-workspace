@@ -274,6 +274,28 @@ check('a relative path is not a link (the file lives on another machine)',
     image.type === 'span' && image.props.className === 'sshwsp-md-image' && image.props.children === 'alt')
 }
 
+{
+  // The pane hands the renderer a resolver, and a resolved reference becomes a
+  // real picture. `undefined` (an unknown host alias) must stay a placeholder:
+  // `src=""` renders as a broken image and looks like a bug.
+  const resolved = markdown.MarkdownDocument({
+    text: '![alt](./img/a.png)\n',
+    t: (key) => key,
+    imgSrc: (value) => `byte://x?path=${value}`,
+  })
+  const picture = resolved.props.children[0].props.children[0]
+  check('a resolved image renders as an <img> through the resolver',
+    picture.type === 'img' && picture.props.src === 'byte://x?path=./img/a.png' &&
+      picture.props.alt === 'alt' && picture.props.loading === 'lazy')
+  const unresolved = markdown.MarkdownDocument({
+    text: '![alt](./img/a.png)\n',
+    t: (key) => key,
+    imgSrc: () => undefined,
+  })
+  check('...and an unresolved one keeps the placeholder',
+    unresolved.props.children[0].props.children[0].type === 'span')
+}
+
 check('an empty document renders an empty article',
   markdown.MarkdownDocument({ text: '', t: (key) => key }).props.children.length === 0)
 
