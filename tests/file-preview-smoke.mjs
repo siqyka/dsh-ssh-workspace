@@ -525,6 +525,14 @@ console.log('\n[renderer]')
   check('an unresolvable image keeps the placeholder path',
     /typeof src !== 'string' \|\| src === ''/u.test(clientPartSource(pluginRoot, 'client.markdown.js')),
     'an unknown alias must not become src="" (which looks like a broken image)')
+  const styles = clientPartSource(pluginRoot, 'client.styles.js')
+  check('the file pane defines the token scope it renders in',
+    /\.sshwsp,\n\.sshwsp-filepane,/u.test(styles) &&
+      /body:not\(\[data-ds-dark-theme\]\) \.sshwsp-filepane,/u.test(styles),
+    'the pane renders OUTSIDE .sshwsp; without the scope every var(--sshwsp-*) is empty and borders/backgrounds vanish')
+  check('the document body takes the token text colour, not the host default',
+    /\.sshwsp-md \{ max-width: 860px;[^}]*color: var\(--sshwsp-text\)/u.test(styles),
+    'unstyled-looking text is the symptom of an unresolved token')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
