@@ -809,10 +809,12 @@ console.log('\n[tab menu]')
   check('a file tab carries the claim marker',
     chunk.includes("button.setAttribute('data-sshwsp-tab-path', path)"),
     'the tab element is the host\'s, so the only handle we can own is an attribute we write')
-  check('the tab menu claims by marker, not by name',
-    bundle.includes("const marked = button.getAttribute('data-sshwsp-tab-path')") &&
-      bundle.includes('const FILE_TAB_SELECTOR'),
-    'reading the label first is what made two index.ts tabs ambiguous')
+  check('the tab menu lives with the tab feature, not the bundle',
+    chunk.includes("const marked = button.getAttribute('data-sshwsp-tab-path')") &&
+      chunk.includes('const FILE_TAB_SELECTOR') &&
+      !bundle.includes('function openFileTabMenu') &&
+      bundle.includes('menu: { show: (model, x, y) => renderMenuDom(model, x, y) }'),
+    'the bundle owns HOW a menu is drawn; what a tab menu means belongs to the file view chunk')
   check('...and trusts a label only when it is unique', (() => {
     // Both functions travel together: the fallback asks for the DRAWn label, so
     // a bare-name argument would be a second naming rule waiting to disagree.
@@ -831,17 +833,17 @@ console.log('\n[tab menu]')
   })(), 'closing the wrong index.ts is worse than showing no menu')
 
   check('the menu offers exactly the three close verbs',
-    bundle.includes("translate('tabmenu.close')") &&
-      bundle.includes("translate('tabmenu.closeOthers')") &&
-      bundle.includes("translate('tabmenu.closeRight')") &&
-      bundle.includes('disabled: others.length === 0') &&
-      bundle.includes('disabled: right.length === 0'),
+    chunk.includes("translate('tabmenu.close')") &&
+      chunk.includes("translate('tabmenu.closeOthers')") &&
+      chunk.includes("translate('tabmenu.closeRight')") &&
+      chunk.includes('disabled: others.length === 0') &&
+      chunk.includes('disabled: right.length === 0'),
     'a verb with nothing to act on is drawn disabled, not hidden')
   check('"to the right" reads the strip order',
-    bundle.includes('const right = index >= 0 ? paths.slice(index + 1) : []'),
+    chunk.includes('const right = index >= 0 ? paths.slice(index + 1) : []'),
     'the host renders entries in registration order, which IS the visual order')
   check('the batch is scoped to stamped tabs',
-    bundle.includes('[role="tab"][data-sshwsp-tab-path]') &&
+    chunk.includes('[role="tab"][data-sshwsp-tab-path]') &&
     'chat, trajectory and other plugins\' views carry no marker, so they are never in the batch')
 
   const batch = (() => {
