@@ -250,7 +250,7 @@ console.log('\n[client wiring]')
   check('one registration is one file — the id and the label come from the path',
     /registerFileTab = \(path\) => slots\.register/u.test(client) &&
       /id: fileTabIdOf\(path\)/u.test(client) &&
-      /label: \(\) => tabLabelFor\(path\)/u.test(client),
+      /label: \(\) => fileTabName\(path\)/u.test(client),
     'a single shared tab would show whichever file was opened last')
   check('each tab injects its own path, so two same-named files stay apart',
     /inject: \(sessionId\) => \(\{ t: translate, filePath: path, sessionId \}\)/u.test(client),
@@ -279,14 +279,14 @@ console.log('\n[client wiring]')
       client.includes("document.querySelector('[data-conversation-tabs]')"),
     'the tab would open without ever being shown')
   check('two tabs with the same file name are told apart by registration order',
-    /function clickNthByText/u.test(client) && /\.filter\(open => tabLabelFor\(open\) === label\)/u.test(client),
-    'clicking the first `index.ts` would focus the other one')
+    /function clickNthByText/u.test(client) && /\.filter\(open => fileTabName\(open\) === label\)/u.test(client),
+    'the marker is the primary handle; the n-th same-name tab is the pre-decoration fallback')
   check('the tab carries a close affordance of its own',
     /data-sshwsp-tab-close/u.test(client) && /new MutationObserver\(decorate\)/u.test(client) &&
       /preview\.tabClose/u.test(client),
     'a file tab that can only be closed from inside the file view is a trap once several are open')
   check('the × stays on the name\'s line, pinned right, under a fixed tab width',
-    /const FILE_TAB_WIDTH = 132/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
+    /const FILE_TAB_WIDTH = 208/u.test(client) && /const FILE_TAB_CLOSE_ROOM = 22/u.test(client) &&
       /position: 'absolute'/u.test(client) && /right: '4px'/u.test(client) &&
       /flex: `0 0 \$\{FILE_TAB_WIDTH\}px`/u.test(client) && /paddingRight: `\$\{FILE_TAB_CLOSE_ROOM\}px`/u.test(client),
     'an inline × wraps under a long name and makes the whole tab row a line taller')
@@ -881,46 +881,50 @@ console.log('\n[tab menu]')
     'an untranslated verb falls back to the key, which is not a word')
 }
 
-// [tab labels] a name that cannot be told apart grows a parent
+// [tab labels] a colliding name grows a dim tail, not a prefix
 console.log('\n[tab labels]')
 {
   const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
   const source = chunk.slice(chunk.indexOf('function tabSegmentsOf'), chunk.indexOf('function clickNthByText'))
   const build = (paths, session = 's1') => new Function(
     'fileTabName', 'sessionOpenFiles', 'registeredSessionId', 'openFileTabs',
-    source + '; return tabLabelFor',
+    source + '; return tabDirTailFor',
   )(
-    path => path.split('/').pop(),
+    path => path.split(/[/\\\\]/u).pop(),
     new Map([[session, paths]]),
     session,
     new Map(paths.map(path => [path, () => {}])),
   )
 
-  check('a unique name stays a bare name',
-    build(['/a/README.md', '/a/app.ts'])('/a/app.ts') === 'app.ts',
-    'growing every label would name paths nobody asked for')
-  check('a colliding name grows one parent segment',
+  check('a unique name carries no tail',
+    build(['/a/README.md', '/a/app.ts'])('/a/app.ts') === '',
+    'the tail exists to tell twins apart, not to name paths nobody asked for')
+  check('a colliding name grows the shortest tail',
     (() => {
-      const label = build(['/x/src/index.ts', '/y/lib/index.ts'])
-      return label('/x/src/index.ts') === 'src/index.ts' && label('/y/lib/index.ts') === 'lib/index.ts'
-    })(), 'two identical tabs are tabs nobody can name')
-  check('one segment is not enough when the parents match too',
+      const tail = build(['/x/src/index.ts', '/y/lib/index.ts'])
+      return tail('/x/src/index.ts') === '…/src' && tail('/y/lib/index.ts') === '…/lib'
+    })(), 'one segment is enough when the parents already differ')
+  check('a deeper collision grows the tail, not the name',
     (() => {
-      const label = build(['/r/a/x/index.ts', '/r/b/x/index.ts'])
-      return label('/r/a/x/index.ts') === 'a/x/index.ts' && label('/r/b/x/index.ts') === 'b/x/index.ts'
-    })(), 'the shortest prefix that DISAMBIGUATES, not a fixed depth')
-  check('closing the twin gives the bare name back',
+      const tail = build(['/r/a/x/index.ts', '/r/b/x/index.ts'])
+      return tail('/r/a/x/index.ts') === '…/a/x' && tail('/r/b/x/index.ts') === '…/b/x'
+    })(), 'the shortest prefix that disambiguates, at any depth')
+  check('the tail keeps the path separator the path uses',
     (() => {
-      const alone = build(['/x/src/index.ts'])
-      return alone('/x/src/index.ts') === 'index.ts'
-    })(), 'the roster is read on every render, so a label is a function of what is open')
+      const tail = build(['C:\\one\\api\\__init__.py', 'C:\\two\\core\\__init__.py'])
+      return tail('C:\\one\\api\\__init__.py') === '…\\api'
+    })(), 'a Windows workspace should not grow a mixed-separator tail')
+  check('closing the twin takes the tail away',
+    build(['/x/src/index.ts'])('/x/src/index.ts') === '',
+    'the roster is read per render: a label is a function of what is open')
+  check('the name is still the host text, the tail is ours',
+    chunk.includes('label: () => fileTabName(path)') &&
+      chunk.includes("setAttribute('data-sshwsp-tab-dir', '')") &&
+      chunk.includes("direction: 'rtl'"),
+    'React owns the name; the tail must be a node we can re-add, never text we rewrite')
   check('hovering names the file in full',
     chunk.includes('button.title = String(path)') && chunk.includes("textOverflow: 'ellipsis'"),
-    'the tab is a fixed 132px: a long name is clipped, so the tooltip is the only full spelling left')
-  check('decoration and activation read the same label the tabs draw',
-    chunk.includes('.filter(path => tabLabelFor(path) === text)') &&
-      chunk.includes('.filter(open => tabLabelFor(open) === label)'),
-    'matching a bare name against a drawn parent-qualified label finds nothing')
+    'the tab is a fixed 208px: a long name is clipped, so the tooltip is the only full spelling left')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
