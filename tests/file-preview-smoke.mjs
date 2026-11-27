@@ -943,6 +943,8 @@ console.log('\n[tab labels]')
   check('the hover label is positioned, clamped and torn down',
     chunk.includes('const below = box.bottom + 8') &&
       chunk.includes('below + own.height <= window.innerHeight - 8 ? below') &&
+      chunk.includes('pointerX + 14') &&
+      chunk.includes('document.addEventListener(\'pointermove\', moved, true)') &&
       chunk.includes('window.innerWidth - own.width - 8') &&
       chunk.includes("window.addEventListener('scroll', hide, true)") &&
       chunk.includes('tabTipDetach?.()'),
