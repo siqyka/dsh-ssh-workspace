@@ -223,6 +223,16 @@ try {
     filePreviewDecision({ path: 'a.ts', kind: 'file', shift: true, fileView: 'conversation' }) === 'host')
   check('a Markdown file is claimed in conversation mode, like any other text',
     filePreviewDecision({ path: 'README.md', kind: 'file', fileView: 'conversation' }) === 'pane')
+  // The claim follows the VIEWER, not the text whitelist: a file the plugin can
+  // paint without reading it as text must not fall through to the host.
+  for (const path of ['logo.png', 'shot.JPEG', 'icon.svg', 'clip.mp4', 'song.mp3', 'manual.pdf']) {
+    check('conversation mode claims ' + path,
+      filePreviewDecision({ path, kind: 'file', fileView: 'conversation' }) === 'pane')
+  }
+  for (const path of ['archive.zip', 'a.bin', 'firmware.img']) {
+    check('an unknown binary keeps the host preview: ' + path,
+      filePreviewDecision({ path, kind: 'file', fileView: 'conversation' }) === 'host')
+  }
 }
 
 // ---------------------------------------------------------------------------
