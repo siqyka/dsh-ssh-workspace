@@ -799,6 +799,78 @@ console.log('\n[target]')
     'passing ssh://qiyk/home/… to sftpStatOrNull is the bug this guards')
 }
 
+// [tab menu] right-click on a file tab closes only file tabs
+console.log('\n[tab menu]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  const bundle = clientPartSource(pluginRoot, 'client.js')
+  const locale = clientPartSource(pluginRoot, 'client.locale.js')
+
+  check('a file tab carries the claim marker',
+    chunk.includes("button.setAttribute('data-sshwsp-tab-path', path)"),
+    'the tab element is the host\'s, so the only handle we can own is an attribute we write')
+  check('the tab menu claims by marker, not by name',
+    bundle.includes("const marked = button.getAttribute('data-sshwsp-tab-path')") &&
+      bundle.includes('const FILE_TAB_SELECTOR'),
+    'reading the label first is what made two index.ts tabs ambiguous')
+  check('...and trusts a label only when it is unique', (() => {
+    const source = chunk.slice(chunk.indexOf('function pathOfTabLabel'), chunk.indexOf('function closeTab ('))
+    const pathOf = new Function('openFileTabs', 'fileTabName', source + '; return pathOfTabLabel')(
+      new Map([['/a/index.ts', () => {}], ['/b/index.ts', () => {}], ['/c/README.md', () => {}]]),
+      path => path.split('/').pop(),
+    )
+    return pathOf('README.md') === '/c/README.md' && pathOf('index.ts') === undefined
+  })(), 'closing the wrong index.ts is worse than showing no menu')
+
+  check('the menu offers exactly the three close verbs',
+    bundle.includes("translate('tabmenu.close')") &&
+      bundle.includes("translate('tabmenu.closeOthers')") &&
+      bundle.includes("translate('tabmenu.closeRight')") &&
+      bundle.includes('disabled: others.length === 0') &&
+      bundle.includes('disabled: right.length === 0'),
+    'a verb with nothing to act on is drawn disabled, not hidden')
+  check('"to the right" reads the strip order',
+    bundle.includes('const right = index >= 0 ? paths.slice(index + 1) : []'),
+    'the host renders entries in registration order, which IS the visual order')
+  check('the batch is scoped to stamped tabs',
+    bundle.includes('[role="tab"][data-sshwsp-tab-path]') &&
+    'chat, trajectory and other plugins\' views carry no marker, so they are never in the batch')
+
+  const batch = (() => {
+    const source = chunk.slice(chunk.indexOf('function closeTabs ('), chunk.indexOf('/** Close one file tab'))
+    const open = new Map([['/a.ts', () => {}], ['/b.ts', () => {}], ['/c.ts', () => {}]])
+    const closed = []
+    let prompts = 0
+    const build = (answer) => new Function(
+      'openFileTabs', 'isFileDirty', 'translate', 'closeFilePreview', 'window',
+      source + '; return closeTabs',
+    )(open, (_session, path) => path === '/a.ts' || path === '/b.ts',
+      (key, params) => key + ':' + (params?.count ?? ''), path => { closed.push(path) },
+      { confirm: () => { prompts += 1; return answer } })
+    return { build, closed, prompts: () => prompts }
+  })()
+
+  const confirmed = batch.build(true)
+  const closedCount = confirmed(['/a.ts', '/b.ts', '/c.ts'], 's1')
+  check('a batch asks once for every unsaved file',
+    closedCount === 3 && batch.prompts() === 1 && batch.closed.length === 3,
+    'one dialog per tab would be an interrogation, and naming one buffer hides the others')
+  check('...and a refusal aborts the whole batch', (() => {
+    const closed = []
+    const source = chunk.slice(chunk.indexOf('function closeTabs ('), chunk.indexOf('/** Close one file tab'))
+    const run = new Function('openFileTabs', 'isFileDirty', 'translate', 'closeFilePreview', 'window',
+      source + '; return closeTabs')(
+      new Map([['/a.ts', () => {}], ['/b.ts', () => {}]]),
+      () => true, key => key, path => { closed.push(path) }, { confirm: () => false })
+    return run(['/a.ts', '/b.ts'], 's1') === 0 && closed.length === 0
+  })(), 'a partial close after a refusal would leave a row that no longer matches the prompt')
+
+  check('both languages name the menu',
+    /tabmenu\.close': '关闭'/u.test(locale) && /tabmenu\.close': 'Close'/u.test(locale) &&
+      locale.includes("'preview.tabsUnsaved'"),
+    'an untranslated verb falls back to the key, which is not a word')
+}
+
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`)
