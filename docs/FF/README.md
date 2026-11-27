@@ -2,7 +2,8 @@
 
 > 这个目录原先放的是**待实施的设计方案 + 一次性任务书**：`NN-<topic>.md` 是方案，`NN-<topic>-prompt.md` 是任务书。
 > 01–10 全部完成后，按约定**方案与任务书均已删除**；本页只留一行索引，指向每个工作流最终沉淀下来的文档位置。
-> 11、12 是**调查文档**（11 = fork 审阅 + 待建功能调查；12 = 会话窗查看文件 + 两个设置项），实施前先读，实施完成后按约定删除并把落点写回本表。两份都已实施：11 的 ①–⑤ 与 12 的全部内容都落在下表与各文档里，`11-*.md`、`12-*.md` 只剩一个指针页（运行环境不允许删文件）。
+> 11、12 是**调查文档**（11 = fork 审阅 + 待建功能调查；12 = 会话窗查看文件 + 两个设置项）。两份都已实施，11 的 ①–⑤ 与 12 的全部内容都落在下表与各文档里；按本页约定，方案页在实施后删除——**两份指针页已于 2026-11-27 删除**，落点只由下表给出。
+> **13–20 是待实施的功能任务书**（2026-11-27 架构审查产出，每份自带背景、复用、改造、步骤、约束、验收、风险）。与它们配套的**问题**任务书在 [docs/FX](../FX/README.md)；两边的依赖关系见 FX 索引的「依赖关系」一节。实施完成后同样按约定把落点写回本表。
 > 行号会漂，按这里给出的文档与小节找，不要按旧任务书里的行号定位。
 
 ## 已完成的工作流
@@ -20,7 +21,22 @@
 | 09 | 剩余工作（2026-11-23 全仓审查） | R-01…R-10 已修 / 已落地，落点在 `CHANGELOG.md` 的 `## [未发布]` 与 `docs/development.md` 的套件表；R-11（读窗口 512 KiB A/B）需真机 WAN 测量，按方案约定不盲改常量，保留 `lib/fs/read-window.js` 的 256 KiB；「不再做」判定见下方 |
 | 10 | 前端表现层重构（`--sshwsp-*` 令牌契约 + 视觉语言，风格参照 dsh-opencode-go；修掉 9 个假 token、62 个游离色字面量、散乱的圆角/字号/间距/z-index、缺失的交互态与浅色层） | `docs/ui.md` 的「表现层：一套令牌契约」一节；`docs/development.md` 的 `presentation-tokens-smoke` 套件说明与反向验证一节；`tests/presentation-tokens-smoke.mjs`、`scripts/reverse-verify-presentation.mjs`；真机视觉走查清单在 `docs/manual-test-checklist.md` 的「表现层 / 视觉」组 |
 | 11 | **已实施（①–⑤ 全部）**：①设置「展示文件」（开关控制两个目录对话框是否显示不可选的文件行）：`preferences.showFiles`（`POST /preferences` + `/status`），两个 picker 按开关决定是否带 `dirs=1`，文件行是纯展示 `div`；②每台存储型主机电源开关（硬停用）：`POST /hosts/toggle`、`lib/hosts/disable.js`、引擎 `disabledHosts` 闸门、`/hosts` 每行 `resources`、`/status.disabledHosts` 置灰、确认框列实时资源；③会话命令行审查：`sessionId` 随 exec/background/shell/terminal 四条通道进入审计环，持久 shell 由 `ShellManager.run` 自记，终端 PTY 按键重建（近似，标注边界），审计落盘 `$DSH_HOME/dsh-ssh-workspace/dsh-ssh-commands.json`（`lib/engine/command-log.js`）+ 四层硬上界；④面板「审计」tab（`GET /audit`、按工作区过滤、手动刷新）；⑤可配置保留条数（默认 200，1–2000；ring / tab / 落盘以 `setCapacity` 为唯一事实，`POST /audit/settings`） | `docs/features.md` 的「展示文件」「主机硬停用」「命令审计」「终端击键捕获」「审计落盘」「保留条数与审计 tab」六行；`docs/ui.md` 的「文件行只是『这里有什么』」「卡片左侧的电源开关」「第四个 tab：审计是一张表，不是一个开关」三节；`docs/architecture.md` 的「主机硬停用」与「命令审计的落盘与终端捕获」；`CHANGELOG.md` 的 `## [未发布]` 五条；`tests/host-disable-smoke.mjs`（49 项）与 `tests/command-log-smoke.mjs`（78 项） |
-| 12 | **已实施（落点已改版）**：右侧文件树点击文件在**会话窗**查看——文件占一个 `conversation.view` 标签（会话顶部标签条，与「对话 / 轨迹 / …」同排，懒注册、关掉即消失），内容占满会话区；设置项只剩「查看文件」二段式切换（会话 / 右侧文件树），控件在插件面板「设置」tab，值走插件 store 的 `preferences` 节（`/status` 下发 + `POST .../preferences`）；点击经既有捕获桥接管，读取复用 `read-text`；关闭 = `Esc` / 标头 `×`；默认 `sidebar`。初版落点 `conversation.input.dock` 与「隐藏输入框」设置已移除 | `docs/features.md` 的「会话窗查看文件」一行；`docs/ui.md` 的「会话窗里的文件预览」一节；`CHANGELOG.md` 的 `## [未发布]` 新增条；`tests/file-preview-smoke.mjs`（66 项）与 `lib/hosts/preferences.js` |
+| 12 | **已实施（落点已改版）**：右侧文件树点击文件在**会话窗**查看——**每个文件占一个同名 `conversation.view` 标签**（会话顶部标签条，与「对话 / 轨迹 / …」同排，可多个并存、懒注册、关掉即消失），标签固定宽度、`×` 绝对定位在右侧，内容以 inline 模式铺满会话区（不是浮层，且按滚动区定高、底栏不随滚动条走）；标签**属于打开它的会话**（切走即消失、切回原样复现，只注销不关闭）；设置项是「查看文件」二段式切换（会话 / 右侧文件树）+「文件标签页里隐藏输入框」（`hideComposer`，默认开）+「目录选择器里显示文件」（`showFiles`），控件在插件面板「设置」tab，值走插件 store 的 `preferences` 节（`/status` 下发 + `POST .../preferences`）；点击经既有捕获桥接管（`.md` 等 Markdown 也算文本），读取复用 `read-text`；关闭 = 标签末尾 `×`（MutationObserver 注入）/ `Esc`；默认 `sidebar`。初版落点 `conversation.input.dock` 已移除 | `docs/features.md` 的「会话窗查看文件」一行；`docs/ui.md` 的「会话窗里的文件预览」一节；`CHANGELOG.md` 的 `## [未发布]` 新增条；`tests/file-preview-smoke.mjs`（96 项）与 `lib/hosts/preferences.js` |
+
+## 待实施的功能任务书（13–20）
+
+| # | 工作流 | 优先级 / 复杂度 | 前置 | 任务书 |
+| --- | --- | --- | --- | --- |
+| 13 | 逐文件变更捕获补全：让 `fs-shim` 识别「已学习的裸远端路径」，变更面板在远端也有 before / after 文本 | P0 / 中 | 无 | [13-capture-file-before-after-prompt.md](./13-capture-file-before-after-prompt.md) |
+| 14 | 远端 Git 操作闭环：stage / unstage / discard / commit，固定 argv、路径过围栏、只做面板 | P0 / 中高 | 无（建议在 13 之后） | [14-git-ops-prompt.md](./14-git-ops-prompt.md) |
+| 15 | 目录传输加速：`engine.execStream` + 远端 `tar` 单流打包 / 无 `tar` 时按 size+mtime 增量跳过 | P1 / 高 | 无（是 17 的前置） | [15-packed-tree-transfer-prompt.md](./15-packed-tree-transfer-prompt.md) |
+| 16 | 命令确认策略 v2：每主机 `allowlist`（argv 结构化匹配）+ 会话级「不再询问」 | P1 / 中 | 无 | [16-command-allowlist-prompt.md](./16-command-allowlist-prompt.md) |
+| 17 | 远端后台任务面板：列出插件自己开的远端通道、看输出尾窗、终止 | P1 / 中 | 15、[FX/02](../FX/02-client-module-system-prompt.md) | [17-jobs-panel-prompt.md](./17-jobs-panel-prompt.md) |
+| 18 | 变更监视后端抽象：`inotifywait` → `fswatch` → 轮询 | P2 / 中低 | 无 | [18-watch-backends-prompt.md](./18-watch-backends-prompt.md) |
+| 19 | 非 POSIX 远端（Windows OpenSSH）：只做挂载 / 列目录 / `pwsh` 终端 / 读写 | P3 / 高 | [FX/01](../FX/01-seam-contract-prompt.md)、18 | [19-non-posix-remote-prompt.md](./19-non-posix-remote-prompt.md) |
+| 20 | 远端默认登录 shell：未指定 shellPath 时取探测到的 `$SHELL` | P2 / 低 | 无 | [20-default-login-shell-prompt.md](./20-default-login-shell-prompt.md) |
+
+路线图口径：**近期** 13、14、20（+ [FX/03](../FX/03-hygiene-fixes-prompt.md) 小修）；**中期** 15、16、17（+ [FX/01](../FX/01-seam-contract-prompt.md)、[FX/02](../FX/02-client-module-system-prompt.md)）；**远期** 18、19。
 
 ## 客户端 chunk 的宿主事实（04 的方案摘要）
 
