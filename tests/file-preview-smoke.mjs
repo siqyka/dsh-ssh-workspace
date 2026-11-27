@@ -526,6 +526,9 @@ console.log('\n[renderer]')
     /typeof src !== 'string' \|\| src === ''/u.test(clientPartSource(pluginRoot, 'client.markdown.js')),
     'an unknown alias must not become src="" (which looks like a broken image)')
   const styles = clientPartSource(pluginRoot, 'client.styles.js')
+  check('the pane carries the token class, not only a scope selector',
+    /className: 'sshwsp-filepane sshwsp-tokens'/u.test(chunk) && /\.sshwsp-tokens,\n/u.test(styles),
+    'a class that carries the token definitions works anywhere; a scope selector depends on an ancestor')
   check('the file pane defines the token scope it renders in',
     /\.sshwsp,\n\.sshwsp-filepane,/u.test(styles) &&
       /body:not\(\[data-ds-dark-theme\]\) \.sshwsp-filepane,/u.test(styles),
