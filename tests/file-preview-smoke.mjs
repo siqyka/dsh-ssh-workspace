@@ -839,10 +839,10 @@ console.log('\n[tab menu]')
       chunk.includes('disabled: others.length === 0') &&
       chunk.includes('disabled: right.length === 0'),
     'a verb with nothing to act on is drawn disabled, not hidden')
-  check('"to the right" reads the strip order',
-    chunk.includes('const right = index >= 0 ? paths.slice(index + 1) : []'),
+  check('"to the right" follows the roster order',
+    chunk.includes('fileBatchFor(paths, path)') && chunk.includes('list.slice(index + 1)'),
     'the host renders entries in registration order, which IS the visual order')
-  check('the batch is scoped to stamped tabs',
+  check('the strip is only the fallback list, never the whole story',
     chunk.includes('[role="tab"][data-sshwsp-tab-path]') &&
     'chat, trajectory and other plugins\' views carry no marker, so they are never in the batch')
 
@@ -965,6 +965,28 @@ console.log('\n[freeze]')
   check('a mounted strip is not re-queried on every DOM change',
     chunk.includes('if (strip !== null && strip.isConnected === true) return'),
     'the chat streams mutations constantly; querySelector per mutation is measurable work for no new information')
+}
+
+// [batch] "close others" reaches files folded into the host's more menu
+console.log('\n[batch]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  const source = chunk.slice(chunk.indexOf('function fileBatchFor'), chunk.indexOf('function openTabMenuAt'))
+  const fileBatchFor = new Function(source + '; return fileBatchFor')()
+  check('a batch is the roster, in open order',
+    (() => {
+      const { others, right } = fileBatchFor(['a.ts', 'b.ts', 'c.ts'], 'b.ts')
+      return others.join() === 'a.ts,c.ts' && right.join() === 'c.ts'
+    })(), 'the overflow the host folds into "more views" is the right-hand end of this list')
+  check('a path opened in the same tick is still closable',
+    (() => {
+      const { others, right } = fileBatchFor(['a.ts'], 'z.ts')
+      return others.join() === 'a.ts' && right.length === 0
+    })(), 'the tab that was right-clicked must never fall out of its own batch')
+  check('the menu takes its batch from the roster, not the strip',
+    chunk.includes('const roster = sessionOpenFiles.get(sessionId) ?? []') &&
+      chunk.includes('const { others, right } = fileBatchFor(paths, path)'),
+    'a folded file tab is a menuitem with no marker: asking the DOM leaves it open')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
