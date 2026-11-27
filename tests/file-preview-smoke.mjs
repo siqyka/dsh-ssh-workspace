@@ -722,6 +722,26 @@ console.log('\n[sniff]')
     'a whitelist is there so the common case never waits for a probe')
 }
 
+// [compatibility] a stale server is named, not guessed at
+console.log('\n[compatibility]')
+{
+  const routes = readFileSync(new URL('../lib/routes/routes.js', import.meta.url), 'utf8')
+  const workspaces = readFileSync(new URL('../lib/routes/workspaces.js', import.meta.url), 'utf8')
+  const panel = clientPartSource(pluginRoot, 'client.panel.js')
+  const bundleSource = clientPartSource(pluginRoot, 'client.js')
+  check('the server publishes what it can do',
+    /export const SERVER_FEATURES = \[/u.test(routes) && workspaces.includes('features: SERVER_FEATURES'),
+    'a restart is a human action; the client must not assume the new routes are live')
+  check('the features cover what the previews need',
+    ['byte-range', 'html-rewrite', 'local-bytes', 'sniff']
+      .every((name) => routes.includes("'" + name + "'")),
+    'one missing route is one silent failure')
+  check('the client checks the list', bundleSource.includes('REQUIRED_SERVER_FEATURES') &&
+    bundleSource.includes('noteServerCompatibility'))
+  check('the panel says so instead of failing later',
+    panel.includes('settings.restartRequired') && panel.includes('restartNeeded'))
+}
+
 // [local bytes] a local preview is served from disk under the session fence
 console.log('\n[local bytes]')
 {
