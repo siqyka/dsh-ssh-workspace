@@ -250,7 +250,7 @@ console.log('\n[client wiring]')
   check('one registration is one file — the id and the label come from the path',
     /registerFileTab = \(path\) => slots\.register/u.test(client) &&
       /id: fileTabIdOf\(path\)/u.test(client) &&
-      /label: \(\) => fileTabName\(path\)/u.test(client),
+      /label: \(\) => tabLabelFor\(path\)/u.test(client),
     'a single shared tab would show whichever file was opened last')
   check('each tab injects its own path, so two same-named files stay apart',
     /inject: \(sessionId\) => \(\{ t: translate, filePath: path, sessionId \}\)/u.test(client),
@@ -279,7 +279,7 @@ console.log('\n[client wiring]')
       client.includes("document.querySelector('[data-conversation-tabs]')"),
     'the tab would open without ever being shown')
   check('two tabs with the same file name are told apart by registration order',
-    /function clickNthByText/u.test(client) && /\.filter\(open => fileTabName\(open\) === label\)/u.test(client),
+    /function clickNthByText/u.test(client) && /\.filter\(open => tabLabelFor\(open\) === label\)/u.test(client),
     'clicking the first `index.ts` would focus the other one')
   check('the tab carries a close affordance of its own',
     /data-sshwsp-tab-close/u.test(client) && /new MutationObserver\(decorate\)/u.test(client) &&
@@ -814,10 +814,18 @@ console.log('\n[tab menu]')
       bundle.includes('const FILE_TAB_SELECTOR'),
     'reading the label first is what made two index.ts tabs ambiguous')
   check('...and trusts a label only when it is unique', (() => {
-    const source = chunk.slice(chunk.indexOf('function pathOfTabLabel'), chunk.indexOf('function closeTab ('))
-    const pathOf = new Function('openFileTabs', 'fileTabName', source + '; return pathOfTabLabel')(
+    // Both functions travel together: the fallback asks for the DRAWn label, so
+    // a bare-name argument would be a second naming rule waiting to disagree.
+    const source = chunk.slice(chunk.indexOf('function tabSegmentsOf'), chunk.indexOf('function clickNthByText')) +
+      chunk.slice(chunk.indexOf('function pathOfTabLabel'), chunk.indexOf('function closeTabs ('))
+    const pathOf = new Function(
+      'openFileTabs', 'fileTabName', 'sessionOpenFiles', 'registeredSessionId',
+      source + '; return pathOfTabLabel',
+    )(
       new Map([['/a/index.ts', () => {}], ['/b/index.ts', () => {}], ['/c/README.md', () => {}]]),
       path => path.split('/').pop(),
+      new Map([['s1', ['/a/index.ts', '/b/index.ts', '/c/README.md']]]),
+      's1',
     )
     return pathOf('README.md') === '/c/README.md' && pathOf('index.ts') === undefined
   })(), 'closing the wrong index.ts is worse than showing no menu')
@@ -869,6 +877,48 @@ console.log('\n[tab menu]')
     /tabmenu\.close': '关闭'/u.test(locale) && /tabmenu\.close': 'Close'/u.test(locale) &&
       locale.includes("'preview.tabsUnsaved'"),
     'an untranslated verb falls back to the key, which is not a word')
+}
+
+// [tab labels] a name that cannot be told apart grows a parent
+console.log('\n[tab labels]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  const source = chunk.slice(chunk.indexOf('function tabSegmentsOf'), chunk.indexOf('function clickNthByText'))
+  const build = (paths, session = 's1') => new Function(
+    'fileTabName', 'sessionOpenFiles', 'registeredSessionId', 'openFileTabs',
+    source + '; return tabLabelFor',
+  )(
+    path => path.split('/').pop(),
+    new Map([[session, paths]]),
+    session,
+    new Map(paths.map(path => [path, () => {}])),
+  )
+
+  check('a unique name stays a bare name',
+    build(['/a/README.md', '/a/app.ts'])('/a/app.ts') === 'app.ts',
+    'growing every label would name paths nobody asked for')
+  check('a colliding name grows one parent segment',
+    (() => {
+      const label = build(['/x/src/index.ts', '/y/lib/index.ts'])
+      return label('/x/src/index.ts') === 'src/index.ts' && label('/y/lib/index.ts') === 'lib/index.ts'
+    })(), 'two identical tabs are tabs nobody can name')
+  check('one segment is not enough when the parents match too',
+    (() => {
+      const label = build(['/r/a/x/index.ts', '/r/b/x/index.ts'])
+      return label('/r/a/x/index.ts') === 'a/x/index.ts' && label('/r/b/x/index.ts') === 'b/x/index.ts'
+    })(), 'the shortest prefix that DISAMBIGUATES, not a fixed depth')
+  check('closing the twin gives the bare name back',
+    (() => {
+      const alone = build(['/x/src/index.ts'])
+      return alone('/x/src/index.ts') === 'index.ts'
+    })(), 'the roster is read on every render, so a label is a function of what is open')
+  check('hovering names the file in full',
+    chunk.includes('button.title = String(path)') && chunk.includes("textOverflow: 'ellipsis'"),
+    'the tab is a fixed 132px: a long name is clipped, so the tooltip is the only full spelling left')
+  check('decoration and activation read the same label the tabs draw',
+    chunk.includes('.filter(path => tabLabelFor(path) === text)') &&
+      chunk.includes('.filter(open => tabLabelFor(open) === label)'),
+    'matching a bare name against a drawn parent-qualified label finds nothing')
 }
 
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
