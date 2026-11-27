@@ -930,6 +930,11 @@ console.log('\n[tab labels]')
     chunk.includes('function installTabTip') && chunk.includes("'sshwsp-tabtip sshwsp-tokens'") &&
       chunk.includes('data-sshwsp-tab-path') && chunk.includes('}, 320)'),
     'a label the plugin draws can use the theme; a title the browser draws cannot')
+  check('the host tooltip is kept from opening on our tabs',
+    chunk.includes("document.addEventListener('pointerover', over, true)") &&
+      chunk.includes('event.stopPropagation()') &&
+      chunk.includes("closest('[role=\"tab\"][data-sshwsp-tab-path]')"),
+    'the host tooltip on a truncated label would stack a second bubble over ours; pointerover is what React reads for pointerenter')
   check('the hover label is positioned, clamped and torn down',
     chunk.includes('const above = box.top - own.height - 8') &&
       chunk.includes('window.innerWidth - own.width - 8') &&
