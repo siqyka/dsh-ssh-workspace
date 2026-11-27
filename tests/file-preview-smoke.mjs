@@ -549,12 +549,13 @@ console.log('\n[viewers]')
     check(path + ' opens as ' + kind, viewerOf(path) === kind)
   }
   check('the pane borrows the table instead of copying it',
-    /const \{ isPreviewablePath, isDocumentPath, previewNameOf, fileTabName, fileTabIdOf, viewerOf \} = host/u
+    /const \{ isPreviewablePath, isDocumentPath, previewNameOf, fileTabName, fileTabIdOf, viewerOf, aliasOfSession \} = host/u
       .test(clientPartSource(pluginRoot, 'client.fileview.js')) &&
-      /\n        viewerOf,\n/u.test(bundle),
+      /\n        viewerOf,\n/u.test(bundle) &&
+      /\n        aliasOfSession: /u.test(bundle),
     'two tables would drift')
   check('opening a file uses the same gate as the claim',
-    /if \(viewerOf\(path\) === 'binary'\) return false/u.test(clientPartSource(pluginRoot, 'client.fileview.js')) &&
+    /const viewer = viewerOf\(path\)\n      if \(viewer === 'binary'\) return false/u.test(clientPartSource(pluginRoot, 'client.fileview.js')) &&
       !/if \(!isPreviewablePath\(path\)\) return false/u.test(clientPartSource(pluginRoot, 'client.fileview.js')),
     'claiming the click and then declining it sends media back to the host after the navigation was prevented')
 }
@@ -659,6 +660,20 @@ console.log('\n[renderer]')
         rule[1].includes('margin: 0 auto')
     })(),
     'a bar pinned to the pane edge puts the buttons past the text column; the 22px must match the docpane padding')
+}
+
+// [media] byte viewers need an alias, and failures name the reason
+console.log('\n[media]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  check('a local workspace keeps its media',
+    chunk.includes("if (viewer !== 'text' && viewer !== 'markdown')") &&
+      chunk.includes("if (alias === '') return false"),
+    'claiming a click and then saying "not connected" turns a picture the host can show into a dead note')
+  check('a failed media preview quotes the route',
+    chunk.includes('sshwsp-filepane-reason') &&
+      chunk.includes("typeof body?.error === 'string'"),
+    'the element only says "no"; the JSON body says which repair it needs')
 }
 
 // [target] a workspace-spelled path is normalised before SFTP sees it
