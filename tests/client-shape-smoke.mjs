@@ -218,12 +218,17 @@ console.log('\n[detached workspaces mark their sessions, not just their header]'
 if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel))) {
   const client = clientSource(packageRoot)
   const start = client.indexOf('function collectRemoteWorkspaces')
+  // The collector keeps the session→alias index in a module-level map (the
+  // document renderer needs it to build byte URLs), so the slice has to begin
+  // at that declaration or the lifted function closes over nothing.
+  const sliceStart = client.lastIndexOf('const sessionAliases', start)
   const end = client.indexOf('/** Update the mark source', start)
+  const from = sliceStart === -1 ? start : sliceStart
   check('the collector is extractable for a behaviour test', start !== -1 && end > start, 'collector not found')
   if (start !== -1 && end > start) {
     const sandbox = { remoteMarks: {}, knownDisabledPaths: new Set() }
     const factory = new Function('remoteMarks', 'knownDisabledPaths',
-      `${client.slice(start, end)}; return collectRemoteWorkspaces;`)
+      `${client.slice(from, end)}; return collectRemoteWorkspaces;`)
     const collect = factory(sandbox.remoteMarks, sandbox.knownDisabledPaths)
     collect([
       { id: 'ws-off', path: 'ssh://box/srv/off', title: 'off', sessionIds: ['s1', 's2'] },
@@ -253,6 +258,8 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   const start = client.indexOf('function collectRemoteWorkspaces')
   const end = client.indexOf('/** Update the mark source', start)
   const rulesEnd = client.indexOf('/** Fetch /status once', end)
+  const sliceStart = client.lastIndexOf('const sessionAliases', start)
+  const from = sliceStart === -1 ? start : sliceStart
   check('the mark identity code is extractable', start !== -1 && end > start && rulesEnd > end, 'marks block not found')
   if (start !== -1 && end > start && rulesEnd > end) {
     const sandbox = {
@@ -260,7 +267,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
       knownDisabledPaths: new Set(),
     }
     const factory = new Function('remoteMarks', 'knownDisabledPaths',
-      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)
+      `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)
     const marks = factory(sandbox.remoteMarks, sandbox.knownDisabledPaths)
 
     const registry = [
@@ -307,7 +314,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     // assertions above already settled this one.
     const boot = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
     const bootMarks = new Function('remoteMarks', 'knownDisabledPaths',
-      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(boot.remoteMarks, boot.knownDisabledPaths)
+      `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(boot.remoteMarks, boot.knownDisabledPaths)
     bootMarks.collectRemoteWorkspaces(registry.filter(item => item.path.startsWith('ssh://')), ['ssh://web/srv/site'])
     check('an unsettled rule stays silent even for a remote-only title',
       bootMarks.remoteTitleMatch('blog') === false && bootMarks.detachedTitleMatch('blog') === false,
@@ -334,7 +341,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     // detach rule keeps only its remote half, that local row goes inert.
     const twin = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
     const twinMarks = new Function('remoteMarks', 'knownDisabledPaths',
-      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(twin.remoteMarks, twin.knownDisabledPaths)
+      `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(twin.remoteMarks, twin.knownDisabledPaths)
     const detachedPaths = ['ssh://dev/tmp/dsh-ssh-workspace', 'ssh://dev/tmp/blog-acceptance']
     twinMarks.collectRemoteWorkspaces([
       { workspaceId: 'w-local', path: 'F:/GitHub/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
@@ -352,7 +359,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     // is partial: that is exactly what the /status fallback is.
     const mixed = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
     const mixedMarks = new Function('remoteMarks', 'knownDisabledPaths',
-      `${client.slice(start, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(mixed.remoteMarks, mixed.knownDisabledPaths)
+      `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(mixed.remoteMarks, mixed.knownDisabledPaths)
     mixedMarks.collectRemoteWorkspaces([
       { workspaceId: 'w-local-only', path: 'F:/GitHub/other-project', title: 'other-project' },
       { workspaceId: 'w-remote', path: 'ssh://dev/home/dev/test/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },

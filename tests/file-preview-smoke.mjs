@@ -505,6 +505,35 @@ console.log('\n[client wiring]')
 
 rmSync(scratch, { recursive: true, force: true })
 
+// ---------------------------------------------------------------------------
+// [host markdown] the borrowed renderer is a probe, with a fallback under it
+// ---------------------------------------------------------------------------
+console.log('\n[host markdown]')
+{
+  const chunk = clientPartSource(pluginRoot, 'client.fileview.js')
+  check('the host renderer is fetched, not declared',
+    /require\('@deepseek-ai\/dsh-client-ui-primitives'\)/u.test(chunk) &&
+      /typeof primitives\?\.MarkdownText === 'function'/u.test(chunk),
+    'a hard import would turn a borrowed component into an install-time dependency')
+  check('a missing or changed host component falls back instead of throwing',
+    /hostMarkdownCache = null/u.test(chunk) &&
+      /jsx\(MarkdownBoundary/u.test(chunk) &&
+      /MarkdownDocument/u.test(chunk),
+    'the plugin renderer must stay reachable')
+  check('the borrowed component is labelled with our own dictionary',
+    /labels: markdownLabels\(t\)/u.test(chunk) &&
+      /toolbarLabels/u.test(chunk),
+    'untranslated chrome would leak the plugin language into the host component')
+  check('a document image is routed through the byte route',
+    /API\.download\}/u.test(chunk) &&
+      /pathImages: \{ resolve: imageResolverFor\(path, sessionId\) \}/u.test(chunk) &&
+      /function resolveRelativePath/u.test(chunk),
+    'a remote <img src> has no local file to point at')
+  check('the probe reports which renderer is in use',
+    /markdown: hostMarkdownText\(\) === null \? 'fallback' : 'host'/u.test(chunk),
+    'without it, "the preview looks wrong" has no first question to ask')
+}
+
 console.log(`\n=== file preview smoke: ${passed} passed, ${failures.length} failed ===\n`)
 if (failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`)
