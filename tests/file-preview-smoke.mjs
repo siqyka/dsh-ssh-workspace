@@ -922,9 +922,10 @@ console.log('\n[tab labels]')
       chunk.includes("setAttribute('data-sshwsp-tab-dir', '')") &&
       chunk.includes("direction: 'rtl'"),
     'React owns the name; the tail must be a node we can re-add, never text we rewrite')
-  check('hovering names the file in full',
-    chunk.includes('button.title = displayPathOf(path)') && chunk.includes("textOverflow: 'ellipsis'"),
-    'the tab is a fixed 132px: a long name is clipped, so the tooltip is the only full spelling left')
+  check('the tab draws no browser tooltip',
+    chunk.includes("button.removeAttribute('title')") && !chunk.includes('button.title = ') &&
+      chunk.includes("textOverflow: 'ellipsis'"),
+    'the host chrome owns the tab strip: a black OS tooltip on top of it reads as a bug, and the pane header names the file')
 }
 
 // [strip] our own nodes are never read as the tab name
@@ -1005,7 +1006,7 @@ console.log('\n[paths]')
     displayPathOf('/home/a/b.md') === '/home/a/b.md' && displayPathOf('\\\\srv\\share\\a.md') === '\\\\srv\\share\\a.md',
     'normalisation must not invent a rewrite where there was none')
   check('the tab tooltip and the pane header both display it',
-    chunk.includes('button.title = displayPathOf(path)') && chunk.includes('title: displayPathOf(filePath)'),
+    chunk.includes("button.removeAttribute('title')") && !chunk.includes('button.title = ') && chunk.includes('title: displayPathOf(filePath)'),
     'one path, one spelling: a tooltip and a header that disagree read as two filesystems')
 }
 
