@@ -4,6 +4,9 @@ node_modules/
 # 打包产物
 *.tgz
 
+# 编辑器 / 工具写出的临时文件（例如 client.js~RF…TMP）
+*.TMP
+
 # 仅本地使用的开发 / 测试脚本，不入库
 plugin-boot-test.mjs
 test-live.mjs
