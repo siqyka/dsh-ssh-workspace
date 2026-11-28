@@ -238,9 +238,26 @@ check('the aliases survive the live re-read, instead of being wiped a frame late
   check('the power dialog is lazily reachable', /lazyDialog\('HostPowerDialog'\)/u.test(bundle) && /exports\.HostPowerDialog/u.test(dialogs))
   check('host pickers skip switched-off hosts', /host\.enabled !== false/u.test(panel))
   check('both locales name the switch and its counts',
-    ['hosts.power', 'hosts.powerOffTitle', 'hosts.powerOffStays', 'hosts.resources.connections', 'hosts.allOff']
+    ['hosts.power', 'hosts.powerOffTitle', 'hosts.powerOffStays', 'hosts.resources.connections', 'hosts.allOff', 'hosts.powerOffWarn']
       .every(key => locale.includes(`'${key}'`)) &&
       (locale.match(/'hosts\.powerOffTitle'/gu) ?? []).length === 2)
+
+  // The confirm is a dialog of the SAME family as the rest, not a wide shell with a
+  // flush body: narrow width, its own inset, and the consequence as a band.
+  const powerDialog = dialogs.slice(dialogs.indexOf('function HostPowerDialog'), dialogs.indexOf('exports.HostEditor'))
+  const styles = readSource('lib/client/client.styles.js')
+  check('the confirm uses the narrow dialog shell',
+    /className: 'sshwsp-dialog sshwsp-dialog-narrow'/u.test(powerDialog) &&
+      /\.sshwsp-dialog-narrow \{ width: 480px; \}/u.test(styles))
+  check('the confirm body carries its own inset',
+    /sshwsp-dialog-body sshwsp-dialog-body-pad/u.test(powerDialog) &&
+      /\.sshwsp-dialog-body-pad \{ padding: 18px 20px 20px; \}/u.test(styles))
+  check('a quiet host reads as a sentence, not as an empty-state box',
+    /sshwsp-power-idle/u.test(powerDialog) && !/sshwsp-empty/u.test(powerDialog) &&
+      /\.sshwsp-power-idle \{/u.test(styles))
+  check('the consequence is a band, not another grey line',
+    /sshwsp-warnnote/u.test(powerDialog) && /\.sshwsp-warnnote \{/u.test(styles) &&
+      /powerOffWarn/u.test(powerDialog))
 }
 
 console.log(`\n=== host disable smoke: ${passed} passed, ${failures.length} failed ===\n`)
