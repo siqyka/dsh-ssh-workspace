@@ -1159,6 +1159,29 @@ console.log('\n[pause wiring in the shipped bundle]')
     'a handle/anchor download would ignore the pause button')
 }
 
+console.log('\n[queue presentation]')
+{
+  // A bar under queued/failed rows has no fraction to show and an empty track
+  // reads as "stuck at 0%" — the same grey line the archive sweep exists to avoid.
+  check('a progress rule appears only where a fraction exists',
+    /const showBar = item\.status === 'running' \|\| item\.status === 'paused' \|\| item\.status === 'pausing' \|\| item\.status === 'done'/u.test(source) &&
+      /showBar && jsx\('div', \{/u.test(source),
+    'queued and failed rows drew an empty track under their name')
+
+  check('the footer warning is prose, not the listing\'s mono meta',
+    /className: 'sshwsp-queue-hint'/u.test(source) &&
+      !/className: 'sshwsp-entry-meta', children: t\('queue\.refreshNote'\)/u.test(source) &&
+      /\.sshwsp-queue-hint \{[^}]*color: var\(--sshwsp-muted\)/u.test(source),
+    'mono + 11px made the only warning in the panel its smallest text')
+
+  check('a failed row is not washed in danger',
+    !/\.sshwsp-queuerow-failed \{[^}]*background/u.test(source),
+    'the red sentence and the retry button already say it, and a wash behind every failure turns the queue into an alarm')
+
+  check('the panel closes with the same glyph as the dialogs',
+    /t\('queue\.title'\)/.test(source) && /React\.createElement\(CloseIcon, \{ size: 14 \}\)/u.test(source),
+    'a text × next to 14px svg closes elsewhere')
+}
 if (failures.length > 0) {
   console.log('\nfailures:')
   for (const failure of failures) console.log(`  - ${failure}`)

@@ -1565,6 +1565,26 @@ console.log('\n[a11y: the fourth dialog, the rows, and the row menu]')
   check('...and the browser frame is not a scroll container either',
     /\.sshwsp-browser \{[^}]*overflow: clip/u.test(source),
     "overflow: hidden makes the frame a scroll container whose sticky child never sticks")
+  // The frame belongs to the dialog, not to the box inside it: a second border with
+  // its own radius, and rows indented to 14px, read as a widget dropped into a
+  // dialog. The rows, the toolbar and the target line share the dialog's inset.
+  check('...and the picker IS the dialog body, not a box inside it',
+    !/\.sshwsp-browser \{[^}]*border:/u.test(source) &&
+      /\.sshwsp-browser-header \{[^}]*padding: 10px 20px/u.test(source) &&
+      /\.sshwsp-entry \{[^}]*padding: 8px 20px/u.test(source),
+    'an inner frame told the eye this listing was a different surface than the dialog it fills')
+  check('...and the target line is a status under the list, at the dialog inset',
+    /\.sshwsp-picked \{[^}]*padding: 10px 20px/u.test(source) &&
+      /\.sshwsp-picked \{[^}]*font-size: var\(--sshwsp-font-xs\)/u.test(source) &&
+      /\.sshwsp-picked \{[^}]*border-top/u.test(source),
+    'the line that names where the workspace lands sat 2px from the edge, in mono, above the rows it describes')
+  check('...and every dialog opens with a title AND a close button',
+    !/sshwsp-dialog-title/u.test(clientPartSource(packageRoot, 'client.dialogs.js')) &&
+      !/title\.className = 'sshwsp-dialog-title'/u.test(source) &&
+      // Four in the dialog chunk plus the new-workspace wizard, which lives in
+      // its own chunk because the sidebar loads it on demand already.
+      (source.match(/className: 'sshwsp-dlg-head'/gu) ?? []).length === 5,
+    'a plain title bar left the picker and the host editor with the footer button as their only exit')
 
   // The menu: focus moves in, arrows move between items, Escape and Tab close,
   // and it can be opened without a mouse.
