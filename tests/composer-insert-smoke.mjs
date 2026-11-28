@@ -810,7 +810,7 @@ const teardown = source.match(/return \(\) => \{\s*\n\s*clearTimeout\(transferAc
 const stops = ('clearTimeout(transferActionsProbe)' + teardown)
   .split('\n').map(line => line.trim()).filter(line => line !== '')
 check('apply() returns the disposer',
-  stops.join(' | ') === 'clearTimeout(transferActionsProbe) | sessionCatchUp.stop() | detachBridges() | detachTriggerRects() | detachMarks?.() | releaseFileView()',
+  stops.join(' | ') === 'clearTimeout(transferActionsProbe) | sessionCatchUp.stop() | detachBridges() | detachTriggerRects() | detachMarks?.() | fileView?.release()',
   stops.join(' | '))
 check('apply() keeps the installed disposer', source.includes('const detachBridges = installComposerBridges(ctx)'))
 check('the trigger-rect capture listener is removable',

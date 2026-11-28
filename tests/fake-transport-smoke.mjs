@@ -2,7 +2,7 @@
  * Real-transport reconnect: the trigger, not the branch.
  *
  * `reconnect-smoke` drives the scheduler with an injected clock and a fake
- * `attempt`; `replay-smoke` and `host-key-smoke` set `record.broken` by hand.
+ * `attempt`; `replay-smoke` and `host-intent-smoke` set `record.broken` by hand.
  * All three prove what the code does *after* it learns the connection is dead.
  * None of them proves the connection ever gets reported dead — that is
  * `client.on('close')` firing on a socket the process did not close, and a

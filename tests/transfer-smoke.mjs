@@ -1324,7 +1324,10 @@ try {
   // A 200 with an error body is indistinguishable from content once the headers
   // are out, so the download refusal must happen before `writeHead`.
   {
-    const headAt = downloadSource.indexOf("'content-type': 'application/octet-stream'")
+    // Anchor on the 200 writeHead, not a literal content-type: inline preview
+    // made the type a variable, and the 206 range response writes headers before
+    // the size fence on purpose (ranges never buffer the whole file).
+    const headAt = downloadSource.indexOf('res.writeHead(200, {')
     const checkAt = downloadSource.indexOf('size > DEFAULT_MAX_BYTES')
     check('the download refusal precedes the response headers',
       checkAt > 0 && headAt > 0 && checkAt < headAt, `check@${checkAt} head@${headAt}`)

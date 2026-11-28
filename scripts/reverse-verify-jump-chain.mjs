@@ -20,42 +20,42 @@ const MUTATIONS = [
     file: 'lib/hosts/hosts.js',
     find: "  if (trimmed.length === 1 && trimmed[0].toLowerCase() === 'none') return { kind: 'direct' }",
     replace: '',
-    suites: ['tests/jump-chain-smoke.mjs'],
+    suites: ['tests/jump-tunnels-smoke.mjs'],
   },
   {
     name: 'a malformed hop silently becomes "direct"',
     file: 'lib/hosts/hosts.js',
     find: '      if (!/^\\d+$/u.test(portText)) {\n        throw new Error',
     replace: '      if (false) {\n        throw new Error',
-    suites: ['tests/jump-chain-smoke.mjs'],
+    suites: ['tests/jump-tunnels-smoke.mjs'],
   },
   {
     name: 'the self-reference check is removed',
     file: 'lib/hosts/hosts.js',
     find: "    if (hop.host.toLowerCase() === target) {",
     replace: '    if (false) {',
-    suites: ['tests/jump-chain-smoke.mjs'],
+    suites: ['tests/jump-tunnels-smoke.mjs'],
   },
   {
     name: 'duplicate hops are allowed',
     file: 'lib/hosts/hosts.js',
     find: '    if (seen.has(key)) {',
     replace: '    if (false) {',
-    suites: ['tests/jump-chain-smoke.mjs'],
+    suites: ['tests/jump-tunnels-smoke.mjs'],
   },
   {
     name: 'the hop limit is dropped',
     file: 'lib/hosts/hosts.js',
     find: '  if (trimmed.length > MAX_JUMPS) {',
     replace: '  if (false) {',
-    suites: ['tests/jump-chain-smoke.mjs'],
+    suites: ['tests/jump-tunnels-smoke.mjs'],
   },
   {
     name: 'IPv6 brackets are left in the address',
     file: 'lib/hosts/hosts.js',
     find: '    host = bracket[1]',
     replace: '    host = rest',
-    suites: ['tests/jump-chain-smoke.mjs'],
+    suites: ['tests/jump-tunnels-smoke.mjs'],
   },
   {
     name: 'the resolver ignores the parsed chain (silent direct connection)',
@@ -103,6 +103,6 @@ for (const mutation of MUTATIONS) {
   }
 }
 
-const restored = run(['tests/jump-chain-smoke.mjs', 'tests/host-listing-smoke.mjs', 'tests/ssh-config-smoke.mjs'])
+const restored = run(['tests/jump-tunnels-smoke.mjs', 'tests/host-listing-smoke.mjs', 'tests/ssh-config-smoke.mjs'])
 console.log(`\nrestored: ${restored === 0 ? 'suites green again' : `STILL ${restored} RED`}`)
 if (restored !== 0 || !allGood) process.exit(1)
