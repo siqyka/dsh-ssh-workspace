@@ -239,18 +239,23 @@ console.log('\n[the engine records every command it runs]')
     /\.sshwsp-cmdrow \{[^}]*display: flex/u.test(stylesSource),
     'without its own display, the row inherits nothing and the grid rule still wins')
 
-  // The filter used to ask about workspaces, and almost nothing in this log has
-  // one: every row carries an alias, while `sessionId` only exists when a
-  // session's tool call recorded it — the capability probes that fill most of
-  // the table have no session at all. Filtering by workspace therefore emptied
-  // the table and "all workspaces" restored it, which is a control that does
-  // nothing while looking like it does.
-  check('the audit filter is built from the rows the log holds',
-    /auditHosts = \[\.\.\.new Set\(auditRows\.map\(row => row\.alias\)/u.test(panelSource),
-    'options must come from auditRows, not from /status workspaces')
-  check('...and filters on the alias every row has',
-    /row\.alias === auditHost/u.test(panelSource) && !/auditWorkspaceIds/u.test(panelSource),
-    'a workspace filter cannot answer for a probe row')
+  // The prototype's audit tab filters by WORKSPACE, and the panel can answer
+  // that honestly: `/status` ships each remote workspace with its `sessionIds`,
+  // so a row whose call named a session resolves to a workspace. Two rules keep
+  // the control from becoming furniture again: the options come from the rows
+  // (never from the workspace list, which also holds workspaces with no rows),
+  // and a row with no session resolves to no workspace rather than to a guess.
+  check('the audit filter is built from the workspaces the rows actually have',
+    /auditWorkspaces = \[\.\.\.new Set\(auditRows\.map\(workspacePathOfRow\)/u.test(panelSource),
+    'options must come from the rows, not from /status workspaces')
+  check('...and resolves a row through the session that made the call',
+    /auditWorkspaceBySession\.set\(String\(sessionId\)/u.test(panelSource) &&
+      /row\.sessionId/u.test(panelSource) &&
+      /workspacePathOfRow\(row\) === auditWorkspace/u.test(panelSource),
+    'rows no longer resolve to a workspace through their session')
+  check('...and a row without a session says so instead of borrowing a workspace',
+    /audit\.noWorkspace/u.test(panelSource) && /children: path === '' \? '—'/u.test(panelSource),
+    'a probe row would be filed under whichever workspace came first')
 
   const engine = new SshWorkspaceEngine({})
   engine.audit.record({ alias: 'refused-host', command: 'rm -rf /srv', channel: 'exec', durationMs: 0, refused: true, error: 'read-only' })

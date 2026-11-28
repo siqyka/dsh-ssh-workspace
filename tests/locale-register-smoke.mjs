@@ -212,7 +212,6 @@ const interpolated = [...new Set(
 // `conn.state` is connected|broken; a toast action is details|copy|retry.
 // A new member is a new entry in BOTH tables, not a new literal call site.
 const FAMILIES = {
-  'audit.channel.': ['exec', 'shell', 'background', 'terminal'],
   // The diagnostics ring's KINDS, as `lib/core/diagnostics.js` spells them: the
   // suffix IS the recorded kind, so `remote-skills` keeps its hyphen.
   'audit.kind.': ['connect', 'disconnect', 'reconnect', 'degraded', 'forward', 'upstream', 'seam', 'ownership', 'remote-skills', 'write'],

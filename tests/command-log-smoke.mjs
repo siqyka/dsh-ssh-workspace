@@ -248,7 +248,9 @@ check('the tab opens a fifteen-row window, not a fifteen-row log',
   'every recorded row stays reachable by scrolling; the window is the only thing that got taller')
   check('the retention is saved through the route', /fetchJson\(API\.auditSettings/u.test(panelSource))
   check('the kernel names both routes', /audit: '\/api\/dsh-ssh-workspace\/audit'/u.test(kernelSource) && /auditSettings: '\/api\/dsh-ssh-workspace\/audit\/settings'/u.test(kernelSource))
-  for (const key of ['audit.tab', 'audit.summary', 'audit.retention', 'audit.empty', 'audit.channel.terminal', 'panel.tabAudit']) {
+  // The channel column is gone (the table shows a workspace now), so its four
+  // keys went with it. These are the ids the pane actually reads.
+  for (const key of ['audit.tab', 'audit.summary', 'audit.retention', 'audit.empty', 'audit.workspace', 'audit.noWorkspace', 'panel.tabAudit']) {
     check(`'${key}' is defined in both dictionaries`,
       (localeSource.match(new RegExp(`'${key.replace(/\./gu, '\\.')}':`, 'gu')) ?? []).length === 2)
   }
