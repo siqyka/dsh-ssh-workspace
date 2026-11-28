@@ -227,6 +227,13 @@ console.log('[client]')
   check('the dialog says the sessions stay', /powerOffStays/u.test(dialogs))
   check('the panel posts to the toggle route', /API\.hostToggle/u.test(panel) && /hostToggle:\s*'\/api\/dsh-ssh-workspace\/hosts\/toggle'/u.test(kernel))
   check('the status poll feeds the host-off marks', /syncRemoteWorkspaceMarks\(statusData\.workspaces, statusData\.disabled, statusData\.disabledHosts\)/u.test(panel))
+check('the aliases survive the live re-read, instead of being wiped a frame later',
+  /remoteMarks\.disabledHostAliases = new Set\(disabledHosts\.map\(String\)\)/u.test(marks) &&
+    /const offHosts = new Set\(remoteMarks\.disabledHostAliases \?\? \[\]\)/u.test(marks) &&
+    /collectRemoteWorkspaces\(items, currentDisabledPaths\(\), true\)/u.test(marks) &&
+    /remoteMarks\.hostOffSessionIds = new Set\(\)/u.test(marks) &&
+    /const hostOffSessions = new Set\(remoteMarks\.hostOffSessionIds \?\? \[\]\)/u.test(marks),
+  'every pass re-reads the live workspace store, which knows nothing about the switch and carries no sessionIds; the remembered aliases and membership are what keep the dimming on')
   check('the marks attribute is distinct from detachment', /data-sshwsp-hostoff/u.test(marks) && /data-sshwsp-disabled/u.test(marks))
   check('the power dialog is lazily reachable', /lazyDialog\('HostPowerDialog'\)/u.test(bundle) && /exports\.HostPowerDialog/u.test(dialogs))
   check('host pickers skip switched-off hosts', /host\.enabled !== false/u.test(panel))

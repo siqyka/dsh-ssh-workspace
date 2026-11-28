@@ -233,7 +233,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     const sandbox = { remoteMarks: {}, knownDisabledPaths: new Set() }
     const factory = new Function('remoteMarks', 'knownDisabledPaths',
       `${client.slice(from, end)}; return collectRemoteWorkspaces;`)
-    const collect = factory(sandbox.remoteMarks, sandbox.knownDisabledPaths)
+    const collect = factory(sandbox.remoteMarks, sandbox.knownDisabledPaths, sandbox.knownDisabledPaths)
     collect([
       { id: 'ws-off', path: 'ssh://box/srv/off', title: 'off', sessionIds: ['s1', 's2'] },
       { id: 'ws-on', path: 'ssh://box/srv/on', title: 'on', sessionIds: ['s3'] },
@@ -269,10 +269,39 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     const sandbox = {
       remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() },
       knownDisabledPaths: new Set(),
+      knownDisabledHosts: new Set(),
     }
     const factory = new Function('remoteMarks', 'knownDisabledPaths',
       `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)
-    const marks = factory(sandbox.remoteMarks, sandbox.knownDisabledPaths)
+    const marks = factory(sandbox.remoteMarks, sandbox.knownDisabledPaths, sandbox.knownDisabledPaths)
+
+    // A switched-off host is reported once, with its sessions; the live
+    // workspace re-read that follows every pass carries no `sessionIds`, and
+    // the panel never re-reports the switch. The dimming has to survive that.
+    check('a switched-off host keeps its workspaces and sessions dimmed across the re-read', (() => {
+      const own = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
+      const collector = new Function('remoteMarks', 'knownDisabledPaths',
+        `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces }`)(own.remoteMarks, own.knownDisabledPaths)
+      collector.collectRemoteWorkspaces([
+        { workspaceId: 'w-box', path: 'ssh://box/srv/a', title: 'a', sessionIds: ['s-a', 's-b'] },
+      ], [], true, ['box'])
+      const reported = own.remoteMarks.hostOffIds.has('w-box') && own.remoteMarks.hostOffSessionIds.has('s-a')
+      // The live store: same rows, no sessionIds, no host argument.
+      collector.collectRemoteWorkspaces([{ workspaceId: 'w-box', path: 'ssh://box/srv/a', title: 'a' }], [], true)
+      return reported &&
+        own.remoteMarks.hostOffIds.has('w-box') &&
+        own.remoteMarks.hostOffSessionIds.has('s-a') &&
+        own.remoteMarks.hostOffSessionIds.has('s-b')
+    })(), 'the live store re-read has no opinion about the switch')
+    // Switching it back on means an empty report, and that must clear everything.
+    check('an empty host report clears the dimming again', (() => {
+      const own = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
+      const collector = new Function('remoteMarks', 'knownDisabledPaths',
+        `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces }`)(own.remoteMarks, own.knownDisabledPaths)
+      collector.collectRemoteWorkspaces([{ workspaceId: 'w-box', path: 'ssh://box/srv/a', title: 'a', sessionIds: ['s-a'] }], [], true, ['box'])
+      collector.collectRemoteWorkspaces([{ workspaceId: 'w-box', path: 'ssh://box/srv/a', title: 'a', sessionIds: ['s-a'] }], [], true, [])
+      return own.remoteMarks.hostOffIds.size === 0 && own.remoteMarks.hostOffSessionIds.size === 0
+    })(), 'switching the host on is the one thing that may un-dim its rows')
 
     const registry = [
       { workspaceId: 'w-local', path: 'F:/GitHub/dsh-ssh-workspace', title: 'dsh-ssh-workspace' },
@@ -318,7 +347,7 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     // assertions above already settled this one.
     const boot = { remoteMarks: { ids: new Set(), titles: new Set(), localTitles: new Set(), titlesSettled: false, disabledIds: new Set(), disabledTitles: new Set(), disabledSessionIds: new Set() }, knownDisabledPaths: new Set() }
     const bootMarks = new Function('remoteMarks', 'knownDisabledPaths',
-      `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(boot.remoteMarks, boot.knownDisabledPaths)
+      `${client.slice(from, rulesEnd)}; return { collectRemoteWorkspaces, remoteTitleMatch, detachedTitleMatch }`)(boot.remoteMarks, boot.knownDisabledPaths, boot.knownDisabledPaths)
     bootMarks.collectRemoteWorkspaces(registry.filter(item => item.path.startsWith('ssh://')), ['ssh://web/srv/site'])
     check('an unsettled rule stays silent even for a remote-only title',
       bootMarks.remoteTitleMatch('blog') === false && bootMarks.detachedTitleMatch('blog') === false,
