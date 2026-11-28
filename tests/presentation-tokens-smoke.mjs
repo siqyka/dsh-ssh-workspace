@@ -371,7 +371,15 @@ const stateExempt = new Map([
 ])
 
 const clickable = new Set()
-for (const rule of rules.matchAll(/(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/gu)) {
+// Comments are stripped first, because the selector pattern below matches any
+// run of non-brace characters — newlines included — so a rule written directly
+// under a `/* … */` comment had the comment swallowed into its selector and was
+// never a bare class. That made every commented rule invisible to this scan, and
+// the reverse-verification mutation "the file action loses its focus ring" went
+// green the moment the rule above it grew a comment. The sheet's comments are
+// prose for the reader, not rules for the browser.
+const rulesWithoutComments = rules.replace(/\/\*[\s\S]*?\*\//gu, '')
+for (const rule of rulesWithoutComments.matchAll(/(^|\n)([^{}\n][^{}]*)\{([^}]*)\}/gu)) {
   if (!/cursor:\s*pointer/u.test(rule[3])) continue
   for (const part of rule[2].split(',')) {
     const selector = part.trim()

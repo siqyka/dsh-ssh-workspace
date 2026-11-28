@@ -224,6 +224,21 @@ console.log('\n[the engine records every command it runs]')
   check('the exec tool records a refusal into the audit', refusalCall, 'the catch around assertRemoteCommandAllowed must record')
   check('...with the refusal flag, so a reader knows nothing ran', /refused: true/u.test(toolsSource))
 
+  // The audit tab's row is a five-column grid. The settings page also lists the
+  // tail of the log, but with three facts and no columns — it wore the same
+  // class once and the grid pushed its command into an 84px cell. The two lists
+  // must stay separate classes, and the compact one must carry the layout that
+  // says so.
+  const panelSource = readFileSync(path.join(pluginRoot, 'lib/client/client.panel.js'), 'utf8')
+  const stylesSource = readFileSync(path.join(pluginRoot, 'lib/client/client.styles.js'), 'utf8')
+  check('the settings command list is not the audit table',
+    /className: 'sshwsp-cmdrow'/.test(panelSource) &&
+      !/audit\.title' \}\),[\s\S]{0,600}sshwsp-audit-row/.test(panelSource),
+    'the settings list must use sshwsp-cmdrow, not the five-column audit row')
+  check('...and that compact row lays itself out on one line',
+    /\.sshwsp-cmdrow \{[^}]*display: flex/u.test(stylesSource),
+    'without its own display, the row inherits nothing and the grid rule still wins')
+
   const engine = new SshWorkspaceEngine({})
   engine.audit.record({ alias: 'refused-host', command: 'rm -rf /srv', channel: 'exec', durationMs: 0, refused: true, error: 'read-only' })
   const rows = engine.audit.listFor('refused-host')
