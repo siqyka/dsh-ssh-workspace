@@ -259,6 +259,17 @@ check('without the return the same callback yields undefined',
   stripped(logs) === undefined,
   'the regression assertion above would not have caught the shipped bug')
 
+// The teaching line belongs to the LIST, not to the toolbar: a button and a path
+// already claim that row's width, and the note about file rows may only appear when
+// file rows are actually listed.
+check('the picker hint is its own strip above the rows',
+  /className: 'sshwsp-browser-hint', children: \[/u.test(source) &&
+    /\.sshwsp-browser-hint \{[^}]*border-bottom: 1px solid/u.test(source),
+  'inside the toolbar row the hint was the first thing clipped, and it described rows it was not on')
+check('...and the file-row note appears only when files are shown',
+  /pickerShowsFiles\(\) \? t\('browser\.fileHintNote'\) : ''/u.test(source),
+  'the hint would promise file rows in a listing that filters them out')
+
 console.log(`\n=== ${passed} passed, ${failures.length} failed ===`)
 if (failures.length > 0) {
   console.log('failures:')
