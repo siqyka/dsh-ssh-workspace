@@ -240,11 +240,12 @@ console.log('\n[the panel has a tab for it]')
   check('the tab list carries the audit', /const PANEL_TABS = \['hosts', 'workspaces', 'audit', 'settings'\]/u.test(panelSource))
   check('the pane renders the rows', /className: 'sshwsp-audit sshwsp-audit-full'/u.test(panelSource))
   check('the panel asks the audit route', /fetchJson\(API\.audit\)/u.test(panelSource))
-check('the tab shows only the newest fifteen rows',
-  /const AUDIT_ROWS_SHOWN = 15/u.test(panelSource) &&
-    /auditShown = auditVisible\.slice\(-AUDIT_ROWS_SHOWN\)/u.test(panelSource) &&
-    /auditShown\.slice\(\)\.reverse\(\)/u.test(panelSource),
-  'the ring may keep hundreds, but the tab answers "what just ran", so it stops at fifteen and says so in the tooltip')
+check('the tab opens a fifteen-row window, not a fifteen-row log',
+  /const AUDIT_LIST_CAP = 15/u.test(panelSource) &&
+    /auditVisible\.slice\(\)\.reverse\(\)/u.test(panelSource) &&
+    /cap: AUDIT_LIST_CAP,/u.test(panelSource) &&
+    !/AUDIT_ROWS_SHOWN/u.test(panelSource),
+  'every recorded row stays reachable by scrolling; the window is the only thing that got taller')
   check('the retention is saved through the route', /fetchJson\(API\.auditSettings/u.test(panelSource))
   check('the kernel names both routes', /audit: '\/api\/dsh-ssh-workspace\/audit'/u.test(kernelSource) && /auditSettings: '\/api\/dsh-ssh-workspace\/audit\/settings'/u.test(kernelSource))
   for (const key of ['audit.tab', 'audit.summary', 'audit.retention', 'audit.empty', 'audit.channel.terminal', 'panel.tabAudit']) {
