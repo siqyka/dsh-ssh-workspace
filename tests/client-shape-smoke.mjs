@@ -2140,54 +2140,34 @@ console.log('\n[the file-reference zone: two titles, and they are not interchang
     source.includes("'passthrough.group': '文件引用设置'") &&
       source.includes("'passthrough.group': 'File reference settings'"),
     'the zone heading still reads as the old single title')
-  check('the scheme heading is the renamed one',
-    source.includes("'passthrough.title': '显式文件引用 scheme'") &&
-      source.includes("'passthrough.title': 'Explicit file reference scheme'"),
-    'the scheme heading was not renamed')
+  check('the scheme field is labelled with the prototype\'s one line',
+    source.includes("'passthrough.schemeLabel': '显式文件引用 scheme · 本机路径前缀'") &&
+      source.includes("'passthrough.schemeLabel': 'Explicit file reference scheme · local path prefix'"),
+    'the field label no longer names both halves of the setting')
   // A leftover copy of the old title is a SECOND name for the same zone, which
   // is how the panel came to describe one block two ways.
   check('the previous section title survives nowhere in the dictionaries',
     !source.includes("'Host Path Passthrough'") &&
-      !source.includes("'passthrough.title': '本机路径直通'"),
+      !source.includes("'passthrough.title': '本机路径直通'") &&
+      !source.includes("'passthrough.title':"),
     'a dictionary still carries the previous title')
   check('the zone heading renders as a section head, like the other panel sections',
     isLive(source, /jsx\('div', \{ className: 'sshwsp-section-head', children: \[\s*jsx\('h3', \{ children: t\('passthrough\.group'\) \}\),/u),
     'the zone heading is gone, or it is no longer the section head')
-  check('the scheme heading renders BELOW it, as an h4',
-    isLive(source, /jsx\('h4', \{ children: t\('passthrough\.title'\) \}\)/u) &&
-      !isLive(source, /jsx\('h3', \{ children: t\('passthrough\.title'\) \}/u),
-    'the two headings are one level again, so the block has one title')
-  check('the h4 follows the section head rather than preceding it',
+  // One heading per block. The h4 that used to sit between the zone head and
+  // the field gave the same control two names and pushed the box a line away
+  // from its label; the prototype has the label carry both halves instead.
+  check('no h4 subheading sits between the zone head and the field',
+    !isLive(source, /jsx\('h4', /u) &&
+      !/\.sshwsp h4 \{/u.test(source),
+    'a second heading is back, or the h4 rule outlived its only element')
+  check('the labelled field follows the zone head',
     (() => {
       const head = source.indexOf("jsx('h3', { children: t('passthrough.group') })")
-      const sub = source.indexOf("jsx('h4', { children: t('passthrough.title') })")
-      return head >= 0 && sub > head
+      const field = source.indexOf("t('passthrough.schemeLabel')")
+      return head >= 0 && field > head
     })(),
-    'the subheading renders above the zone it belongs to')
-  check('the h4 is styled one level down from the h3',
-    // Same SIZE as the zone head so the block still reads as one unit, lighter
-    // WEIGHT so it reads as one level down. The sizes are scale tokens now, so
-    // the assertion pins the relationship rather than the number: a rewrite
-    // that made h4 the same weight would be the regression, and it is the one
-    // that actually made the subheading look like a second title.
-    //
-    // The numbers are READ, not written down here. The previous version pinned
-    // `font-weight: 500` on the zone head too, which made a purely visual
-    // decision (500 → 600, so a 12px muted label still reads as a heading)
-    // fail as if the level had been collapsed. Reading both weights is what
-    // this comment always claimed to do.
-    (() => {
-      const weightOf = (tag) => {
-        const rule = new RegExp(`\\.sshwsp ${tag} \\{([^}]*)\\}`, 'u').exec(source)?.[1] ?? ''
-        const raw = /font-weight:\s*(\d+)/u.exec(rule)?.[1]
-        return raw === undefined ? undefined : Number(raw)
-      }
-      const zone = weightOf('h3')
-      const sub = weightOf('h4')
-      return /\.sshwsp h4 \{ font-size: var\(--sshwsp-font-xs\); font-weight: \d+; margin: 0 0 10px;/u.test(source) &&
-        typeof zone === 'number' && typeof sub === 'number' && sub < zone
-    })(),
-    'no lighter h4 rule — the subheading looks identical to the zone head, or is unstyled')
+    'the field renders above the zone it belongs to')
   check('the scheme box keeps its own accessible name',
     source.includes("'aria-label': t('passthrough.scheme')") &&
       source.includes("'passthrough.scheme': '本机路径前缀'"),
@@ -2229,21 +2209,32 @@ console.log('\n[the scheme rules are published, not duplicated]')
     const count = (source.match(new RegExp(`'passthrough\\.${key}':`, 'gu')) ?? []).length
     check(`'passthrough.${key}' is defined in both dictionaries`, count === 2, `${count} definition(s)`)
   }
-  // The hint is the only place the panel states the rules the user cannot see
-  // being applied. All four of them have to be there, in both languages: one
-  // prefix at a time, the 3-character minimum, the reserved list living on the
-  // server, and the NAME/path case split.
+  // The hint is short by design (the prototype's settings page states the rule
+  // in one sentence and leaves the syntax to the server's error messages), so
+  // it pins the ONE rule a user must know before typing: what the word is for,
+  // and that only one can exist. The 3-character minimum, the reserved list and
+  // the name/path case split are enforced by the server and reported through
+  // `passthrough.schemeTooShort` / `schemeReserved` / `schemeInvalid`, which the
+  // checks below pin instead of a paragraph nobody reads.
   const hintLines = source.split('\n').filter(line => line.includes("'passthrough.schemeHint':"))
   check('the hint is one line per language',
     hintLines.length === 2, `${hintLines.length} line(s)`)
-  check('the Chinese hint states the one-prefix rule, the 3-character minimum and the case split',
-    hintLines[0] !== undefined && hintLines[0].includes('一个') && hintLines[0].includes('3') &&
-      hintLines[0].includes('大小写') && hintLines[0].includes('保留名'),
+  check('the Chinese hint says what the prefix is for, with an example, and that only one exists',
+    hintLines[0] !== undefined && hintLines[0].includes('本机路径') &&
+      hintLines[0].includes('local:/Volumes/SSD/a.md') && hintLines[0].includes('只能配置一个前缀'),
     hintLines[0] === undefined ? 'missing' : hintLines[0].slice(0, 120))
-  check('the English hint states the same three rules',
-    hintLines[1] !== undefined && /only one prefix/iu.test(hintLines[1]) && hintLines[1].includes('3') &&
-      /case-insensitiv/iu.test(hintLines[1]) && /reserved/iu.test(hintLines[1]),
+  check('the English hint says the same three things',
+    hintLines[1] !== undefined && /THIS machine/iu.test(hintLines[1]) &&
+      hintLines[1].includes('local:/Volumes/SSD/a.md') && /only one prefix/iu.test(hintLines[1]),
     hintLines[1] === undefined ? 'missing' : hintLines[1].slice(0, 120))
+  check('the rules the hint no longer recites are still reported when they bite',
+    // The dictionaries are checked key-by-key above; what matters here is that
+    // the panel still RENDERS each refusal, so a rule can never exist only in
+    // the server's validator.
+    source.includes("t('passthrough.schemeTooShort')") &&
+      source.includes("t('passthrough.schemeReserved')") &&
+      source.includes("t('passthrough.schemeInvalid')"),
+    'a rule the server enforces is neither in the hint nor in a message the user can see')
   // A stored-but-unusable value has to be visible: degrading it silently is how
   // "my prefix stopped working" becomes unreportable.
   check('the panel renders the degraded-value warning above the settings',

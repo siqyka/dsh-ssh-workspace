@@ -368,7 +368,7 @@ console.log('\n[client wiring]')
   check('both locales define the new strings',
     [...client.matchAll(/'fileview\.group': '([^']*)'/g)].length === 2 &&
     [...client.matchAll(/'preview\.tabClose': '([^']*)'/g)].length === 2 &&
-    [...client.matchAll(/'fileview\.hint': '([^']*)'/g)].length === 2 &&
+    [...client.matchAll(/'fileview\.target': '([^']*)'/g)].length === 2 &&
     [...client.matchAll(/'preview\.empty': '([^']*)'/g)].length === 0 &&
     [...client.matchAll(/'preview\.tabLabel': '([^']*)'/g)].length === 0,
     'a missing key renders as a raw namespace path')
