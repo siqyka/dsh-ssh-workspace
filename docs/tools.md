@@ -173,7 +173,7 @@ ENOENT」的工作区。工作区记录若已被 `deregister` 模式删掉，会
 （`present` / `absent` / `unknown`），`text` 与面板渲染的是同一份措辞。**只有 `absent` 带
 `install` 提示**——给 `unknown` 也加提示，等于请用户去装一个他可能早有的工具。
 
-`commands[]`：最近 20 条远端命令（已脱敏），字段 `seq / at / alias / command / channel /
+`commands[]`：最近 20 条远端命令（**原样**，未脱敏），字段 `seq / at / alias / command / channel /
 durationMs / exitCode / timedOut`，以及可选的 `outcomeUnknown`、`refused`、`cwd`、`error`。
 `refused: true` 是唯一确定「没跑」的条目。渲染时只列失败、超时、结果未知与被拒绝的，因为
 一条成功的 `ls` 不是新闻。

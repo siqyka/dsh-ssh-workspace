@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+- **命令审计不再打码**：环里存的是用户真正敲下的那行（只截断到 400 字符），面板与 `/status` 里也就是它——`<redacted>` 让这张表回答不了唯一要问的问题「我刚才跑了什么」。脱敏挪到两条**离开本机**的出口：诊断文本（`exportText()`）与支持包（`buildSupportBundle()`），两者共用 `redactCommand`（从 `lib/engine/engine.js` 移到 `lib/core/diagnostics.js`，引擎侧仍可 `import { redactCommand } from engine`）。本机那份明文躺在 `dsh-ssh-commands.json` 里，凭据随命令一起落盘——这是有意的取舍，面板脚注已说明。
+
 - 审计 tab 的窗口高度从 5 行放大到 **15 行**（`CappedList` 新增 `cap` 参数，`AUDIT_LIST_CAP`）：记录仍按保留条数保存，多出的行滚动查看，没有截断。
 
 - **面板表现层按 `ui/` 原型对齐**（纯样式与结构，不改 IA、不换主题）：

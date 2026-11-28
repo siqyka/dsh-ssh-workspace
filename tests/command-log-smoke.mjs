@@ -122,7 +122,10 @@ console.log('\n[restore goes through the same sanitizer]')
     'nope',
   ])
   check('malformed rows are dropped', kept === 2)
-  check('a secret in a restored row is redacted', !audit.list()[0].command.includes('sk-live-123'))
+  // The ring is the local record and keeps what was written; the export is the
+  // edge that masks, so the file's secret must be gone from the TEXT, not the row.
+  check('a restored row keeps its text', audit.list()[0].command.includes('sk-live-123'), audit.list()[0].command)
+  check('...and the export masks it', !audit.exportText().includes('sk-live-123'), audit.exportText())
   check('a restored session id is bounded', audit.list()[1].sessionId.length === 64)
   check('rows are ordered by seq', audit.list()[0].seq === 4 && audit.list()[1].seq === 5)
 }

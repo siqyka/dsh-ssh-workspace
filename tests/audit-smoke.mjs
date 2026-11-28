@@ -5,9 +5,11 @@
  * anything — it cannot, and the plugin says so — so the properties that matter
  * are the ones that make a RECORD trustworthy:
  *
- *  1. **Redaction happens on WRITE.** A raw copy that is masked only at export
- *     leaks through any other reader, and there is no "raw" switch to leave
- *     switched on.
+ *  1. **The ring keeps what was typed; the exports mask.** The record is the
+ *     user's own log of what they ran on their own machine, so `<redacted>` in
+ *     the table would make it unable to answer its only question. The two edges
+ *     that leave the machine — `exportText()` and the support bundle — mask on
+ *     the way out, and the tests pin both halves so neither drifts.
  *  2. **Redaction keeps the command readable.** Over-redacting makes the log
  *     useless ("what did I run?"), so the tests pin both directions: the secret
  *     is gone AND the shape of the command survives.
@@ -83,6 +85,28 @@ for (const [label, command, secrets] of SECRET_CASES) {
   const plain = 'git status --short && ls -la /tmp'
   check('an ordinary command is unchanged', redactCommand(plain) === plain, redactCommand(plain))
   check('a quoted argument survives', redactCommand(`sh -c 'echo hello world'`) === `sh -c 'echo hello world'`, redactCommand(`sh -c 'echo hello world'`))
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n[the ring keeps what was typed; only the exports mask]')
+
+{
+  const audit = new CommandAudit()
+  const raw = 'mysql -u root --password=hunter2 -e "select 1"'
+  audit.record({ alias: 'h', command: raw, cwd: '/home/alice/app', durationMs: 1, exitCode: 0, error: 'auth failed for /home/alice/.ssh/id_rsa' })
+  const stored = audit.list()[0]
+  check('the stored command is the one that ran, unmarked', stored.command === raw, stored.command)
+  check('the stored cwd keeps its real path', stored.cwd === '/home/alice/app', String(stored.cwd))
+  check('the stored error keeps its real path', stored.error.includes('/home/alice'), String(stored.error))
+
+  const text = audit.exportText()
+  check('the exported text masks the password', !text.includes('hunter2'), text)
+  check('...and the home directory', !text.includes('/home/alice'), text)
+  check('...while keeping the command readable', text.includes('mysql -u root') && text.includes('<redacted>'), text)
+
+  const restored = new CommandAudit()
+  restored.restore([{ seq: 1, at: 1, alias: 'h', command: raw, durationMs: 1, exitCode: 0 }])
+  check('a restored row is not re-masked on the way in', restored.list()[0].command === raw, restored.list()[0].command)
 }
 
 // ---------------------------------------------------------------------------
