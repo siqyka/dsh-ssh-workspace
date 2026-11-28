@@ -753,11 +753,14 @@ rank **250**——夹在项目级（100 / 200）与用户级（400 / 500）之�
 「停用主机」不是一个 UI 状态，而是一道**准入闸门加一次拆除**。闸门在引擎里：
 `disabledHosts: Set<alias>`，`acquire` / `probeDescriptor` / `exec` / `openChannel` 一进来就
 `assertHostEnabled(alias)`，被拒的一次 `exec` 仍写审计（`refused: true`）——否则「为什么这条命令
-没跑」在审计里会是一片空白。拆除在 `HostDisabler.disable(alias)`：**先持久化** `enabled:false`
+没跑」在审计里会是一片空白。拆除在 `HostDisabler.disable(alias)`：**先持久化**——存储主机写
+`enabled:false`，`~/.ssh/config` 主机写 store 顶层的 `disabledAliases` 数组（那个文件永远不被改写）——
 （写失败就整体失败，不动任何东西），**再关闸**，然后按「在途命令 abort → 池化连接 forget →
 持久 shell → 正/反向转发 → 变更监视 → 远端终端」收尾。顺序不是风格问题：闸门必须早于拆除，
 否则后台重连能在这几步之间重新拨上；池化连接必须最后丢，因为前面每一步都可能还要用它道别。
-`enable(alias)` 只持久化并开闸，**不拨号**——开关是权限，拨号是另一件事。
+`enable(alias)` 只持久化并开闸，**不拨号**——开关是权限，拨号是另一件事。两类主机的差别只在
+持久化的位置：路由先确认别名确实在 `/hosts` 的列表里（否则 404，免得把拼错的别名记成永久停用），
+其余闸门与拆除完全同路。
 
 `HostDisabler` 的协作者全部由构造参数注入（shells / forwards / watches / terminals 可为 getter，
 因为终端路由是后建的），所以 `host-disable-smoke` 能用假 manager 驱动整场编排，也能断言

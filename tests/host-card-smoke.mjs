@@ -251,18 +251,29 @@ check('a marked host with no socket offers no disconnect (there is nothing to cl
 }
 // The power switch is a button too, so "the action set is unchanged" is no
 // longer the same question as "no extra button exists": the switch must be
-// OUTSIDE the keyed action set, and only a store host may carry it (an
-// ssh-config host has no record to write `enabled` to).
+// OUTSIDE the keyed action set. Every card carries one — a store host keeps the
+// flag in its entry, a ~/.ssh/config host in the store's `disabledAliases`
+// list — and its title has to say which, because "switch off" is when someone
+// wonders whether their ssh config was edited.
 const powerSwitches = (tree) => [...elementsOf(tree)].filter(node => node.type === 'button' && node.props?.role === 'switch')
 check('the auto-connect checkbox is not counted as an action button',
   ['test', 'browse', 'edit', 'delete', 'forget'].every(key => actionKeyed(neverConnected, key) !== undefined) &&
   powerSwitches(neverConnected).every(node => node.props?.key === undefined || !['test', 'browse', 'edit', 'delete', 'forget'].includes(node.props.key)))
 check('a store host carries the power switch, checked while enabled',
-  powerSwitches(neverConnected).length === 1 && powerSwitches(neverConnected)[0].props['aria-checked'] === true)
+  powerSwitches(neverConnected).length === 1 &&
+  powerSwitches(neverConnected)[0].props['aria-checked'] === true &&
+  powerSwitches(neverConnected)[0].props['data-sshwsp-power-source'] === 'store' &&
+  powerSwitches(neverConnected)[0].props.title === 'hosts.powerOn')
 check('...and a switched-off host shows it unchecked',
   powerSwitches(renderCard(undefined, { host: { enabled: false } }))[0]?.props['aria-checked'] === false)
-check('an ssh-config host has no power switch',
-  powerSwitches(renderCard(undefined, { host: { source: 'sshConfig' } })).length === 0)
+check('an ssh-config host carries the switch too, and its title promises the file is untouched',
+  (() => {
+    const switches = powerSwitches(renderCard(undefined, { host: { source: 'ssh-config', enabled: true } }))
+    return switches.length === 1 &&
+      switches[0].props['aria-checked'] === true &&
+      switches[0].props['data-sshwsp-power-source'] === 'ssh-config' &&
+      switches[0].props.title === 'hosts.powerOnConfig'
+  })())
 
 // "connecting" is the boot dial: the switch is already on, only the handshake
 // is outstanding. It must not render as the neutral "disconnected".

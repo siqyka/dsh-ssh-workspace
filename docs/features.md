@@ -471,7 +471,7 @@ Windows 可执行文件，它的 `is_absolute` + `canonicalize` 也消化不了 
 
 | 功能 | 说明 |
 | --- | --- |
-| 主机硬停用（电源开关） | 存储主机的卡片左侧是 `role="switch"` 电源开关。关＝**立刻**关闸并拆掉这台主机上的一切：引擎准入（`HOST_DISABLED`）、在途命令与通道（abort）、池化连接（forget）、持久 shell、正向与已存转发、反向转发、变更监视、远端终端；顺序是「先持久化 `enabled:false`，再关闸，再拆」，持久化失败则什么都不拆。开启只持久化并开闸，**不主动拨号**（拨号仍归连接意图与首次使用）。关之前弹确认框，按 `/hosts` 刚读到的**实时**计数列出连接 / 在途命令 / shell / 转发 / 反向 / 监视 / 终端；会话与工作区属于宿主，插件不关，只按 `/status.disabledHosts` 置灰（`data-sshwsp-hostoff`），点开后仍由路由 409 说明原因。`~/.ssh/config` 主机没有开关（没有记录可写）；存储记录与 config 块同名时以存储为准，开关仍在——它写的是那条存储记录，关掉的也是这个别名。`/hosts/test`、`/hosts/reconnect` 与所有拨号路径对停用主机一律 409 |
+| 主机硬停用（电源开关） | 每张主机卡片的左侧都是 `role="switch"` 电源开关（存储主机写 `enabled:false`，`~/.ssh/config` 主机记进 store 的 `disabledAliases`，配置文件不改）。关＝**立刻**关闸并拆掉这台主机上的一切：引擎准入（`HOST_DISABLED`）、在途命令与通道（abort）、池化连接（forget）、持久 shell、正向与已存转发、反向转发、变更监视、远端终端；顺序是「先持久化 `enabled:false`，再关闸，再拆」，持久化失败则什么都不拆。开启只持久化并开闸，**不主动拨号**（拨号仍归连接意图与首次使用）。关之前弹确认框，按 `/hosts` 刚读到的**实时**计数列出连接 / 在途命令 / shell / 转发 / 反向 / 监视 / 终端；会话与工作区属于宿主，插件不关，只按 `/status.disabledHosts` 置灰（`data-sshwsp-hostoff`），点开后仍由路由 409 说明原因。`~/.ssh/config` 主机没有开关（没有记录可写）；存储记录与 config 块同名时以存储为准，开关仍在——它写的是那条存储记录，关掉的也是这个别名。`/hosts/test`、`/hosts/reconnect` 与所有拨号路径对停用主机一律 409 |
 | 主机来源 | `$DSH_HOME/dsh-ssh-workspace/dsh-ssh.json` 优先（旧根路径可读并迁移），缺失时回退读取 `~/.ssh/config` 的具体 `Host` 块；已配好的主机无需重复配置 |
 | `~/.ssh/config` 只读 | 面板不改写 `~/.ssh/config`；与存储同名的主机以存储为准，但**编辑与删除都拒绝**（`configAlias` 标记，面板不给按钮、路由 409：删掉存储条目只会露出那个 `Host` 块，改它会让本机其它 ssh 客户端解析到的东西悄悄变样），要改就去那个文件里改；`Include` 跟随、`Match` 求值；带 `ProxyCommand` 的主机在解析时**明确拒绝**并说明原因（`ProxyJump` 已支持） |
 | 认证方式 | `key`（含 `keyPath` 与口令）/ `password` / `agent`（含 `agentPath`） |

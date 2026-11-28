@@ -71,11 +71,22 @@ try {
   check('the enabled entry keeps no disabled key', written.hosts.find(row => row.alias === 'alpha')?.enabled === undefined,
     JSON.stringify(written.hosts[0]))
 
-  let refused = false
-  try { store.setHostEnabled('ghost', false) } catch { refused = true }
-  check('a host the store does not own cannot be switched', refused)
-  check('...and the refusal is a store error, not a silent no-op',
-    (() => { try { store.setHostEnabled('ghost', false) } catch (error) { return /not in the editable store/u.test(String(error.message)) } return false })())
+  // A ~/.ssh/config host has no entry to write a flag into, so its switch
+  // state goes into a document-level list — the file stays untouched.
+  check('a host the store does not own can still be switched off',
+    store.setHostEnabled('ghost', false) === false && store.isHostEnabled('ghost') === false)
+  const withList = JSON.parse(readFileSync(storePath, 'utf8'))
+  check('...by recording the alias, not by inventing a host entry',
+    Array.isArray(withList.disabledAliases) && withList.disabledAliases.includes('ghost') &&
+    withList.hosts.length === 2 && withList.hosts.every(row => row.alias !== 'ghost'))
+  check('...and a store host never lands in that list',
+    withList.hosts.find(row => row.alias === 'alpha')?.enabled === undefined && !withList.disabledAliases.includes('alpha'))
+  check('switching the list host back on removes the alias',
+    store.setHostEnabled('ghost', true) === true && store.disabledAliases().length === 0 && store.isHostEnabled('ghost') === true)
+  check('...and reads as off while it is listed', (() => {
+    store.setHostEnabled('ghost', false)
+    return store.isHostEnabled('ghost') === false && store.disabledAliases().includes('ghost')
+  })())
 } finally {
   rmSync(scratch, { recursive: true, force: true })
 }
@@ -182,7 +193,7 @@ function harness (patch = {}) {
 
 {
   const { disabler } = harness()
-  check('only a store entry is switchable', disabler.isStoreHost('alpha') === true && disabler.isStoreHost('beta') === false)
+  check('only a store entry is an editable store host', disabler.isStoreHost('alpha') === true && disabler.isStoreHost('beta') === false)
 }
 
 // ---------------------------------------------------------------------------
@@ -195,8 +206,11 @@ console.log('[route]')
   const engine = readSource('lib/engine/engine.js')
 
   check('the toggle route exists in the route table', /hostToggle:\s*'\/api\/dsh-ssh-workspace\/hosts\/toggle'/u.test(routes))
-  check('every host row carries its live resource counts', /resources:\s*disabler\?\.counts\?\.\(row\.alias\)/u.test(hosts))
-  check('the route refuses a ~/.ssh/config host instead of pretending', /comes from ~\/\.ssh\/config/u.test(hosts))
+  check('every host row carries its live resource counts',
+  /const resources = disabler\?\.counts\?\.\(row\.alias\)/u.test(hosts) &&
+  /\{ \.\.\.row, resources \}/u.test(hosts),
+  'the config rows would show an idle dialog while holding live shells')
+  check('the route refuses only an alias that is in neither list', /is not in the host list/u.test(hosts) && !/comes from ~\/\.ssh\/config/u.test(hosts))
   check('the route reports a deployment without the switch', /disabled in this deployment/u.test(hosts))
   check('/hosts/test refuses a switched-off host',
     /isHostDisabled\?\.\(alias\)\s*===\s*true/u.test(hosts) && /switch it on before testing it/u.test(hosts))
@@ -220,7 +234,10 @@ console.log('[client]')
 
   check('the card renders a real switch, not a checkbox',
     /role:\s*'switch'/u.test(panel) && /'aria-checked'/u.test(panel))
-  check('the switch is only offered on a stored host', /host\.source === 'store' && jsx\('button'/u.test(panel))
+  check('every card offers the switch, and says which file it does not edit',
+    /'data-sshwsp-power-source': host\.source/u.test(panel) &&
+    /hosts\.powerOnConfig/u.test(panel) && /hosts\.powerOffConfig/u.test(panel),
+    'a config host would either lose its switch or silently edit nothing')
   check('switching off asks first', /setPowerHost\(host\)/u.test(panel))
   check('switching on does not', /host\.enabled === false\) \{\s*\n?\s*if \(await switchHost\(host\.alias, true\)\)/u.test(panel))
   check('the dialog lists the live counts', /hosts\.resources\.connections/u.test(dialogs))
