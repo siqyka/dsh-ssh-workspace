@@ -227,6 +227,11 @@ console.log('[client]')
   check('the dialog says the sessions stay', /powerOffStays/u.test(dialogs))
   check('the panel posts to the toggle route', /API\.hostToggle/u.test(panel) && /hostToggle:\s*'\/api\/dsh-ssh-workspace\/hosts\/toggle'/u.test(kernel))
   check('the status poll feeds the host-off marks', /syncRemoteWorkspaceMarks\(statusData\.workspaces, statusData\.disabled, statusData\.disabledHosts\)/u.test(panel))
+check('a switched-off host also dims the panel workspace row, not only the sidebar', [
+  /hosts\.filter\(host => host\.enabled === false\)\.map\(host => host\.alias\)/u,
+  /sshwsp-mount-hostoff/u,
+  /hosts\.powerOffBadge/u,
+].every(pattern => pattern.test(panel)) && /\.sshwsp-mount-hostoff \{ opacity: 0\.55; \}/u.test(readFileSync(path.join(pluginRoot, 'lib/client/client.styles.js'), 'utf8')), 'the panel row kept its full colour')
 check('the aliases survive the live re-read, instead of being wiped a frame later',
   /remoteMarks\.disabledHostAliases = new Set\(disabledHosts\.map\(String\)\)/u.test(marks) &&
     /const offHosts = new Set\(remoteMarks\.disabledHostAliases \?\? \[\]\)/u.test(marks) &&

@@ -499,6 +499,16 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // Both lists, because a detached workspace of a deleted host is the one the
   // user will try to re-enable.
   const marks = (client.match(/jsx\(MissingHostMark,/g) ?? []).length
+  // A switched-off host dims its rows in the panel's own workspace tab, not
+  // just in DSH's sidebar: the panel is where the switch was flipped, so that
+  // is the one list the user is looking at when they expect the answer.
+  check('the panel dims the workspaces of a switched-off host', [
+    /hosts\.filter\(host => host\.enabled === false\)\.map\(host => host\.alias\)/,
+    /const offHost = offHosts\.has\(workspaceAliasOf\(wsPath\) \?\? ''\)/,
+    /'sshwsp-mount sshwsp-mount-hostoff' : 'sshwsp-mount'/,
+    /data-sshwsp-hostoff/,
+    /t\('hosts\.powerOffBadge'\)/,
+  ].every(pattern => pattern.test(client)), 'the mounted row never learned about the switch')
   check('the mark is rendered in the mounted list and the detached one', marks === 2, `${marks} use(s)`)
   check('the mark is an accessible image with a tooltip, not a bare glyph',
     /role: 'img'/.test(client) && /'aria-label': label/.test(client) && /title: label/.test(client),

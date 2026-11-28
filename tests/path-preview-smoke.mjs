@@ -334,6 +334,8 @@ function makeDialog ({ name, props }) {
       return rankA - rankB || a.name.localeCompare(b.name)
     }),
     GlobeIcon: function GlobeIcon () {},
+    // The host select wears the plugin's own remote mark rather than a globe.
+    RemoteMarkIcon: function RemoteMarkIcon () {},
     ArrowLeftIcon: function ArrowLeftIcon () {},
     CloseIcon: function CloseIcon () {},
     capabilityNotes: () => [],
