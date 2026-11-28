@@ -1077,12 +1077,21 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   const countIn = (re) => (section.match(re) ?? []).length
   check('the report section is locatable', section.length > 0, 'section markers missing')
 
+  // The settings view ends with the About strip, whose links DO open a tab — that is
+  // what an external link is for. The window checks below are about the report, so
+  // they run against the slice up to that marker rather than the whole view.
+  const aboutStart = client.indexOf('// ---- About: the ask and the three exits', start)
+  const reportSection = aboutStart > start ? section.slice(0, aboutStart - start) : section
+
   check('the "open" control is not an anchor with a target window',
-    !/jsx\('a', \{[\s\S]{0,200}?href: API\.supportBundle/u.test(section),
+    !/jsx\('a', \{[\s\S]{0,200}?href: API\.supportBundle/u.test(reportSection),
     'a relative href resolves against dsh-app:// and is denied by the window-open policy')
   check('nothing in the report section opens a window',
-    !/window\.open\(/u.test(section) && !/target: '_blank'/u.test(section),
+    !/window\.open\(/u.test(reportSection) && !/target: '_blank'/u.test(reportSection),
     'a new window cannot carry the Host session and cannot be admitted by the Desktop shell')
+  check('...and the only place the settings view opens a tab is the About links',
+    (section.match(/target: '_blank'/gu) ?? []).length === (aboutStart > start ? 2 : 0),
+    'a stray target=_blank sits outside the About strip')
   check('the report section renders the open control as a single button',
     countIn(/jsx\('button', \{/gu) === 1,
     `${countIn(/jsx\('button', \{/gu)} button(s) — copy moved into the dialog`)
@@ -2465,6 +2474,46 @@ console.log('\n[the scheme rules are published, not duplicated]')
     'no interval gate, so a token burst still schedules a pass per frame')
   check('...whose pending timer is cleared when the module is uninstalled',
     /clearTimeout\(markPassTimer\)/u.test(marksSource), 'a queued pass survives dispose')
+}
+
+// The panel's footer: one ask and three exits. What matters here is not the
+// wording but that they are LINKS the Host is allowed to open, pointed at the
+// repository this package actually lives in — and that the star row is not one of
+// the settings, which is a layout fact the markup has to keep.
+{
+  const client = clientSource(packageRoot)
+  const pkg = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'))
+  const githubOf = (value) => String(value ?? '')
+    .replace(/^git\+/u, '')
+    .replace(/^https?:\/\/github\.com\//u, '')
+    .replace(/\.git$/u, '')
+    .replace(/[#?].*$/u, '')
+    .replace(/\/$/u, '')
+
+  const start = client.indexOf('const REPOSITORY_URL = ')
+  const about = start >= 0 ? client.slice(start, client.indexOf('function forwardUrlOf', start)) : ''
+  check('the footer names the repository once', /const REPOSITORY_URL = 'https:\/\/[^']+'/u.test(about))
+  const declared = /const REPOSITORY_URL = '([^']+)'/u.exec(about)?.[1] ?? ''
+  check('...and it is the repository package.json names',
+    githubOf(declared) === githubOf(pkg.repository?.url), `${declared} vs ${pkg.repository?.url}`)
+  check('...with docs and changelog inside that repository',
+    about.includes('${REPOSITORY_URL}/tree/main/docs') && about.includes('${REPOSITORY_URL}/blob/main/CHANGELOG.md'))
+
+  const strip = client.indexOf('className: \'sshwsp-about\'')
+  const stripEnd = strip >= 0 ? client.indexOf('const auditWorkspaceBySession', strip) : -1
+  const markup = strip >= 0 && stripEnd > strip ? client.slice(strip, stripEnd) : ''
+  check('the footer renders an ask and a link row', strip > 0 && markup.length > 0, 'about strip missing')
+  check('...as anchors the Host can open, never window.open',
+    !/window\.open\(/u.test(markup) &&
+      (markup.match(/target: '_blank'/gu) ?? []).length === 2 &&
+      (markup.match(/rel: 'noreferrer noopener'/gu) ?? []).length === 2,
+    'target=_blank without rel lets the opened page reach back through window.opener')
+  check('...each wearing the mark that says what it is',
+    /React\.createElement\(GitHubIcon, \{ size: 16 \}\)/u.test(markup) &&
+      /React\.createElement\(ExternalLinkIcon, \{ size: 11 \}\)/u.test(markup),
+    'the star without the GitHub mark, or a link without the outward arrow')
+  check('...and the hrefs come from the constants, not from string literals in the markup',
+    !/href: 'https?:/u.test(markup) && /href: ABOUT_LINKS\.star/u.test(markup) && /href: item\.href/u.test(markup))
 }
 
 // A numeric summary, in the same `=== N passed, M failed ===` shape every other
