@@ -239,6 +239,19 @@ console.log('\n[the engine records every command it runs]')
     /\.sshwsp-cmdrow \{[^}]*display: flex/u.test(stylesSource),
     'without its own display, the row inherits nothing and the grid rule still wins')
 
+  // The filter used to ask about workspaces, and almost nothing in this log has
+  // one: every row carries an alias, while `sessionId` only exists when a
+  // session's tool call recorded it — the capability probes that fill most of
+  // the table have no session at all. Filtering by workspace therefore emptied
+  // the table and "all workspaces" restored it, which is a control that does
+  // nothing while looking like it does.
+  check('the audit filter is built from the rows the log holds',
+    /auditHosts = \[\.\.\.new Set\(auditRows\.map\(row => row\.alias\)/u.test(panelSource),
+    'options must come from auditRows, not from /status workspaces')
+  check('...and filters on the alias every row has',
+    /row\.alias === auditHost/u.test(panelSource) && !/auditWorkspaceIds/u.test(panelSource),
+    'a workspace filter cannot answer for a probe row')
+
   const engine = new SshWorkspaceEngine({})
   engine.audit.record({ alias: 'refused-host', command: 'rm -rf /srv', channel: 'exec', durationMs: 0, refused: true, error: 'read-only' })
   const rows = engine.audit.listFor('refused-host')
