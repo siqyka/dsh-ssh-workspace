@@ -145,9 +145,13 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
   // list-like section goes through CappedList at all, which the named list below
   // makes explicit.
   check('every list section is capped (hosts, forwards, mounted, detached, self-check, audit)', capped >= 6, `found ${capped} wrappers`)
+  // Matched as a PREFIX, not the whole attribute: a section may carry extra
+  // classes (`sshwsp-audit-full` puts the table inside its box), and an exact
+  // match would then read a present section as a missing one.
+  const cappedClasses = ['sshwsp-hosts', 'sshwsp-forwards', 'sshwsp-mounts', 'sshwsp-check', 'sshwsp-audit']
   check('the sections that must be capped still are',
-    ['sshwsp-hosts', 'sshwsp-forwards', 'sshwsp-mounts', 'sshwsp-check', 'sshwsp-audit'].every(className => client.includes(`className: '${className}'`)),
-    JSON.stringify(['sshwsp-hosts', 'sshwsp-forwards', 'sshwsp-mounts', 'sshwsp-check', 'sshwsp-audit'].filter(className => !client.includes(`className: '${className}'`))))
+    cappedClasses.every(className => client.includes(`className: '${className}`)),
+    JSON.stringify(cappedClasses.filter(className => !client.includes(`className: '${className}`))))
   check('the cap is measured, not assumed from a fixed row height',
     /getBoundingClientRect\(\)\.height/.test(client) && !/LIST_CAP \* \d+px/.test(client))
   check('a short list renders without a reserved scrollbar slot',
@@ -1206,7 +1210,6 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
     '// ---- Persistent remote shells',
     '// ---- File references',
     '// ---- Remote environment self-check',
-    '// ---- Recent remote commands',
     '// ---- Diagnostic report',
     '// ---- The command audit',
   ]
@@ -1226,7 +1229,10 @@ if (typeof clientRel === 'string' && existsSync(path.join(packageRoot, clientRel
       !paneBodyOf.Audit.includes('// ---- Diagnostic report') &&
       paneBodyOf.Settings.includes('// ---- Port forwards') && paneBodyOf.Settings.includes('// ---- Persistent remote shells') &&
       paneBodyOf.Settings.includes('// ---- File references') &&
-      paneBodyOf.Settings.includes('// ---- Recent remote commands') &&
+      // The settings pane used to repeat the command log. One ring, one table:
+      // the marker and its compact row must be GONE, not merely moved.
+      !paneBodyOf.Settings.includes('// ---- Recent remote commands') &&
+      !paneBodyOf.Settings.includes('sshwsp-cmdrow') &&
       paneBodyOf.Settings.includes('// ---- Diagnostic report'),
     'a tab shows a section another tab already owns')
   // Only the selected pane renders. A `display: none` over all five would keep

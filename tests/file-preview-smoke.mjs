@@ -361,6 +361,9 @@ console.log('\n[client wiring]')
     panel.includes('fileview.hideComposer') && panel.includes("hideComposer: event.target.checked") &&
       panel.includes("status.preferences?.hideComposer !== false"),
     'the composer stays on screen under a file tab, so there has to be a way to hide it')
+  check('...and only asks about it when files open in the conversation',
+    /\(status\.preferences\?\.fileView \?\? 'sidebar'\) === 'conversation' && jsx\('label'/u.test(panel),
+    'with the right-hand tree the composer never sits under a file, so the switch cannot change anything')
   check('the save goes through the POST route', panel.includes('API.preferences'),
     'the panel must not write the store through another door')
   check('the save failure is reported, not swallowed',
