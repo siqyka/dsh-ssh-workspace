@@ -13,6 +13,7 @@
   - 审计的**工作区列与筛选是推导出来的**：`/status` 给每个远端工作区带上 `sessionIds`，记了会话的命令据此落到那个工作区；插件自己的能力探测没有会话，画破折号、留在「全部工作区」里——原先按主机筛，方向是错的。
   - 保留条数**不再有保存按钮**（原型就没有）：回车或失焦即提交，值未变不发请求。
   - 时间戳带年月日（`2026-11-28 11:21:44`）：保留 200 条够跨好几天，只有时钟会让昨天那行和今早那行长得一样。
+  - **在远端工作区里跑 ash/pwsh 现在也进审计**：这条路径由 lib/patch/patch-shell.js 直接开 ssh2 通道，绕过了 ngine.exec()，因此此前是唯一没有审计行的运行方式；现在按 channel: 'shell' 记一行，带调用者原样的命令、远端 workdir（cwd）与 DSH_SESSION_ID——「工作区」一列能填上，靠的就是会话 id。
   - 卡片与按钮补悬停态（边框提到 `border-strong`、按钮底色换 `surface-2`），空态改虚线框；新增 `.sshwsp-tipmark` 与 `.sshwsp-tip`，把三处长说明（已停用是什么、scheme 语法、回退三道闸门）收进可聚焦并 `aria-describedby` 连到气泡的 `?` 圆标，动态状态（端口探测、保存结果）仍常驻。
   - 对话框 640→620px、`max-height: min(86vh, 720px)`；目录对话框由固定 `min(88vh, 760px)` 改为 `height: auto; min-height: min(360px, 60vh)`（三个条目时不再留 300px 空白）；传输队列底色由 `surface-3` 改 `surface`。
   - `client-shape-smoke` 的「h4 比 h3 轻」与「对话框要有高度」两条断言改为读关系与结构（前者的 weight、后者的 floor + cap），不再钉死具体数字。

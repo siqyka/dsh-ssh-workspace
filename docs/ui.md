@@ -648,6 +648,14 @@ unavailable)` 把"补丁不需要装"和"我不知道补丁装没装"写成了�
 是一段字节，一次删除是一个 inode，它们走的是 SFTP 文件路由而不是命令通道。把它们塞进命令表
 会得到一张半列空白、且每次自动保存就多一行、把用户正在找的那条 `rm` 挤出 200 行环的表。
 
+命令从四条路进表：`ssh_workspace_exec`（`exec`）、`ssh_workspace_shell`（`shell`）、
+`ssh_workspace_exec` 的后台形态（`background`）、面板里的远端终端（`terminal`）。还有一条
+不显眼但最常用：**在工作区是 `ssh://` 的会话里直接跑 `bash`/`pwsh`**——它不走 `engine.exec()`
+而是由 `lib/patch/patch-shell.js` 自己开 ssh2 通道，所以那段代码也自己记一行
+（`channel: 'shell'`、调用者原样的命令、远端 workdir 记成 `cwd`、`DSH_SESSION_ID` 记成
+`sessionId`）。少了这一行，最常用的运行方式在面板里反而没有痕迹。会话 id 是「工作区」一列
+能填上的前提：有它才能落到那个会话的工作区，没有就画破折号。
+
 但它们**是**被记录的，只是记在另一处：`lib/routes/text.js` 的 `auditWrite()` 记
 `saved N bytes to <path>` / `refused to save <path>: <reason>`，`lib/routes/entries.js` 的
 `auditCreated()` / `auditMutation()` 记 `created` / `removed` / `renamed` / `made directory`

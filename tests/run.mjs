@@ -72,6 +72,7 @@ const SUITES = [
   'read-window',
   'patch-ptc',
   'audit',
+  'shell-audit',
   'redact',
   'diagnosis',
   'workspace-ownership',
